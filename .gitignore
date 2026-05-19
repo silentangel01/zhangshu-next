@@ -1,0 +1,41 @@
+# Node / frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Python / backend
+backend/.venv/
+backend/__pycache__/
+backend/**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# SQLite / local data
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Env files
+.env
+.env.*
+!*.env.example
+
+# Logs
+logs/
+*.log
+
+# Backups / exports
+backups/
+exports/
+recovery/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Tauri build output
+frontend/src-tauri/target/
