@@ -76,7 +76,7 @@ function sortChapters(chapters: Chapter[]): Chapter[] {
             @click="emit('selectChapter', chapter)"
           >
             <span>{{ chapter.title }}</span>
-            <small>{{ chapter.status }} · v{{ chapter.version }}</small>
+            <small>{{ chapter.status }} - v{{ chapter.version }}</small>
           </button>
           <div class="chapter-actions">
             <button type="button" @click="emit('editChapter', chapter)">Edit Metadata</button>
@@ -107,7 +107,7 @@ function sortChapters(chapters: Chapter[]): Chapter[] {
             @click="emit('selectChapter', chapter)"
           >
             <span>{{ chapter.title }}</span>
-            <small>{{ chapter.status }} · v{{ chapter.version }}</small>
+            <small>{{ chapter.status }} - v{{ chapter.version }}</small>
           </button>
           <div class="chapter-actions">
             <button type="button" @click="emit('editChapter', chapter)">Edit Metadata</button>

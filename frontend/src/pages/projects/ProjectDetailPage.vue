@@ -19,6 +19,7 @@ import type { Project } from '@/entities/project/types'
 import { createVolume, deleteVolume, listVolumes, updateVolume } from '@/entities/volume/api'
 import type { CreateVolumePayload, UpdateVolumePayload, Volume } from '@/entities/volume/types'
 import ChapterTree from '@/features/chapters/ChapterTree.vue'
+import ChapterEditor from '@/features/chapters/ChapterEditor.vue'
 import CreateChapterDialog from '@/features/chapters/CreateChapterDialog.vue'
 import EditChapterDialog from '@/features/chapters/EditChapterDialog.vue'
 import CreateVolumeDialog from '@/features/volumes/CreateVolumeDialog.vue'
@@ -35,6 +36,7 @@ const editingChapter = ref<Chapter | null>(null)
 const isLoading = ref(false)
 const isSaving = ref(false)
 const isChapterLoading = ref(false)
+const isEditorDirty = ref(false)
 const errorMessage = ref('')
 const showCreateVolumeDialog = ref(false)
 const showCreateChapterDialog = ref(false)
@@ -58,6 +60,7 @@ onMounted(() => {
 
 watch(projectId, () => {
   selectedChapter.value = null
+  isEditorDirty.value = false
   void loadProjectWorkspace()
 })
 
@@ -192,15 +195,37 @@ async function handleDeleteChapter(chapter: Chapter) {
 }
 
 async function handleSelectChapter(chapter: Chapter) {
+  if (chapter.id === selectedChapter.value?.id) {
+    return
+  }
+
+  if (isEditorDirty.value) {
+    const confirmed = window.confirm('You have unsaved changes. Discard them and open another chapter?')
+
+    if (!confirmed) {
+      return
+    }
+  }
+
   isChapterLoading.value = true
   errorMessage.value = ''
 
   try {
     selectedChapter.value = await getChapter(chapter.id)
+    isEditorDirty.value = false
   } catch (error) {
     errorMessage.value = getErrorMessage(error, 'Could not load chapter.')
   } finally {
     isChapterLoading.value = false
+  }
+}
+
+async function handleChapterSaved(chapter: Chapter) {
+  try {
+    selectedChapter.value = await getChapter(chapter.id)
+    await refreshVolumesAndChapters()
+  } catch (error) {
+    errorMessage.value = getErrorMessage(error, 'Chapter saved, but refresh failed.')
   }
 }
 
@@ -296,9 +321,14 @@ function getErrorMessage(error: unknown, fallback: string): string {
             </div>
           </dl>
 
-          <div class="preview-body" :class="{ muted: !selectedChapter.content }">
-            {{ isChapterLoading ? 'Loading chapter...' : selectedChapter.content || 'No content yet.' }}
-          </div>
+          <div v-if="isChapterLoading" class="chapter-loading">Loading chapter...</div>
+
+          <ChapterEditor
+            v-else
+            :chapter="selectedChapter"
+            @dirty-change="isEditorDirty = $event"
+            @saved="handleChapterSaved"
+          />
         </article>
 
         <article v-else class="project-summary">
@@ -497,23 +527,21 @@ dd {
   font-weight: 800;
 }
 
-.summary-text,
-.preview-body {
+.summary-text {
   margin: 0;
   color: #374151;
   line-height: 1.7;
   white-space: pre-wrap;
 }
 
-.preview-body {
+.chapter-loading {
+  display: grid;
+  place-items: center;
   min-height: 260px;
   border: 1px solid #edf0f5;
   border-radius: 8px;
   padding: 16px;
   background: #fbfcfe;
-}
-
-.muted {
   color: #64748b;
 }
 
