@@ -171,6 +171,7 @@ async function saveCurrentContent(source: 'manual' | 'autosave') {
     volume_id: props.chapter.volume_id,
     order_index: props.chapter.order_index,
     status: props.chapter.status,
+    save_source: source,
   })
 
   savedWordCount.value = savedChapter.word_count

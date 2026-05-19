@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 ChapterStatus = Literal["draft", "writing", "revised", "completed"]
+ChapterSaveSource = Literal["manual", "autosave"]
 
 
 class ChapterBase(BaseModel):
@@ -33,6 +34,7 @@ class ChapterUpdate(BaseModel):
     content: str | None = None
     order_index: int | None = Field(default=None, ge=0)
     status: ChapterStatus | None = None
+    save_source: ChapterSaveSource = "manual"
 
     @field_validator("title")
     @classmethod

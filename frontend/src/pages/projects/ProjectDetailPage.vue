@@ -9,6 +9,16 @@ import {
   listChapters,
   updateChapter,
 } from '@/entities/chapter/api'
+import {
+  createChapterVersion,
+  getChapterVersion,
+  listChapterVersions,
+  restoreChapterVersion,
+} from '@/entities/chapter-version/api'
+import type {
+  ChapterVersionDetail,
+  ChapterVersionListItem,
+} from '@/entities/chapter-version/types'
 import type {
   Chapter,
   ChapterStatus,
@@ -21,8 +31,11 @@ import { createVolume, deleteVolume, listVolumes, updateVolume } from '@/entitie
 import type { CreateVolumePayload, UpdateVolumePayload, Volume } from '@/entities/volume/types'
 import ChapterTree from '@/features/chapters/ChapterTree.vue'
 import ChapterEditor from '@/features/chapters/ChapterEditor.vue'
+import ChapterVersionPanel from '@/features/chapters/ChapterVersionPanel.vue'
+import ChapterVersionPreviewDialog from '@/features/chapters/ChapterVersionPreviewDialog.vue'
 import CreateChapterDialog from '@/features/chapters/CreateChapterDialog.vue'
 import EditChapterDialog from '@/features/chapters/EditChapterDialog.vue'
+import { clearRecoveryDraft } from '@/features/chapters/recoveryDraft'
 import CreateVolumeDialog from '@/features/volumes/CreateVolumeDialog.vue'
 import EditVolumeDialog from '@/features/volumes/EditVolumeDialog.vue'
 
@@ -31,6 +44,8 @@ const route = useRoute()
 const project = ref<Project | null>(null)
 const volumes = ref<Volume[]>([])
 const chapters = ref<Chapter[]>([])
+const chapterVersions = ref<ChapterVersionListItem[]>([])
+const previewVersion = ref<ChapterVersionDetail | null>(null)
 const selectedChapter = ref<Chapter | null>(null)
 const editingVolume = ref<Volume | null>(null)
 const editingChapter = ref<Chapter | null>(null)
@@ -39,7 +54,11 @@ const isLoading = ref(false)
 const isSaving = ref(false)
 const isChapterLoading = ref(false)
 const isEditorDirty = ref(false)
+const isVersionLoading = ref(false)
+const isVersionBusy = ref(false)
 const errorMessage = ref('')
+const versionErrorMessage = ref('')
+const versionMessage = ref('')
 const showCreateVolumeDialog = ref(false)
 const showCreateChapterDialog = ref(false)
 
@@ -62,6 +81,8 @@ onMounted(() => {
 
 watch(projectId, () => {
   selectedChapter.value = null
+  chapterVersions.value = []
+  previewVersion.value = null
   isEditorDirty.value = false
   void loadProjectWorkspace()
 })
@@ -191,6 +212,11 @@ async function handleDeleteChapter(chapter: Chapter) {
     await deleteChapter(chapter.id)
     if (selectedChapter.value?.id === chapter.id) {
       selectedChapter.value = null
+      chapterVersions.value = []
+      previewVersion.value = null
+      versionMessage.value = ''
+      versionErrorMessage.value = ''
+      isEditorDirty.value = false
     }
     await refreshVolumesAndChapters()
   }, '删除章节失败。')
@@ -213,9 +239,14 @@ async function handleSelectChapter(chapter: Chapter) {
 
   isChapterLoading.value = true
   errorMessage.value = ''
+  versionMessage.value = ''
+  versionErrorMessage.value = ''
+  chapterVersions.value = []
+  previewVersion.value = null
 
   try {
     selectedChapter.value = await getChapter(chapter.id)
+    await loadChapterVersions(chapter.id)
     isEditorDirty.value = false
   } catch (error) {
     errorMessage.value = getErrorMessage(error, '加载章节失败。')
@@ -228,8 +259,93 @@ async function handleChapterSaved(chapter: Chapter) {
   try {
     selectedChapter.value = await getChapter(chapter.id)
     await refreshVolumesAndChapters()
+    await loadChapterVersions(chapter.id)
   } catch (error) {
     errorMessage.value = getErrorMessage(error, '章节已保存，但刷新失败。')
+  }
+}
+
+async function loadChapterVersions(chapterId: string) {
+  isVersionLoading.value = true
+  versionErrorMessage.value = ''
+
+  try {
+    chapterVersions.value = await listChapterVersions(chapterId)
+  } catch (error) {
+    versionErrorMessage.value = getErrorMessage(error, '加载版本历史失败。')
+  } finally {
+    isVersionLoading.value = false
+  }
+}
+
+async function handleCreateVersionSnapshot() {
+  const chapter = selectedChapter.value
+  if (!chapter) {
+    return
+  }
+
+  isVersionBusy.value = true
+  versionErrorMessage.value = ''
+  versionMessage.value = ''
+
+  try {
+    await createChapterVersion(chapter.id, {
+      source: 'manual',
+      note: '用户手动创建版本',
+    })
+    await loadChapterVersions(chapter.id)
+    versionMessage.value = '版本快照已创建。'
+  } catch (error) {
+    versionErrorMessage.value = getErrorMessage(error, '创建版本快照失败。')
+  } finally {
+    isVersionBusy.value = false
+  }
+}
+
+async function handleViewVersion(versionId: string) {
+  isVersionBusy.value = true
+  versionErrorMessage.value = ''
+
+  try {
+    previewVersion.value = await getChapterVersion(versionId)
+  } catch (error) {
+    versionErrorMessage.value = getErrorMessage(error, '加载版本详情失败。')
+  } finally {
+    isVersionBusy.value = false
+  }
+}
+
+async function handleRestoreVersion(versionId: string) {
+  const chapter = selectedChapter.value
+  if (!chapter) {
+    return
+  }
+
+  const confirmed = window.confirm(
+    '确认恢复此版本吗？当前正文会被覆盖，但系统会先创建恢复前备份。',
+  )
+  if (!confirmed) {
+    return
+  }
+
+  chapterEditor.value?.cancelPendingAutosave()
+  isVersionBusy.value = true
+  versionErrorMessage.value = ''
+  versionMessage.value = ''
+
+  try {
+    const restoredChapter = await restoreChapterVersion(chapter.id, versionId)
+    clearRecoveryDraft(chapter.id)
+    selectedChapter.value = await getChapter(restoredChapter.id)
+    isEditorDirty.value = false
+    previewVersion.value = null
+    await refreshVolumesAndChapters()
+    await loadChapterVersions(restoredChapter.id)
+    versionMessage.value = '版本恢复成功。'
+  } catch (error) {
+    versionErrorMessage.value = getErrorMessage(error, '版本恢复失败。')
+  } finally {
+    isVersionBusy.value = false
   }
 }
 
@@ -342,6 +458,18 @@ function getStatusLabel(status: ChapterStatus): string {
             @dirty-change="isEditorDirty = $event"
             @saved="handleChapterSaved"
           />
+
+          <p v-if="versionMessage" class="version-message">{{ versionMessage }}</p>
+
+          <ChapterVersionPanel
+            :versions="chapterVersions"
+            :is-loading="isVersionLoading"
+            :error-message="versionErrorMessage"
+            :is-busy="isVersionBusy"
+            @create-snapshot="handleCreateVersionSnapshot"
+            @view-version="handleViewVersion"
+            @restore-version="handleRestoreVersion"
+          />
         </article>
 
         <article v-else class="project-summary">
@@ -406,6 +534,13 @@ function getStatusLabel(status: ChapterStatus): string {
       :volumes="sortedVolumes"
       @close="editingChapter = null"
       @submit="handleEditChapter"
+    />
+
+    <ChapterVersionPreviewDialog
+      v-if="previewVersion"
+      :version="previewVersion"
+      @close="previewVersion = null"
+      @restore="handleRestoreVersion"
     />
   </main>
 </template>
@@ -585,6 +720,12 @@ dd {
   background: #ecfdf5;
   color: #047857;
   font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.version-message {
+  margin: 12px 0 0;
+  color: #047857;
   font-weight: 800;
 }
 

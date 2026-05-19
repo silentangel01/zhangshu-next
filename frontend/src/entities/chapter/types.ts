@@ -1,4 +1,5 @@
 export type ChapterStatus = 'draft' | 'writing' | 'revised' | 'completed'
+export type ChapterSaveSource = 'manual' | 'autosave'
 
 export interface Chapter {
   id: string
@@ -29,6 +30,7 @@ export interface UpdateChapterPayload {
   content?: string
   order_index?: number
   status?: ChapterStatus
+  save_source?: ChapterSaveSource
 }
 
 export interface UpdateChapterMetadataPayload {
