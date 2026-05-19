@@ -25,7 +25,7 @@ function handleSubmit() {
   const title = form.title.trim()
 
   if (!title) {
-    titleError.value = 'Title is required.'
+    titleError.value = '标题不能为空。'
     return
   }
 
@@ -42,30 +42,30 @@ function handleSubmit() {
   <div class="dialog-backdrop" role="presentation">
     <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="create-project-title">
       <header class="dialog-header">
-        <h2 id="create-project-title">Create Project</h2>
-        <button class="icon-button" type="button" aria-label="Close" @click="emit('close')">x</button>
+        <h2 id="create-project-title">新建项目</h2>
+        <button class="icon-button" type="button" aria-label="关闭" @click="emit('close')">x</button>
       </header>
 
       <form class="project-form" @submit.prevent="handleSubmit">
         <label>
-          <span>Title</span>
+          <span>标题</span>
           <input v-model="form.title" name="title" type="text" autocomplete="off" required />
         </label>
         <p v-if="titleError" class="field-error">{{ titleError }}</p>
 
         <label>
-          <span>Genre</span>
+          <span>类型</span>
           <input v-model="form.genre" name="genre" type="text" autocomplete="off" />
         </label>
 
         <label>
-          <span>Summary</span>
+          <span>简介</span>
           <textarea v-model="form.summary" name="summary" rows="5" />
         </label>
 
         <footer class="dialog-actions">
-          <button class="secondary-button" type="button" @click="emit('close')">Cancel</button>
-          <button class="primary-button" type="submit">Create</button>
+          <button class="secondary-button" type="button" @click="emit('close')">取消</button>
+          <button class="primary-button" type="submit">新建</button>
         </footer>
       </form>
     </section>

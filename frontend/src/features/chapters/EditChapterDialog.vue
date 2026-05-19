@@ -44,7 +44,7 @@ function handleSubmit() {
   const title = form.title.trim()
 
   if (!title) {
-    titleError.value = 'Title is required.'
+    titleError.value = '标题不能为空。'
     return
   }
 
@@ -56,27 +56,38 @@ function handleSubmit() {
     status: form.status,
   })
 }
+
+function getStatusLabel(status: ChapterStatus): string {
+  const labels: Record<ChapterStatus, string> = {
+    draft: '草稿',
+    writing: '写作中',
+    revised: '已修订',
+    completed: '已完成',
+  }
+
+  return labels[status]
+}
 </script>
 
 <template>
   <div class="dialog-backdrop" role="presentation">
     <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="edit-chapter-title">
       <header class="dialog-header">
-        <h2 id="edit-chapter-title">Edit Chapter Metadata</h2>
-        <button class="icon-button" type="button" aria-label="Close" @click="emit('close')">x</button>
+        <h2 id="edit-chapter-title">编辑章节信息</h2>
+        <button class="icon-button" type="button" aria-label="关闭" @click="emit('close')">x</button>
       </header>
 
       <form class="form" @submit.prevent="handleSubmit">
         <label>
-          <span>Title</span>
+          <span>标题</span>
           <input v-model="form.title" type="text" required autocomplete="off" />
         </label>
         <p v-if="titleError" class="field-error">{{ titleError }}</p>
 
         <label>
-          <span>Volume</span>
+          <span>分卷</span>
           <select v-model="form.volume_id">
-            <option value="">Unassigned Chapters</option>
+            <option value="">未分卷章节</option>
             <option v-for="volume in volumes" :key="volume.id" :value="volume.id">
               {{ volume.title }}
             </option>
@@ -84,22 +95,22 @@ function handleSubmit() {
         </label>
 
         <label>
-          <span>Order</span>
+          <span>排序</span>
           <input v-model.number="form.order_index" type="number" min="0" required />
         </label>
 
         <label>
-          <span>Status</span>
+          <span>状态</span>
           <select v-model="form.status">
             <option v-for="status in statuses" :key="status" :value="status">
-              {{ status }}
+              {{ getStatusLabel(status) }}
             </option>
           </select>
         </label>
 
         <footer class="dialog-actions">
-          <button class="secondary-button" type="button" @click="emit('close')">Cancel</button>
-          <button class="primary-button" type="submit">Save</button>
+          <button class="secondary-button" type="button" @click="emit('close')">取消</button>
+          <button class="primary-button" type="submit">保存</button>
         </footer>
       </form>
     </section>

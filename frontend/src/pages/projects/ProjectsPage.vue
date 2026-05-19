@@ -32,7 +32,7 @@ async function refreshProjects() {
   try {
     projects.value = await listProjects()
   } catch (error) {
-    errorMessage.value = getErrorMessage(error, 'Could not load projects.')
+    errorMessage.value = getErrorMessage(error, '加载项目失败。')
   } finally {
     isLoading.value = false
   }
@@ -47,7 +47,7 @@ async function handleCreate(payload: CreateProjectPayload) {
     showCreateDialog.value = false
     await refreshProjects()
   } catch (error) {
-    errorMessage.value = getErrorMessage(error, 'Could not create project.')
+    errorMessage.value = getErrorMessage(error, '新建项目失败。')
   } finally {
     isSaving.value = false
   }
@@ -66,14 +66,14 @@ async function handleEdit(payload: UpdateProjectPayload) {
     editingProject.value = null
     await refreshProjects()
   } catch (error) {
-    errorMessage.value = getErrorMessage(error, 'Could not update project.')
+    errorMessage.value = getErrorMessage(error, '更新项目失败。')
   } finally {
     isSaving.value = false
   }
 }
 
 async function handleDelete(project: Project) {
-  const confirmed = window.confirm(`Delete "${project.title}"?`)
+  const confirmed = window.confirm(`确定要删除项目“${project.title}”吗？`)
 
   if (!confirmed) {
     return
@@ -86,7 +86,7 @@ async function handleDelete(project: Project) {
     await deleteProject(project.id)
     await refreshProjects()
   } catch (error) {
-    errorMessage.value = getErrorMessage(error, 'Could not delete project.')
+    errorMessage.value = getErrorMessage(error, '删除项目失败。')
   } finally {
     isSaving.value = false
   }
@@ -100,10 +100,7 @@ function formatUpdatedAt(value: string): string {
 }
 
 function getErrorMessage(error: unknown, fallback: string): string {
-  if (error instanceof Error) {
-    return error.message
-  }
-
+  void error
   return fallback
 }
 </script>
@@ -112,11 +109,11 @@ function getErrorMessage(error: unknown, fallback: string): string {
   <main class="projects-page">
     <header class="page-header">
       <div>
-        <p class="eyebrow">Zhangshu Next</p>
-        <h1>Projects</h1>
+        <p class="eyebrow">掌书 Next</p>
+        <h1>项目</h1>
       </div>
       <button class="primary-button" type="button" :disabled="isSaving" @click="showCreateDialog = true">
-        Create Project
+        新建项目
       </button>
     </header>
 
@@ -125,11 +122,11 @@ function getErrorMessage(error: unknown, fallback: string): string {
     </section>
 
     <section class="content-panel" aria-live="polite">
-      <div v-if="isLoading" class="state-message">Loading projects...</div>
+      <div v-if="isLoading" class="state-message">正在加载项目……</div>
 
       <div v-else-if="!hasProjects" class="empty-state">
-        <h2>No projects yet</h2>
-        <p>Create your first novel project to start shaping the shelf.</p>
+        <h2>暂无项目</h2>
+        <p>新建一个小说项目，开始整理你的创作资料。</p>
       </div>
 
       <div v-else class="project-grid">
@@ -137,22 +134,22 @@ function getErrorMessage(error: unknown, fallback: string): string {
           <header class="project-card-header">
             <div>
               <h2>{{ project.title }}</h2>
-              <p class="genre">{{ project.genre || 'No genre set' }}</p>
+              <p class="genre">{{ project.genre || '未设置类型' }}</p>
             </div>
             <span class="version">v{{ project.version }}</span>
           </header>
 
-          <p class="summary">{{ project.summary || 'No summary yet.' }}</p>
+          <p class="summary">{{ project.summary || '暂无项目简介。' }}</p>
 
           <footer class="project-card-footer">
-            <span>Updated {{ formatUpdatedAt(project.updated_at) }}</span>
+            <span>更新于 {{ formatUpdatedAt(project.updated_at) }}</span>
             <div class="card-actions">
-              <RouterLink class="open-link" :to="`/projects/${project.id}`">Open</RouterLink>
+              <RouterLink class="open-link" :to="`/projects/${project.id}`">打开</RouterLink>
               <button class="secondary-button" type="button" :disabled="isSaving" @click="editingProject = project">
-                Edit
+                编辑
               </button>
               <button class="danger-button" type="button" :disabled="isSaving" @click="handleDelete(project)">
-                Delete
+                删除
               </button>
             </div>
           </footer>

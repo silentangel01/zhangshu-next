@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import type { Chapter } from '@/entities/chapter/types'
+import type { Chapter, ChapterStatus } from '@/entities/chapter/types'
 import type { Volume } from '@/entities/volume/types'
 
 const props = defineProps<{
@@ -51,19 +51,30 @@ function sortChapters(chapters: Chapter[]): Chapter[] {
     return new Date(left.created_at).getTime() - new Date(right.created_at).getTime()
   })
 }
+
+function getStatusLabel(status: ChapterStatus): string {
+  const labels: Record<ChapterStatus, string> = {
+    draft: '草稿',
+    writing: '写作中',
+    revised: '已修订',
+    completed: '已完成',
+  }
+
+  return labels[status]
+}
 </script>
 
 <template>
-  <nav class="chapter-tree" aria-label="Chapter tree">
+  <nav class="chapter-tree" aria-label="章节树">
     <section v-for="volume in sortedVolumes" :key="volume.id" class="tree-section">
       <header class="tree-section-header">
         <div>
           <h3>{{ volume.title }}</h3>
-          <span>Order {{ volume.order_index }}</span>
+          <span>排序 {{ volume.order_index }}</span>
         </div>
         <div class="tree-actions">
-          <button type="button" @click="emit('editVolume', volume)">Edit</button>
-          <button class="danger-action" type="button" @click="emit('deleteVolume', volume)">Delete</button>
+          <button type="button" @click="emit('editVolume', volume)">编辑</button>
+          <button class="danger-action" type="button" @click="emit('deleteVolume', volume)">删除</button>
         </div>
       </header>
 
@@ -76,25 +87,25 @@ function sortChapters(chapters: Chapter[]): Chapter[] {
             @click="emit('selectChapter', chapter)"
           >
             <span>{{ chapter.title }}</span>
-            <small>{{ chapter.status }} - v{{ chapter.version }}</small>
+            <small>{{ getStatusLabel(chapter.status) }} - v{{ chapter.version }}</small>
           </button>
           <div class="chapter-actions">
-            <button type="button" @click="emit('editChapter', chapter)">Edit Metadata</button>
+            <button type="button" @click="emit('editChapter', chapter)">编辑信息</button>
             <button class="danger-action" type="button" @click="emit('deleteChapter', chapter)">
-              Delete
+              删除
             </button>
           </div>
         </li>
       </ul>
 
-      <p v-else class="empty-note">No chapters in this volume.</p>
+      <p v-else class="empty-note">此分卷暂无章节。</p>
     </section>
 
     <section class="tree-section">
       <header class="tree-section-header">
         <div>
-          <h3>Unassigned Chapters</h3>
-          <span>{{ unassignedChapters.length }} chapter{{ unassignedChapters.length === 1 ? '' : 's' }}</span>
+          <h3>未分卷章节</h3>
+          <span>{{ unassignedChapters.length }} 个章节</span>
         </div>
       </header>
 
@@ -107,18 +118,18 @@ function sortChapters(chapters: Chapter[]): Chapter[] {
             @click="emit('selectChapter', chapter)"
           >
             <span>{{ chapter.title }}</span>
-            <small>{{ chapter.status }} - v{{ chapter.version }}</small>
+            <small>{{ getStatusLabel(chapter.status) }} - v{{ chapter.version }}</small>
           </button>
           <div class="chapter-actions">
-            <button type="button" @click="emit('editChapter', chapter)">Edit Metadata</button>
+            <button type="button" @click="emit('editChapter', chapter)">编辑信息</button>
             <button class="danger-action" type="button" @click="emit('deleteChapter', chapter)">
-              Delete
+              删除
             </button>
           </div>
         </li>
       </ul>
 
-      <p v-else class="empty-note">No unassigned chapters.</p>
+      <p v-else class="empty-note">暂无未分卷章节。</p>
     </section>
   </nav>
 </template>

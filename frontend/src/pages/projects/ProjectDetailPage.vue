@@ -11,6 +11,7 @@ import {
 } from '@/entities/chapter/api'
 import type {
   Chapter,
+  ChapterStatus,
   CreateChapterPayload,
   UpdateChapterMetadataPayload,
 } from '@/entities/chapter/types'
@@ -33,6 +34,7 @@ const chapters = ref<Chapter[]>([])
 const selectedChapter = ref<Chapter | null>(null)
 const editingVolume = ref<Volume | null>(null)
 const editingChapter = ref<Chapter | null>(null)
+const chapterEditor = ref<InstanceType<typeof ChapterEditor> | null>(null)
 const isLoading = ref(false)
 const isSaving = ref(false)
 const isChapterLoading = ref(false)
@@ -66,7 +68,7 @@ watch(projectId, () => {
 
 async function loadProjectWorkspace() {
   if (!projectId.value) {
-    errorMessage.value = 'Project id is missing.'
+    errorMessage.value = '项目 ID 缺失。'
     return
   }
 
@@ -84,7 +86,7 @@ async function loadProjectWorkspace() {
     volumes.value = projectVolumes
     chapters.value = projectChapters
   } catch (error) {
-    errorMessage.value = getErrorMessage(error, 'Could not load project detail.')
+    errorMessage.value = getErrorMessage(error, '加载项目详情失败。')
   } finally {
     isLoading.value = false
   }
@@ -113,7 +115,7 @@ async function handleCreateVolume(payload: CreateVolumePayload) {
     await createVolume(projectId.value, payload)
     showCreateVolumeDialog.value = false
     await refreshVolumesAndChapters()
-  }, 'Could not create volume.')
+  }, '新建分卷失败。')
 }
 
 async function handleEditVolume(payload: UpdateVolumePayload) {
@@ -127,11 +129,11 @@ async function handleEditVolume(payload: UpdateVolumePayload) {
     await updateVolume(volume.id, payload)
     editingVolume.value = null
     await refreshVolumesAndChapters()
-  }, 'Could not update volume.')
+  }, '更新分卷失败。')
 }
 
 async function handleDeleteVolume(volume: Volume) {
-  const confirmed = window.confirm(`Delete volume "${volume.title}"?`)
+  const confirmed = window.confirm(`确定要删除分卷“${volume.title}”吗？`)
 
   if (!confirmed) {
     return
@@ -140,7 +142,7 @@ async function handleDeleteVolume(volume: Volume) {
   await saveChange(async () => {
     await deleteVolume(volume.id)
     await refreshVolumesAndChapters()
-  }, 'Could not delete volume.')
+  }, '删除分卷失败。')
 }
 
 async function handleCreateChapter(payload: CreateChapterPayload) {
@@ -152,7 +154,7 @@ async function handleCreateChapter(payload: CreateChapterPayload) {
     await createChapter(projectId.value, payload)
     showCreateChapterDialog.value = false
     await refreshVolumesAndChapters()
-  }, 'Could not create chapter.')
+  }, '新建章节失败。')
 }
 
 async function handleEditChapter(payload: UpdateChapterMetadataPayload) {
@@ -175,11 +177,11 @@ async function handleEditChapter(payload: UpdateChapterMetadataPayload) {
     editingChapter.value = null
     selectedChapter.value = selectedChapter.value?.id === updatedChapter.id ? updatedChapter : selectedChapter.value
     await refreshVolumesAndChapters()
-  }, 'Could not update chapter.')
+  }, '更新章节信息失败。')
 }
 
 async function handleDeleteChapter(chapter: Chapter) {
-  const confirmed = window.confirm(`Delete chapter "${chapter.title}"?`)
+  const confirmed = window.confirm(`确定要删除章节“${chapter.title}”吗？`)
 
   if (!confirmed) {
     return
@@ -191,7 +193,7 @@ async function handleDeleteChapter(chapter: Chapter) {
       selectedChapter.value = null
     }
     await refreshVolumesAndChapters()
-  }, 'Could not delete chapter.')
+  }, '删除章节失败。')
 }
 
 async function handleSelectChapter(chapter: Chapter) {
@@ -200,11 +202,13 @@ async function handleSelectChapter(chapter: Chapter) {
   }
 
   if (isEditorDirty.value) {
-    const confirmed = window.confirm('You have unsaved changes. Discard them and open another chapter?')
+    const confirmed = window.confirm('当前章节有未保存内容，是否放弃更改并切换章节？')
 
     if (!confirmed) {
       return
     }
+
+    chapterEditor.value?.cancelPendingAutosave()
   }
 
   isChapterLoading.value = true
@@ -214,7 +218,7 @@ async function handleSelectChapter(chapter: Chapter) {
     selectedChapter.value = await getChapter(chapter.id)
     isEditorDirty.value = false
   } catch (error) {
-    errorMessage.value = getErrorMessage(error, 'Could not load chapter.')
+    errorMessage.value = getErrorMessage(error, '加载章节失败。')
   } finally {
     isChapterLoading.value = false
   }
@@ -225,7 +229,7 @@ async function handleChapterSaved(chapter: Chapter) {
     selectedChapter.value = await getChapter(chapter.id)
     await refreshVolumesAndChapters()
   } catch (error) {
-    errorMessage.value = getErrorMessage(error, 'Chapter saved, but refresh failed.')
+    errorMessage.value = getErrorMessage(error, '章节已保存，但刷新失败。')
   }
 }
 
@@ -250,11 +254,19 @@ function formatDate(value: string): string {
 }
 
 function getErrorMessage(error: unknown, fallback: string): string {
-  if (error instanceof Error) {
-    return error.message
+  void error
+  return fallback
+}
+
+function getStatusLabel(status: ChapterStatus): string {
+  const labels: Record<ChapterStatus, string> = {
+    draft: '草稿',
+    writing: '写作中',
+    revised: '已修订',
+    completed: '已完成',
   }
 
-  return fallback
+  return labels[status]
 }
 </script>
 
@@ -262,16 +274,16 @@ function getErrorMessage(error: unknown, fallback: string): string {
   <main class="project-detail-page">
     <header class="page-header">
       <div>
-        <RouterLink class="back-link" to="/projects">Back to Projects</RouterLink>
-        <p class="eyebrow">Project Detail</p>
-        <h1>{{ project?.title || 'Loading project...' }}</h1>
+        <RouterLink class="back-link" to="/projects">返回项目列表</RouterLink>
+        <p class="eyebrow">项目详情</p>
+        <h1>{{ project?.title || '正在加载项目……' }}</h1>
       </div>
       <div class="header-actions">
         <button class="secondary-button" type="button" :disabled="isSaving" @click="showCreateVolumeDialog = true">
-          Create Volume
+          新建分卷
         </button>
         <button class="primary-button" type="button" :disabled="isSaving" @click="showCreateChapterDialog = true">
-          Create Chapter
+          新建章节
         </button>
       </div>
     </header>
@@ -280,7 +292,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
       {{ errorMessage }}
     </section>
 
-    <section v-if="isLoading" class="state-message">Loading project workspace...</section>
+    <section v-if="isLoading" class="state-message">正在加载项目工作区……</section>
 
     <section v-else class="workspace-layout">
       <aside class="sidebar">
@@ -300,7 +312,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
         <article v-if="selectedChapter" class="chapter-preview">
           <header class="panel-header">
             <div>
-              <p class="eyebrow">Selected Chapter</p>
+              <p class="eyebrow">当前章节</p>
               <h2>{{ selectedChapter.title }}</h2>
             </div>
             <span class="version">v{{ selectedChapter.version }}</span>
@@ -308,23 +320,24 @@ function getErrorMessage(error: unknown, fallback: string): string {
 
           <dl class="metadata-grid">
             <div>
-              <dt>Status</dt>
-              <dd>{{ selectedChapter.status }}</dd>
+              <dt>状态</dt>
+              <dd>{{ getStatusLabel(selectedChapter.status) }}</dd>
             </div>
             <div>
-              <dt>Word Count</dt>
+              <dt>已保存字数</dt>
               <dd>{{ selectedChapter.word_count }}</dd>
             </div>
             <div>
-              <dt>Updated</dt>
+              <dt>更新时间</dt>
               <dd>{{ formatDate(selectedChapter.updated_at) }}</dd>
             </div>
           </dl>
 
-          <div v-if="isChapterLoading" class="chapter-loading">Loading chapter...</div>
+          <div v-if="isChapterLoading" class="chapter-loading">正在加载章节……</div>
 
           <ChapterEditor
             v-else
+            ref="chapterEditor"
             :chapter="selectedChapter"
             @dirty-change="isEditorDirty = $event"
             @saved="handleChapterSaved"
@@ -334,32 +347,35 @@ function getErrorMessage(error: unknown, fallback: string): string {
         <article v-else class="project-summary">
           <header class="panel-header">
             <div>
-              <p class="eyebrow">Project Summary</p>
-              <h2>{{ project?.title || 'Project' }}</h2>
+              <p class="eyebrow">项目概览</p>
+              <h2>{{ project?.title || '项目' }}</h2>
             </div>
-            <span v-if="project" class="version">v{{ project.version }}</span>
+            <div class="panel-badges">
+              <span class="status-pill">未选择章节</span>
+              <span v-if="project" class="version">v{{ project.version }}</span>
+            </div>
           </header>
 
           <dl v-if="project" class="metadata-grid">
             <div>
-              <dt>Genre</dt>
-              <dd>{{ project.genre || 'No genre set' }}</dd>
+              <dt>类型</dt>
+              <dd>{{ project.genre || '未设置类型' }}</dd>
             </div>
             <div>
-              <dt>Updated</dt>
+              <dt>更新时间</dt>
               <dd>{{ formatDate(project.updated_at) }}</dd>
             </div>
             <div>
-              <dt>Volumes</dt>
+              <dt>分卷</dt>
               <dd>{{ volumes.length }}</dd>
             </div>
             <div>
-              <dt>Chapters</dt>
+              <dt>章节</dt>
               <dd>{{ chapters.length }}</dd>
             </div>
           </dl>
 
-          <p class="summary-text">{{ project?.summary || 'No summary yet.' }}</p>
+          <p class="summary-text">{{ project?.summary || '暂无项目简介。' }}</p>
         </article>
       </section>
     </section>
@@ -449,6 +465,13 @@ h2 {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.panel-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
 .error-banner,
@@ -551,6 +574,16 @@ dd {
   padding: 4px 9px;
   background: #eef2ff;
   color: #3730a3;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.status-pill {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 4px 9px;
+  background: #ecfdf5;
+  color: #047857;
   font-size: 0.78rem;
   font-weight: 800;
 }
