@@ -1,8 +1,20 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
+import ProjectsPage from '@/pages/projects/ProjectsPage.vue'
+
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
-  routes: [],
+  routes: [
+    {
+      path: '/',
+      redirect: '/projects',
+    },
+    {
+      path: '/projects',
+      name: 'projects',
+      component: ProjectsPage,
+    },
+  ],
 })
 
 export default router
