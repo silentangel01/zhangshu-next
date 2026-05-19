@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 
 import {
   createProject,
@@ -146,6 +147,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
           <footer class="project-card-footer">
             <span>Updated {{ formatUpdatedAt(project.updated_at) }}</span>
             <div class="card-actions">
+              <RouterLink class="open-link" :to="`/projects/${project.id}`">Open</RouterLink>
               <button class="secondary-button" type="button" :disabled="isSaving" @click="editingProject = project">
                 Edit
               </button>
@@ -320,7 +322,21 @@ h1 {
 
 .card-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.open-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  box-sizing: border-box;
+  border-radius: 6px;
+  padding: 0 14px;
+  background: #2563eb;
+  color: #ffffff;
+  font-weight: 800;
+  text-decoration: none;
 }
 
 button {

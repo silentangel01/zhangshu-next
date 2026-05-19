@@ -42,11 +42,13 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     throw new ApiError(message, response.status)
   }
 
-  if (response.status === 204) {
+  const text = await response.text()
+
+  if (!text) {
     return undefined as T
   }
 
-  return response.json() as Promise<T>
+  return JSON.parse(text) as T
 }
 
 export async function getHealth() {
