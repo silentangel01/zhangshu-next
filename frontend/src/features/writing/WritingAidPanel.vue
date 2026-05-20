@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 
+import ChapterCharacterPanel from '@/features/characters/ChapterCharacterPanel.vue'
 import ChapterOutlinePanel from '@/features/outlines/ChapterOutlinePanel.vue'
 
 const props = defineProps<{
@@ -23,8 +24,7 @@ const tabs: Array<{ id: AidTab; label: string }> = [
   { id: 'versions', label: '版本' },
 ]
 
-const placeholders: Record<Exclude<AidTab, 'outline'>, string> = {
-  characters: '人物模块将在后续版本实现',
+const placeholders: Record<Exclude<AidTab, 'outline' | 'characters'>, string> = {
   settings: '设定集模块将在后续版本实现',
   graph: '关系图模块将在后续版本实现',
   timeline: '时间轴模块将在后续版本实现',
@@ -33,7 +33,7 @@ const placeholders: Record<Exclude<AidTab, 'outline'>, string> = {
 }
 
 const placeholderText = computed(() => {
-  if (activeTab.value === 'outline') {
+  if (activeTab.value === 'outline' || activeTab.value === 'characters') {
     return ''
   }
   return placeholders[activeTab.value]
@@ -72,6 +72,12 @@ const placeholderText = computed(() => {
           compact
         />
       </template>
+
+      <ChapterCharacterPanel
+        v-else-if="activeTab === 'characters'"
+        :project-id="projectId"
+        :chapter-id="chapterId"
+      />
 
       <p v-else class="state-message">{{ placeholderText }}</p>
     </section>

@@ -411,6 +411,7 @@ function getStatusLabel(status: ChapterStatus): string {
         <nav class="project-nav" aria-label="项目导航">
           <RouterLink class="nav-link" to="/projects">项目列表</RouterLink>
           <RouterLink class="nav-link" :to="`/projects/${projectId}/outlines`">完整大纲</RouterLink>
+          <RouterLink class="nav-link" :to="`/projects/${projectId}/characters`">人物库</RouterLink>
         </nav>
         <div class="sidebar-actions">
           <button class="secondary-button" type="button" :disabled="isSaving" @click="showCreateVolumeDialog = true">
