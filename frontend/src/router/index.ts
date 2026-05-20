@@ -5,6 +5,7 @@ import ImportPage from '@/pages/imports/ImportPage.vue'
 import ProjectOutlinePage from '@/pages/outlines/ProjectOutlinePage.vue'
 import ProjectDetailPage from '@/pages/projects/ProjectDetailPage.vue'
 import ProjectsPage from '@/pages/projects/ProjectsPage.vue'
+import ProjectSettingsPage from '@/pages/settings/ProjectSettingsPage.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -32,6 +33,11 @@ const router = createRouter({
       path: '/projects/:projectId/characters',
       name: 'project-characters',
       component: ProjectCharactersPage,
+    },
+    {
+      path: '/projects/:projectId/settings',
+      name: 'project-settings',
+      component: ProjectSettingsPage,
     },
     {
       path: '/imports',

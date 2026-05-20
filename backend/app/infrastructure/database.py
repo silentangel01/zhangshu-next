@@ -34,9 +34,11 @@ def init_database() -> None:
     from app.models import volume  # noqa: F401
     from app.models import chapter  # noqa: F401
     from app.models import chapter_character  # noqa: F401
+    from app.models import chapter_setting  # noqa: F401
     from app.models import chapter_version  # noqa: F401
     from app.models import character  # noqa: F401
     from app.models import outline_item  # noqa: F401
+    from app.models import setting_item  # noqa: F401
 
     ensure_database_directory()
     Base.metadata.create_all(bind=engine)

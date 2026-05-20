@@ -4,8 +4,9 @@ import { RouterLink } from 'vue-router'
 
 import ChapterCharacterPanel from '@/features/characters/ChapterCharacterPanel.vue'
 import ChapterOutlinePanel from '@/features/outlines/ChapterOutlinePanel.vue'
+import ChapterSettingPanel from '@/features/settings/ChapterSettingPanel.vue'
 
-const props = defineProps<{
+defineProps<{
   projectId: string
   chapterId: string | null
 }>()
@@ -24,16 +25,15 @@ const tabs: Array<{ id: AidTab; label: string }> = [
   { id: 'versions', label: '版本' },
 ]
 
-const placeholders: Record<Exclude<AidTab, 'outline' | 'characters'>, string> = {
-  settings: '设定集模块将在后续版本实现',
-  graph: '关系图模块将在后续版本实现',
-  timeline: '时间轴模块将在后续版本实现',
-  foreshadowing: '伏笔模块将在后续版本实现',
+const placeholders: Record<Exclude<AidTab, 'outline' | 'characters' | 'settings'>, string> = {
+  graph: '关系图模块将在后续版本实现。',
+  timeline: '时间轴模块将在后续版本实现。',
+  foreshadowing: '伏笔模块将在后续版本实现。',
   versions: '版本历史仍在正文编辑区下方查看，后续会整理到这里。',
 }
 
 const placeholderText = computed(() => {
-  if (activeTab.value === 'outline' || activeTab.value === 'characters') {
+  if (activeTab.value === 'outline' || activeTab.value === 'characters' || activeTab.value === 'settings') {
     return ''
   }
   return placeholders[activeTab.value]
@@ -47,7 +47,10 @@ const placeholderText = computed(() => {
         <p class="eyebrow">写作资料与辅助</p>
         <h2>资料面板</h2>
       </div>
-      <RouterLink class="outline-link" :to="`/projects/${projectId}/outlines`">打开完整大纲</RouterLink>
+      <div class="header-links">
+        <RouterLink class="outline-link" :to="`/projects/${projectId}/outlines`">打开完整大纲</RouterLink>
+        <RouterLink class="outline-link" :to="`/projects/${projectId}/settings`">打开设定集</RouterLink>
+      </div>
     </header>
 
     <nav class="tab-list" aria-label="写作资料分类">
@@ -64,7 +67,7 @@ const placeholderText = computed(() => {
 
     <section class="tab-content">
       <template v-if="activeTab === 'outline'">
-        <p v-if="!props.chapterId" class="state-message">请选择章节后查看写作辅助资料。</p>
+        <p v-if="!chapterId" class="state-message">请选择章节后查看写作辅助资料。</p>
         <ChapterOutlinePanel
           v-else
           :project-id="projectId"
@@ -75,6 +78,12 @@ const placeholderText = computed(() => {
 
       <ChapterCharacterPanel
         v-else-if="activeTab === 'characters'"
+        :project-id="projectId"
+        :chapter-id="chapterId"
+      />
+
+      <ChapterSettingPanel
+        v-else-if="activeTab === 'settings'"
         :project-id="projectId"
         :chapter-id="chapterId"
       />
@@ -99,6 +108,12 @@ const placeholderText = computed(() => {
 .panel-header {
   display: grid;
   gap: 10px;
+}
+
+.header-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .eyebrow,
