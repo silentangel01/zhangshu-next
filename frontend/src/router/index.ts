@@ -3,6 +3,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import ProjectCharactersPage from '@/pages/characters/ProjectCharactersPage.vue'
 import ProjectCluesPage from '@/pages/clues/ProjectCluesPage.vue'
 import ImportPage from '@/pages/imports/ImportPage.vue'
+import ProjectGraphPage from '@/pages/graph/ProjectGraphPage.vue'
 import ProjectOutlinePage from '@/pages/outlines/ProjectOutlinePage.vue'
 import ProjectDetailPage from '@/pages/projects/ProjectDetailPage.vue'
 import ProjectsPage from '@/pages/projects/ProjectsPage.vue'
@@ -45,6 +46,11 @@ const router = createRouter({
       path: '/projects/:projectId/clues',
       name: 'project-clues',
       component: ProjectCluesPage,
+    },
+    {
+      path: '/projects/:projectId/graph',
+      name: 'project-graph',
+      component: ProjectGraphPage,
     },
     {
       path: '/projects/:projectId/timeline',

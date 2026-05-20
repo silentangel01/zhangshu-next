@@ -423,6 +423,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
       </div>
       <div class="header-actions">
         <RouterLink class="outline-link" :to="`/projects/${projectId}/outlines`">打开完整大纲</RouterLink>
+        <RouterLink class="outline-link" :to="`/projects/${projectId}/graph`">打开关系图</RouterLink>
       </div>
     </header>
 

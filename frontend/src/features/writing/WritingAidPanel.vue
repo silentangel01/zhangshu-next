@@ -4,6 +4,7 @@ import { RouterLink } from 'vue-router'
 
 import ChapterCharacterPanel from '@/features/characters/ChapterCharacterPanel.vue'
 import ChapterCluePanel from '@/features/clues/ChapterCluePanel.vue'
+import ChapterGraphCard from '@/features/graph/ChapterGraphCard.vue'
 import ChapterOutlinePanel from '@/features/outlines/ChapterOutlinePanel.vue'
 import ChapterSettingPanel from '@/features/settings/ChapterSettingPanel.vue'
 import ChapterTimelinePanel from '@/features/timeline/ChapterTimelinePanel.vue'
@@ -137,7 +138,11 @@ const versionsTabMessage = computed(() => {
         </template>
       </section>
 
-      <p v-else class="state-message">关系图模块将保留为后续功能。</p>
+      <ChapterGraphCard
+        v-else-if="activeTab === 'graph'"
+        :project-id="projectId"
+        :chapter-id="chapterId"
+      />
     </section>
 
     <footer v-if="showManageAllLink" class="panel-footer">
@@ -237,5 +242,9 @@ h2 {
   font-size: 0.82rem;
   font-weight: 800;
   text-decoration: none;
+}
+
+.graph-link {
+  justify-self: end;
 }
 </style>
