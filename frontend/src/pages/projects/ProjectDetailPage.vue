@@ -7,6 +7,7 @@ import {
   deleteChapter,
   getChapter,
   listChapters,
+  reorderChapters,
   updateChapter,
 } from '@/entities/chapter/api'
 import {
@@ -22,6 +23,7 @@ import type {
 import type {
   Chapter,
   CreateChapterPayload,
+  ReorderChaptersPayload,
   UpdateChapterMetadataPayload,
 } from '@/entities/chapter/types'
 import { getProject } from '@/entities/project/api'
@@ -59,6 +61,8 @@ const isVersionBusy = ref(false)
 const errorMessage = ref('')
 const versionErrorMessage = ref('')
 const versionMessage = ref('')
+const treeMessage = ref('')
+const treeMessageTone = ref<'success' | 'warning'>('success')
 const showCreateVolumeDialog = ref(false)
 const showCreateChapterDialog = ref(false)
 
@@ -84,6 +88,7 @@ watch(projectId, () => {
   chapterVersions.value = []
   previewVersion.value = null
   isEditorDirty.value = false
+  treeMessage.value = ''
   createChapterVolumeId.value = null
   void loadProjectWorkspace()
 })
@@ -231,6 +236,27 @@ async function handleDeleteChapter(chapter: Chapter) {
     }
     await refreshVolumesAndChapters()
   }, '删除章节失败。')
+}
+
+async function handleReorderChapters(payload: ReorderChaptersPayload) {
+  if (!projectId.value) {
+    return
+  }
+
+  treeMessage.value = ''
+
+  await saveChange(async () => {
+    const result = await reorderChapters(projectId.value, payload)
+    await refreshVolumesAndChapters()
+
+    if (result.warnings.length > 0) {
+      treeMessageTone.value = 'warning'
+      treeMessage.value = result.warnings.join(' ')
+    } else {
+      treeMessageTone.value = 'success'
+      treeMessage.value = '章节顺序已更新'
+    }
+  }, '章节移动失败，请重试')
 }
 
 async function handleSelectChapter(chapter: Chapter) {
@@ -418,6 +444,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
           :volumes="sortedVolumes"
           :chapters="sortedChapters"
           :selected-chapter-id="selectedChapter?.id ?? null"
+          :is-reordering="isSaving"
           @select-chapter="handleSelectChapter"
           @create-volume="handleCreateVolumeRequest"
           @create-chapter="handleCreateChapterRequest"
@@ -425,7 +452,9 @@ function getErrorMessage(error: unknown, fallback: string): string {
           @delete-volume="handleDeleteVolume"
           @edit-chapter="editingChapter = $event"
           @delete-chapter="handleDeleteChapter"
+          @reorder-chapters="handleReorderChapters"
         />
+        <p v-if="treeMessage" class="tree-message" :class="treeMessageTone">{{ treeMessage }}</p>
       </aside>
 
       <section class="detail-panel">
@@ -666,6 +695,20 @@ h2 {
 .sidebar {
   display: grid;
   gap: 14px;
+}
+
+.tree-message {
+  margin: -6px 2px 0;
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.tree-message.success {
+  color: #2563eb;
+}
+
+.tree-message.warning {
+  color: #b45309;
 }
 
 .detail-panel > article {

@@ -1,6 +1,12 @@
 import { apiRequest } from '@/shared/api/client'
 
-import type { Chapter, CreateChapterPayload, UpdateChapterPayload } from './types'
+import type {
+  Chapter,
+  CreateChapterPayload,
+  ReorderChaptersPayload,
+  ReorderChaptersResponse,
+  UpdateChapterPayload,
+} from './types'
 
 export function listChapters(projectId: string): Promise<Chapter[]> {
   return apiRequest<Chapter[]>(`/api/projects/${projectId}/chapters`)
@@ -27,5 +33,15 @@ export function updateChapter(chapterId: string, payload: UpdateChapterPayload):
 export function deleteChapter(chapterId: string): Promise<Chapter | void> {
   return apiRequest<Chapter | void>(`/api/chapters/${chapterId}`, {
     method: 'DELETE',
+  })
+}
+
+export function reorderChapters(
+  projectId: string,
+  payload: ReorderChaptersPayload,
+): Promise<ReorderChaptersResponse> {
+  return apiRequest<ReorderChaptersResponse>(`/api/projects/${projectId}/chapters/reorder`, {
+    method: 'PATCH',
+    body: payload,
   })
 }
