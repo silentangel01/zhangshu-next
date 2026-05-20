@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch } from 'vue'
-import { RouterLink } from 'vue-router'
 
 import {
   addChapterClue,
@@ -13,6 +12,8 @@ import { chapterClueRelationLabels } from '@/entities/chapter-clue/types'
 import { listProjectClues } from '@/entities/clue/api'
 import type { Clue } from '@/entities/clue/types'
 import { clueImportanceLabels, clueStatusLabels, clueVisibilityLabels } from '@/entities/clue/types'
+import { listChapters } from '@/entities/chapter/api'
+import type { Chapter } from '@/entities/chapter/types'
 
 const props = defineProps<{
   projectId: string
@@ -21,11 +22,13 @@ const props = defineProps<{
 
 const links = ref<ChapterClueLink[]>([])
 const projectClues = ref<Clue[]>([])
+const chapters = ref<Chapter[]>([])
 const isLoading = ref(false)
 const isSaving = ref(false)
 const errorMessage = ref('')
 const showBindForm = ref(false)
-const editingLinkId = ref('')
+const selectedLinkId = ref<string | null>(null)
+const selectedLink = ref<ChapterClueLink | null>(null)
 
 const relationTypes: ChapterClueRelationType[] = ['setup', 'mention', 'develop', 'payoff', 'related']
 
@@ -40,6 +43,8 @@ const editForm = reactive({
   note: '',
 })
 
+const chapterTitleMap = ref<Record<string, string>>({})
+
 onMounted(() => {
   void refreshPanel()
 })
@@ -48,7 +53,8 @@ watch(
   () => props.chapterId,
   () => {
     resetForm()
-    editingLinkId.value = ''
+    selectedLinkId.value = null
+    selectedLink.value = null
     void refreshPanel()
   },
 )
@@ -57,6 +63,7 @@ async function refreshPanel() {
   if (!props.chapterId) {
     links.value = []
     await loadProjectClues()
+    await loadProjectChapters()
     return
   }
 
@@ -64,8 +71,16 @@ async function refreshPanel() {
   errorMessage.value = ''
 
   try {
-    const [chapterLinks] = await Promise.all([listChapterClues(props.chapterId), loadProjectClues()])
+    const [chapterLinks] = await Promise.all([
+      listChapterClues(props.chapterId),
+      loadProjectClues(),
+      loadProjectChapters(),
+    ])
     links.value = chapterLinks
+    selectedLink.value = chapterLinks.find((link) => link.id === selectedLinkId.value) ?? null
+    if (!selectedLink.value) {
+      selectedLinkId.value = null
+    }
   } catch (error) {
     void error
     errorMessage.value = '加载本章伏笔失败。'
@@ -79,6 +94,37 @@ async function loadProjectClues() {
     return
   }
   projectClues.value = await listProjectClues(props.projectId)
+}
+
+async function loadProjectChapters() {
+  if (!props.projectId) {
+    return
+  }
+  const projectChapters = await listChapters(props.projectId)
+  chapters.value = projectChapters
+  chapterTitleMap.value = projectChapters.reduce<Record<string, string>>((acc, chapter) => {
+    acc[chapter.id] = chapter.title
+    return acc
+  }, {})
+}
+
+function getChapterTitle(chapterId: string | null) {
+  if (!chapterId) {
+    return '未绑定'
+  }
+  return chapterTitleMap.value[chapterId] ?? '未知章节'
+}
+
+function selectLink(link: ChapterClueLink) {
+  selectedLinkId.value = link.id
+  selectedLink.value = link
+  editForm.relation_type = link.relation_type
+  editForm.note = link.note
+}
+
+function backToList() {
+  selectedLinkId.value = null
+  selectedLink.value = null
 }
 
 async function handleAddLink() {
@@ -106,23 +152,21 @@ async function handleAddLink() {
   }
 }
 
-function startEdit(link: ChapterClueLink) {
-  editingLinkId.value = link.id
-  editForm.relation_type = link.relation_type
-  editForm.note = link.note
-}
+async function handleUpdateLink() {
+  if (!selectedLink.value) {
+    return
+  }
 
-async function handleUpdateLink(link: ChapterClueLink) {
   isSaving.value = true
   errorMessage.value = ''
 
   try {
-    await updateChapterClue(link.id, {
+    const updated = await updateChapterClue(selectedLink.value.id, {
       relation_type: editForm.relation_type,
       note: editForm.note,
     })
-    editingLinkId.value = ''
-    await refreshPanel()
+    links.value = links.value.map((link) => (link.id === updated.id ? updated : link))
+    selectedLink.value = updated
   } catch (error) {
     void error
     errorMessage.value = '更新伏笔关联失败。'
@@ -143,6 +187,9 @@ async function handleRemoveLink(link: ChapterClueLink) {
   try {
     await deleteChapterClue(link.id)
     await refreshPanel()
+    if (selectedLinkId.value === link.id) {
+      backToList()
+    }
   } catch (error) {
     void error
     errorMessage.value = '移除伏笔关联失败。'
@@ -163,20 +210,28 @@ function resetForm() {
     <header class="panel-header">
       <div>
         <p class="eyebrow">本章伏笔</p>
-        <h2>伏笔追踪</h2>
+        <h2>伏笔卡</h2>
       </div>
-      <RouterLink class="library-link" :to="`/projects/${projectId}/clues`">打开伏笔库</RouterLink>
+      <button class="secondary-button" type="button" @click="showBindForm = !showBindForm">
+        {{ showBindForm ? '收起绑定' : '绑定伏笔' }}
+      </button>
     </header>
+
+    <div class="lifecycle-line" aria-label="伏笔生命周期">
+      <span>计划中</span>
+      <span>→</span>
+      <span>已埋设</span>
+      <span>→</span>
+      <span>推进中</span>
+      <span>→</span>
+      <span>已回收</span>
+      <span>→</span>
+      <span>已废弃</span>
+    </div>
 
     <p v-if="!chapterId" class="state-message">请选择章节后查看本章伏笔。</p>
 
     <template v-else>
-      <div class="panel-actions">
-        <button class="secondary-button" type="button" @click="showBindForm = !showBindForm">
-          {{ showBindForm ? '收起绑定' : '绑定伏笔' }}
-        </button>
-      </div>
-
       <form v-if="showBindForm" class="bind-form" @submit.prevent="handleAddLink">
         <label>
           <span>伏笔</span>
@@ -189,7 +244,7 @@ function resetForm() {
         </label>
 
         <label>
-          <span>关系类型</span>
+          <span>本章作用</span>
           <select v-model="form.relation_type">
             <option v-for="relation in relationTypes" :key="relation" :value="relation">
               {{ chapterClueRelationLabels[relation] }}
@@ -199,64 +254,112 @@ function resetForm() {
 
         <label>
           <span>备注</span>
-          <textarea v-model="form.note" rows="3" placeholder="例如：本章首次埋下旧地图线索。" />
+          <textarea v-model="form.note" rows="3" placeholder="例如：本章首次埋下旧地图线索。"></textarea>
         </label>
 
         <button class="primary-button" type="submit" :disabled="isSaving || !form.clue_id">
-          {{ isSaving ? '正在保存…' : '保存绑定' }}
+          {{ isSaving ? '正在保存……' : '保存绑定' }}
         </button>
       </form>
 
-      <p v-if="isLoading" class="state-message">正在加载本章伏笔…</p>
+      <p v-if="isLoading" class="state-message">正在加载本章伏笔……</p>
       <p v-else-if="errorMessage" class="error-message">{{ errorMessage }}</p>
-      <p v-else-if="links.length === 0" class="state-message">本章尚未绑定伏笔。</p>
 
-      <ul v-else class="clue-list">
-        <li v-for="link in links" :key="link.id" class="clue-card">
-          <header>
+      <template v-else-if="selectedLink">
+        <article class="clue-card detail-card">
+          <header class="clue-header">
             <div>
-              <h3>{{ link.clue.title }}</h3>
-              <p class="meta">
+              <p class="clue-eyebrow">线索描述</p>
+              <h3>{{ selectedLink.clue.title }}</h3>
+            </div>
+            <button class="text-button" type="button" @click="backToList">返回列表</button>
+          </header>
+
+          <div class="status-pipeline">
+            <span>{{ clueStatusLabels[selectedLink.clue.status] }}</span>
+            <span>·</span>
+            <span>{{ clueVisibilityLabels[selectedLink.clue.visibility] }}</span>
+            <span>·</span>
+            <span>{{ clueImportanceLabels[selectedLink.clue.importance] }}</span>
+          </div>
+
+          <div class="summary-grid">
+            <div>
+              <span class="field-label">埋设章节</span>
+              <strong>{{ getChapterTitle(selectedLink.clue.setup_chapter_id) }}</strong>
+            </div>
+            <div>
+              <span class="field-label">回收章节</span>
+              <strong>{{ getChapterTitle(selectedLink.clue.payoff_chapter_id) }}</strong>
+            </div>
+          </div>
+
+          <section class="section-block">
+            <p class="section-label">线索描述</p>
+            <p v-if="selectedLink.clue.description" class="text-block">{{ selectedLink.clue.description }}</p>
+            <p v-else class="muted-block">暂无描述。</p>
+          </section>
+
+          <section class="section-block">
+            <p class="section-label">回收计划</p>
+            <p v-if="selectedLink.clue.payoff_plan" class="text-block">{{ selectedLink.clue.payoff_plan }}</p>
+            <p v-else class="muted-block">暂无回收计划。</p>
+          </section>
+
+          <section class="section-block">
+            <p class="section-label">本章作用</p>
+            <div class="relation-grid">
+              <label>
+                <span>关系类型</span>
+                <select v-model="editForm.relation_type">
+                  <option v-for="relation in relationTypes" :key="relation" :value="relation">
+                    {{ chapterClueRelationLabels[relation] }}
+                  </option>
+                </select>
+              </label>
+              <label>
+                <span>备注</span>
+                <textarea v-model="editForm.note" rows="3"></textarea>
+              </label>
+            </div>
+
+            <footer class="relation-actions">
+              <button class="secondary-button" type="button" :disabled="isSaving" @click="handleUpdateLink">
+                保存关联
+              </button>
+              <button class="danger-button" type="button" :disabled="isSaving" @click="handleRemoveLink(selectedLink)">
+                移除
+              </button>
+            </footer>
+          </section>
+        </article>
+      </template>
+
+      <template v-else>
+        <p v-if="links.length === 0" class="state-message">本章暂无伏笔</p>
+
+        <ul v-else class="clue-list">
+          <li v-for="link in links" :key="link.id">
+            <button
+              class="clue-card list-card"
+              type="button"
+              :class="{ active: selectedLinkId === link.id }"
+              @click="selectLink(link)"
+            >
+              <span class="name">{{ link.clue.title }}</span>
+              <span class="meta">
                 {{ chapterClueRelationLabels[link.relation_type] }} ·
                 {{ clueStatusLabels[link.clue.status] }} ·
                 {{ clueVisibilityLabels[link.clue.visibility] }} ·
                 {{ clueImportanceLabels[link.clue.importance] }}
-              </p>
-            </div>
-            <div class="card-actions">
-              <button class="secondary-button compact" type="button" :disabled="isSaving" @click="startEdit(link)">
-                编辑
-              </button>
-              <button class="remove-button compact" type="button" :disabled="isSaving" @click="handleRemoveLink(link)">
-                移除
-              </button>
-            </div>
-          </header>
-
-          <p v-if="link.clue.description" class="summary">{{ link.clue.description }}</p>
-          <p v-if="link.clue.payoff_plan" class="summary">回收计划：{{ link.clue.payoff_plan }}</p>
-          <p v-if="link.note" class="note">备注：{{ link.note }}</p>
-
-          <form v-if="editingLinkId === link.id" class="edit-form" @submit.prevent="handleUpdateLink(link)">
-            <label>
-              <span>关系类型</span>
-              <select v-model="editForm.relation_type">
-                <option v-for="relation in relationTypes" :key="relation" :value="relation">
-                  {{ chapterClueRelationLabels[relation] }}
-                </option>
-              </select>
-            </label>
-            <label>
-              <span>备注</span>
-              <textarea v-model="editForm.note" rows="3" />
-            </label>
-            <div class="edit-actions">
-              <button class="secondary-button" type="button" @click="editingLinkId = ''">取消</button>
-              <button class="primary-button" type="submit" :disabled="isSaving">保存</button>
-            </div>
-          </form>
-        </li>
-      </ul>
+              </span>
+              <span class="summary">{{ link.clue.description || '暂无描述' }}</span>
+              <span class="chapter-line">埋设：{{ getChapterTitle(link.clue.setup_chapter_id) }}</span>
+              <span class="chapter-line">回收：{{ getChapterTitle(link.clue.payoff_chapter_id) }}</span>
+            </button>
+          </li>
+        </ul>
+      </template>
     </template>
   </section>
 </template>
@@ -268,8 +371,8 @@ function resetForm() {
 }
 
 .panel-header,
-.clue-card header,
-.edit-actions {
+.clue-header,
+.relation-actions {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -296,35 +399,139 @@ h2 {
 
 h3 {
   color: #111827;
-  font-size: 0.96rem;
+  font-size: 0.98rem;
 }
 
-.library-link {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
+.secondary-button,
+.danger-button,
+.text-button,
+.primary-button {
   min-height: 34px;
   border: 1px solid #cfd7e3;
   border-radius: 6px;
   padding: 0 10px;
   background: #ffffff;
-  color: #2563eb;
-  font-size: 0.86rem;
+  font: inherit;
+  font-size: 0.8rem;
   font-weight: 800;
-  text-decoration: none;
+  cursor: pointer;
+}
+
+.secondary-button,
+.text-button {
+  color: #2563eb;
+}
+
+.danger-button {
+  border-color: #fecaca;
+  color: #b42318;
+}
+
+.primary-button {
+  border-color: transparent;
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.lifecycle-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: #0f172a;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.lifecycle-line span {
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #3730a3;
 }
 
 .bind-form,
-.edit-form {
+.detail-card,
+.clue-card {
   display: grid;
-  gap: 10px;
-  border: 1px solid #edf0f5;
+  gap: 12px;
+  border: 1px solid #d8dee9;
   border-radius: 8px;
-  padding: 12px;
+  padding: 14px;
   background: #fbfcfe;
 }
 
-label {
+.detail-card {
+  background: #ffffff;
+}
+
+.clue-eyebrow,
+.field-label,
+.section-label {
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.status-pipeline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  color: #1e293b;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.status-pipeline span {
+  padding: 3px 0;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 10px;
+}
+
+.summary-grid div {
+  border: 1px solid #edf0f5;
+  border-radius: 8px;
+  padding: 10px;
+  background: #fbfcfe;
+}
+
+.field-label {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.summary-grid strong {
+  color: #111827;
+  font-size: 0.9rem;
+}
+
+.section-block {
+  display: grid;
+  gap: 8px;
+}
+
+.text-block,
+.muted-block {
+  color: #334155;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.muted-block {
+  color: #94a3b8;
+}
+
+.relation-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.relation-grid label,
+.bind-form label {
   display: grid;
   gap: 6px;
   color: #4b5563;
@@ -348,6 +555,41 @@ textarea {
   line-height: 1.6;
 }
 
+.clue-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.list-card {
+  width: 100%;
+  text-align: left;
+}
+
+.list-card.active {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.name {
+  color: #111827;
+  font-weight: 800;
+}
+
+.meta,
+.summary,
+.chapter-line {
+  color: #64748b;
+  font-size: 0.82rem;
+}
+
+.summary,
+.chapter-line {
+  line-height: 1.6;
+}
+
 .state-message,
 .error-message {
   border: 1px dashed #cbd5e1;
@@ -362,77 +604,7 @@ textarea {
   color: #b42318;
 }
 
-.clue-list {
-  display: grid;
-  gap: 10px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.clue-card {
-  display: grid;
-  gap: 8px;
-  border: 1px solid #edf0f5;
-  border-radius: 8px;
-  padding: 12px;
-  background: #ffffff;
-}
-
-.card-actions {
-  display: flex;
-  flex: 0 0 auto;
-  gap: 6px;
-}
-
-.meta {
-  margin-top: 4px;
-  color: #64748b;
-  font-size: 0.82rem;
-  font-weight: 800;
-}
-
-.summary,
-.note {
-  color: #374151;
-  line-height: 1.7;
-  white-space: pre-wrap;
-}
-
-button {
-  min-height: 34px;
-  border-radius: 6px;
-  border: 1px solid transparent;
-  padding: 0 10px;
-  font: inherit;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-button:disabled {
-  cursor: wait;
-  opacity: 0.65;
-}
-
-.primary-button {
-  background: #2563eb;
-  color: #ffffff;
-}
-
-.secondary-button {
-  border-color: #cfd7e3;
-  background: #ffffff;
-  color: #374151;
-}
-
-.remove-button {
-  border-color: #fecaca;
-  background: #fff7f7;
-  color: #b42318;
-}
-
-.compact {
-  min-height: 30px;
-  padding: 0 8px;
+.relation-actions {
+  justify-content: flex-end;
 }
 </style>

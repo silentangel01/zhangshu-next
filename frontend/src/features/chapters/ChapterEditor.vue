@@ -32,7 +32,6 @@ type SaveStatus =
 
 const localContent = ref(props.chapter.content)
 const originalContent = ref(props.chapter.content)
-const savedWordCount = ref(props.chapter.word_count)
 const lastSavedAt = ref(props.chapter.updated_at)
 const isManualSaving = ref(false)
 const isAutosaving = ref(false)
@@ -44,6 +43,7 @@ let isApplyingLoadedContent = false
 const localWordCount = computed(() => calculateContentWordCount(localContent.value))
 const hasUnsavedChanges = computed(() => localContent.value !== originalContent.value)
 const isSaveInProgress = computed(() => isManualSaving.value || isAutosaving.value)
+const formattedLastSavedAt = computed(() => formatDateTime(lastSavedAt.value))
 const saveStatusText = computed(() => {
   if (isManualSaving.value) {
     return '正在保存……'
@@ -71,7 +71,6 @@ const saveStatusText = computed(() => {
 
   return statusText[saveStatus.value]
 })
-const formattedLastSavedAt = computed(() => formatDateTime(lastSavedAt.value))
 
 watch(
   () => props.chapter,
@@ -157,7 +156,11 @@ async function runAutosave() {
     errorMessage.value = '自动保存失败，正文仍保留在本地编辑框中。'
   } finally {
     isAutosaving.value = false
-    if (hasUnsavedChanges.value && saveStatus.value !== 'autosave-failed' && saveStatus.value !== 'offline') {
+    if (
+      hasUnsavedChanges.value &&
+      saveStatus.value !== 'autosave-failed' &&
+      saveStatus.value !== 'offline'
+    ) {
       scheduleAutosave()
     }
   }
@@ -174,7 +177,6 @@ async function saveCurrentContent(source: 'manual' | 'autosave') {
     save_source: source,
   })
 
-  savedWordCount.value = savedChapter.word_count
   lastSavedAt.value = savedChapter.updated_at
 
   if (localContent.value === contentToSave) {
@@ -198,7 +200,6 @@ function applyLoadedChapter(chapter: Chapter) {
   cancelPendingAutosave()
   isApplyingLoadedContent = true
   errorMessage.value = ''
-  savedWordCount.value = chapter.word_count
   lastSavedAt.value = chapter.updated_at
   originalContent.value = chapter.content
 
@@ -257,15 +258,15 @@ function isNetworkLikeError(error: unknown): boolean {
 <template>
   <section class="chapter-editor" aria-label="章节编辑器">
     <header class="editor-toolbar">
-      <div class="word-counts">
-        <span>当前字数：{{ localWordCount }}</span>
-        <span>已保存字数：{{ savedWordCount }}</span>
-        <span>上次保存：{{ formattedLastSavedAt }}</span>
+      <div class="editor-title">
+        <h2>{{ chapter.title }}</h2>
+        <p class="word-count">当前字数：{{ localWordCount }}</p>
       </div>
       <div class="save-actions">
         <span class="status-label" :class="{ warning: hasUnsavedChanges || errorMessage }">
           {{ saveStatusText }}
         </span>
+        <small class="save-note">上次保存：{{ formattedLastSavedAt }}</small>
         <button
           class="save-button"
           type="button"
@@ -299,23 +300,35 @@ function isNetworkLikeError(error: unknown): boolean {
 
 .editor-toolbar {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
 }
 
-.word-counts,
+.editor-title,
 .save-actions {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 6px;
 }
 
-.word-counts {
+.editor-title h2 {
+  margin: 0;
+  color: #111827;
+  font-size: 1.1rem;
+  line-height: 1.4;
+}
+
+.word-count,
+.save-note {
+  margin: 0;
   color: #64748b;
-  font-size: 0.9rem;
+  font-size: 0.82rem;
   font-weight: 700;
+}
+
+.save-actions {
+  align-items: flex-end;
 }
 
 .status-label {
@@ -372,12 +385,9 @@ function isNetworkLikeError(error: unknown): boolean {
 
 .error-message {
   margin: 0;
+  color: #b42318;
   font-size: 0.9rem;
   font-weight: 800;
-}
-
-.error-message {
-  color: #b42318;
 }
 
 @media (max-width: 720px) {

@@ -21,7 +21,6 @@ import type {
 } from '@/entities/chapter-version/types'
 import type {
   Chapter,
-  ChapterStatus,
   CreateChapterPayload,
   UpdateChapterMetadataPayload,
 } from '@/entities/chapter/types'
@@ -31,7 +30,6 @@ import { createVolume, deleteVolume, listVolumes, updateVolume } from '@/entitie
 import type { CreateVolumePayload, UpdateVolumePayload, Volume } from '@/entities/volume/types'
 import ChapterTree from '@/features/chapters/ChapterTree.vue'
 import ChapterEditor from '@/features/chapters/ChapterEditor.vue'
-import ChapterVersionPanel from '@/features/chapters/ChapterVersionPanel.vue'
 import ChapterVersionPreviewDialog from '@/features/chapters/ChapterVersionPreviewDialog.vue'
 import CreateChapterDialog from '@/features/chapters/CreateChapterDialog.vue'
 import EditChapterDialog from '@/features/chapters/EditChapterDialog.vue'
@@ -50,6 +48,7 @@ const previewVersion = ref<ChapterVersionDetail | null>(null)
 const selectedChapter = ref<Chapter | null>(null)
 const editingVolume = ref<Volume | null>(null)
 const editingChapter = ref<Chapter | null>(null)
+const createChapterVolumeId = ref<string | null>(null)
 const chapterEditor = ref<InstanceType<typeof ChapterEditor> | null>(null)
 const isLoading = ref(false)
 const isSaving = ref(false)
@@ -85,6 +84,7 @@ watch(projectId, () => {
   chapterVersions.value = []
   previewVersion.value = null
   isEditorDirty.value = false
+  createChapterVolumeId.value = null
   void loadProjectWorkspace()
 })
 
@@ -175,8 +175,18 @@ async function handleCreateChapter(payload: CreateChapterPayload) {
   await saveChange(async () => {
     await createChapter(projectId.value, payload)
     showCreateChapterDialog.value = false
+    createChapterVolumeId.value = null
     await refreshVolumesAndChapters()
   }, '新建章节失败。')
+}
+
+function handleCreateVolumeRequest() {
+  showCreateVolumeDialog.value = true
+}
+
+function handleCreateChapterRequest(volumeId: string | null) {
+  createChapterVolumeId.value = volumeId
+  showCreateChapterDialog.value = true
 }
 
 async function handleEditChapter(payload: UpdateChapterMetadataPayload) {
@@ -375,16 +385,6 @@ function getErrorMessage(error: unknown, fallback: string): string {
   return fallback
 }
 
-function getStatusLabel(status: ChapterStatus): string {
-  const labels: Record<ChapterStatus, string> = {
-    draft: '草稿',
-    writing: '写作中',
-    revised: '已修订',
-    completed: '已完成',
-  }
-
-  return labels[status]
-}
 </script>
 
 <template>
@@ -413,19 +413,14 @@ function getStatusLabel(status: ChapterStatus): string {
           <RouterLink class="nav-link" :to="`/projects/${projectId}/outlines`">完整大纲</RouterLink>
           <RouterLink class="nav-link" :to="`/projects/${projectId}/characters`">人物库</RouterLink>
         </nav>
-        <div class="sidebar-actions">
-          <button class="secondary-button" type="button" :disabled="isSaving" @click="showCreateVolumeDialog = true">
-            新建分卷
-          </button>
-          <button class="primary-button" type="button" :disabled="isSaving" @click="showCreateChapterDialog = true">
-            新建章节
-          </button>
-        </div>
         <ChapterTree
+          :project-title="project?.title || '作品标题'"
           :volumes="sortedVolumes"
           :chapters="sortedChapters"
           :selected-chapter-id="selectedChapter?.id ?? null"
           @select-chapter="handleSelectChapter"
+          @create-volume="handleCreateVolumeRequest"
+          @create-chapter="handleCreateChapterRequest"
           @edit-volume="editingVolume = $event"
           @delete-volume="handleDeleteVolume"
           @edit-chapter="editingChapter = $event"
@@ -440,23 +435,9 @@ function getStatusLabel(status: ChapterStatus): string {
               <p class="eyebrow">当前章节</p>
               <h2>{{ selectedChapter.title }}</h2>
             </div>
-            <span class="version">v{{ selectedChapter.version }}</span>
           </header>
 
-          <dl class="metadata-grid">
-            <div>
-              <dt>状态</dt>
-              <dd>{{ getStatusLabel(selectedChapter.status) }}</dd>
-            </div>
-            <div>
-              <dt>已保存字数</dt>
-              <dd>{{ selectedChapter.word_count }}</dd>
-            </div>
-            <div>
-              <dt>更新时间</dt>
-              <dd>{{ formatDate(selectedChapter.updated_at) }}</dd>
-            </div>
-          </dl>
+          <p class="chapter-hint">在右侧查看大纲、人物、设定、伏笔、时间轴和版本。</p>
 
           <div v-if="isChapterLoading" class="chapter-loading">正在加载章节……</div>
 
@@ -468,17 +449,6 @@ function getStatusLabel(status: ChapterStatus): string {
             @saved="handleChapterSaved"
           />
 
-          <p v-if="versionMessage" class="version-message">{{ versionMessage }}</p>
-
-          <ChapterVersionPanel
-            :versions="chapterVersions"
-            :is-loading="isVersionLoading"
-            :error-message="versionErrorMessage"
-            :is-busy="isVersionBusy"
-            @create-snapshot="handleCreateVersionSnapshot"
-            @view-version="handleViewVersion"
-            @restore-version="handleRestoreVersion"
-          />
         </article>
 
         <article v-else class="project-summary">
@@ -517,7 +487,18 @@ function getStatusLabel(status: ChapterStatus): string {
       </section>
 
       <aside class="aid-sidebar">
-        <WritingAidPanel :project-id="projectId" :chapter-id="selectedChapter?.id ?? null" />
+        <WritingAidPanel
+          :project-id="projectId"
+          :chapter-id="selectedChapter?.id ?? null"
+          :versions="chapterVersions"
+          :version-error-message="versionErrorMessage"
+          :version-message="versionMessage"
+          :version-is-loading="isVersionLoading"
+          :version-is-busy="isVersionBusy"
+          @create-snapshot="handleCreateVersionSnapshot"
+          @view-version="handleViewVersion"
+          @restore-version="handleRestoreVersion"
+        />
       </aside>
     </section>
 
@@ -537,6 +518,7 @@ function getStatusLabel(status: ChapterStatus): string {
     <CreateChapterDialog
       v-if="showCreateChapterDialog"
       :volumes="sortedVolumes"
+      :initial-volume-id="createChapterVolumeId"
       @close="showCreateChapterDialog = false"
       @submit="handleCreateChapter"
     />
@@ -764,6 +746,13 @@ dd {
   padding: 16px;
   background: #fbfcfe;
   color: #64748b;
+}
+
+.chapter-hint {
+  margin: 8px 0 0;
+  color: #64748b;
+  font-size: 0.88rem;
+  line-height: 1.6;
 }
 
 .version {

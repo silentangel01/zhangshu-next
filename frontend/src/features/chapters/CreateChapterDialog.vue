@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { reactive, ref, watch } from 'vue'
 
 import type { ChapterStatus, CreateChapterPayload } from '@/entities/chapter/types'
 import type { Volume } from '@/entities/volume/types'
 
-defineProps<{
+const props = defineProps<{
   volumes: Volume[]
+  initialVolumeId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -23,6 +24,14 @@ const form = reactive({
 })
 
 const titleError = ref('')
+
+watch(
+  () => props.initialVolumeId,
+  (volumeId) => {
+    form.volume_id = volumeId ?? ''
+  },
+  { immediate: true },
+)
 
 function handleSubmit() {
   const title = form.title.trim()

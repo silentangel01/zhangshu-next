@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch } from 'vue'
-import { RouterLink } from 'vue-router'
 
 import {
   addChapterCharacter,
   deleteChapterCharacter,
   listChapterCharacters,
+  updateChapterCharacter,
 } from '@/entities/chapter-character/api'
 import type {
   ChapterCharacterLink,
@@ -14,7 +14,11 @@ import type {
 import { chapterCharacterRelationLabels } from '@/entities/chapter-character/types'
 import { listProjectCharacters } from '@/entities/character/api'
 import type { Character } from '@/entities/character/types'
-import { characterRoleLabels } from '@/entities/character/types'
+import {
+  characterImportanceLabels,
+  characterRoleLabels,
+  characterStatusLabels,
+} from '@/entities/character/types'
 
 const props = defineProps<{
   projectId: string
@@ -27,6 +31,7 @@ const isLoading = ref(false)
 const isSaving = ref(false)
 const errorMessage = ref('')
 const showBindForm = ref(false)
+const selectedLinkId = ref<string | null>(null)
 
 const relationTypes: ChapterCharacterRelationType[] = [
   'appears',
@@ -42,6 +47,13 @@ const form = reactive({
   note: '',
 })
 
+const editForm = reactive({
+  relation_type: 'appears' as ChapterCharacterRelationType,
+  note: '',
+})
+
+const selectedLink = ref<ChapterCharacterLink | null>(null)
+
 onMounted(() => {
   void refreshPanel()
 })
@@ -50,6 +62,8 @@ watch(
   () => props.chapterId,
   () => {
     resetForm()
+    selectedLinkId.value = null
+    selectedLink.value = null
     void refreshPanel()
   },
 )
@@ -70,6 +84,10 @@ async function refreshPanel() {
       loadProjectCharacters(),
     ])
     links.value = chapterLinks
+    selectedLink.value = chapterLinks.find((link) => link.id === selectedLinkId.value) ?? null
+    if (!selectedLink.value) {
+      selectedLinkId.value = null
+    }
   } catch (error) {
     void error
     errorMessage.value = '加载本章人物失败。'
@@ -83,6 +101,18 @@ async function loadProjectCharacters() {
     return
   }
   projectCharacters.value = await listProjectCharacters(props.projectId)
+}
+
+function selectLink(link: ChapterCharacterLink) {
+  selectedLinkId.value = link.id
+  selectedLink.value = link
+  editForm.relation_type = link.relation_type
+  editForm.note = link.note
+}
+
+function backToList() {
+  selectedLinkId.value = null
+  selectedLink.value = null
 }
 
 async function handleAddLink() {
@@ -110,6 +140,29 @@ async function handleAddLink() {
   }
 }
 
+async function handleUpdateLink() {
+  if (!selectedLink.value) {
+    return
+  }
+
+  isSaving.value = true
+  errorMessage.value = ''
+
+  try {
+    const updated = await updateChapterCharacter(selectedLink.value.id, {
+      relation_type: editForm.relation_type,
+      note: editForm.note,
+    })
+    links.value = links.value.map((link) => (link.id === updated.id ? updated : link))
+    selectedLink.value = updated
+  } catch (error) {
+    void error
+    errorMessage.value = '更新人物关联失败。'
+  } finally {
+    isSaving.value = false
+  }
+}
+
 async function handleRemoveLink(link: ChapterCharacterLink) {
   const confirmed = window.confirm('确认从本章移除该人物关联吗？')
   if (!confirmed) {
@@ -122,6 +175,9 @@ async function handleRemoveLink(link: ChapterCharacterLink) {
   try {
     await deleteChapterCharacter(link.id)
     await refreshPanel()
+    if (selectedLinkId.value === link.id) {
+      backToList()
+    }
   } catch (error) {
     void error
     errorMessage.value = '移除人物关联失败。'
@@ -142,20 +198,16 @@ function resetForm() {
     <header class="panel-header">
       <div>
         <p class="eyebrow">本章人物</p>
-        <h2>人物资料</h2>
+        <h2>人物卡</h2>
       </div>
-      <RouterLink class="library-link" :to="`/projects/${projectId}/characters`">打开人物库</RouterLink>
+      <button class="secondary-button" type="button" @click="showBindForm = !showBindForm">
+        {{ showBindForm ? '收起绑定' : '绑定人物' }}
+      </button>
     </header>
 
     <p v-if="!chapterId" class="state-message">请选择章节后查看本章人物。</p>
 
     <template v-else>
-      <div class="panel-actions">
-        <button class="secondary-button" type="button" @click="showBindForm = !showBindForm">
-          {{ showBindForm ? '收起绑定' : '绑定人物' }}
-        </button>
-      </div>
-
       <form v-if="showBindForm" class="bind-form" @submit.prevent="handleAddLink">
         <label>
           <span>人物</span>
@@ -168,7 +220,7 @@ function resetForm() {
         </label>
 
         <label>
-          <span>关系类型</span>
+          <span>本章关联</span>
           <select v-model="form.relation_type">
             <option v-for="relation in relationTypes" :key="relation" :value="relation">
               {{ chapterCharacterRelationLabels[relation] }}
@@ -178,7 +230,7 @@ function resetForm() {
 
         <label>
           <span>备注</span>
-          <textarea v-model="form.note" rows="3" placeholder="例如：本章首次正式出场。" />
+          <textarea v-model="form.note" rows="3" placeholder="例如：本章首次正面出场。"></textarea>
         </label>
 
         <button class="primary-button" type="submit" :disabled="isSaving || !form.character_id">
@@ -188,27 +240,99 @@ function resetForm() {
 
       <p v-if="isLoading" class="state-message">正在加载本章人物……</p>
       <p v-else-if="errorMessage" class="error-message">{{ errorMessage }}</p>
-      <p v-else-if="links.length === 0" class="state-message">本章尚未绑定人物。</p>
 
-      <ul v-else class="character-list">
-        <li v-for="link in links" :key="link.id" class="character-card">
-          <header>
+      <template v-else-if="selectedLink">
+        <article class="profile-card">
+          <header class="profile-header">
             <div>
-              <h3>{{ link.character.name }}</h3>
-              <p class="meta">
-                {{ characterRoleLabels[link.character.role] }} ·
-                {{ chapterCharacterRelationLabels[link.relation_type] }}
-              </p>
+              <p class="profile-eyebrow">人物小传摘要</p>
+              <h3>{{ selectedLink.character.name }}</h3>
             </div>
-            <button class="remove-button" type="button" :disabled="isSaving" @click="handleRemoveLink(link)">
-              移除
-            </button>
+            <button class="text-button" type="button" @click="backToList">返回列表</button>
           </header>
 
-          <p v-if="link.character.summary" class="summary">{{ link.character.summary }}</p>
-          <p v-if="link.note" class="note">备注：{{ link.note }}</p>
-        </li>
-      </ul>
+          <div class="profile-summary">
+            <div>
+              <span class="field-label">姓名</span>
+              <strong>{{ selectedLink.character.name }}</strong>
+            </div>
+            <div>
+              <span class="field-label">角色定位</span>
+              <strong>{{ characterRoleLabels[selectedLink.character.role] }}</strong>
+            </div>
+            <div>
+              <span class="field-label">所属势力</span>
+              <strong>{{ selectedLink.character.faction || '未设置' }}</strong>
+            </div>
+          </div>
+
+          <section class="profile-section">
+            <p class="section-label">基本信息</p>
+            <p v-if="selectedLink.character.summary" class="text-block">{{ selectedLink.character.summary }}</p>
+            <p v-else class="muted-block">暂无简介。</p>
+            <p class="tiny-meta">
+              {{ characterImportanceLabels[selectedLink.character.importance] }} ·
+              {{ characterStatusLabels[selectedLink.character.status] }}
+            </p>
+          </section>
+
+          <section class="profile-section">
+            <p class="section-label">人物小传</p>
+            <p v-if="selectedLink.character.biography" class="text-block">{{ selectedLink.character.biography }}</p>
+            <p v-else class="muted-block">暂无人物小传摘要。</p>
+          </section>
+
+          <section class="profile-section">
+            <p class="section-label">本章关联</p>
+            <div class="relation-grid">
+              <label>
+                <span>关系类型</span>
+                <select v-model="editForm.relation_type">
+                  <option v-for="relation in relationTypes" :key="relation" :value="relation">
+                    {{ chapterCharacterRelationLabels[relation] }}
+                  </option>
+                </select>
+              </label>
+              <label>
+                <span>备注</span>
+                <textarea v-model="editForm.note" rows="3"></textarea>
+              </label>
+            </div>
+
+            <footer class="relation-actions">
+              <button class="secondary-button" type="button" :disabled="isSaving" @click="handleUpdateLink">
+                保存关联
+              </button>
+              <button class="danger-button" type="button" :disabled="isSaving" @click="handleRemoveLink(selectedLink)">
+                移除
+              </button>
+            </footer>
+          </section>
+        </article>
+      </template>
+
+      <template v-else>
+        <p v-if="links.length === 0" class="state-message">本章暂无人物</p>
+
+        <ul v-else class="character-list">
+          <li v-for="link in links" :key="link.id">
+            <button
+              class="character-card"
+              type="button"
+              :class="{ active: selectedLinkId === link.id }"
+              @click="selectLink(link)"
+            >
+              <span class="name">{{ link.character.name }}</span>
+              <span class="meta">
+                {{ characterRoleLabels[link.character.role] }} ·
+                {{ chapterCharacterRelationLabels[link.relation_type] }}
+              </span>
+              <span v-if="link.character.faction" class="faction">{{ link.character.faction }}</span>
+              <span class="summary">{{ link.character.summary || '暂无简介' }}</span>
+            </button>
+          </li>
+        </ul>
+      </template>
     </template>
   </section>
 </template>
@@ -219,7 +343,9 @@ function resetForm() {
   gap: 12px;
 }
 
-.panel-header {
+.panel-header,
+.profile-header,
+.relation-actions {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -246,38 +372,106 @@ h2 {
 
 h3 {
   color: #111827;
-  font-size: 0.96rem;
+  font-size: 1rem;
 }
 
-.library-link {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
+.secondary-button,
+.danger-button,
+.text-button {
   min-height: 34px;
   border: 1px solid #cfd7e3;
   border-radius: 6px;
   padding: 0 10px;
   background: #ffffff;
-  color: #2563eb;
-  font-size: 0.86rem;
+  font: inherit;
+  font-size: 0.8rem;
   font-weight: 800;
-  text-decoration: none;
+  cursor: pointer;
 }
 
-.panel-actions {
-  display: flex;
+.secondary-button,
+.text-button {
+  color: #2563eb;
 }
 
-.bind-form {
+.danger-button {
+  border-color: #fecaca;
+  color: #b42318;
+}
+
+.bind-form,
+.profile-card {
   display: grid;
-  gap: 10px;
-  border: 1px solid #edf0f5;
+  gap: 12px;
+  border: 1px solid #d8dee9;
   border-radius: 8px;
-  padding: 12px;
+  padding: 14px;
   background: #fbfcfe;
 }
 
-label {
+.profile-card {
+  background: #ffffff;
+}
+
+.profile-eyebrow,
+.field-label,
+.section-label,
+.tiny-meta {
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.profile-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 10px;
+}
+
+.profile-summary div {
+  border: 1px solid #edf0f5;
+  border-radius: 8px;
+  padding: 10px;
+  background: #fbfcfe;
+}
+
+.field-label {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.profile-summary strong {
+  color: #111827;
+  font-size: 0.9rem;
+}
+
+.profile-section {
+  display: grid;
+  gap: 8px;
+}
+
+.section-label {
+  color: #0f172a;
+}
+
+.text-block,
+.muted-block {
+  color: #334155;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.muted-block {
+  color: #94a3b8;
+}
+
+.relation-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.relation-grid label,
+.bind-form label {
   display: grid;
   gap: 6px;
   color: #4b5563;
@@ -301,6 +495,46 @@ textarea {
   line-height: 1.6;
 }
 
+.character-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.character-card {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  border: 1px solid #d8dee9;
+  border-radius: 8px;
+  padding: 12px;
+  background: #ffffff;
+  text-align: left;
+}
+
+.character-card.active {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.name {
+  color: #111827;
+  font-weight: 800;
+}
+
+.meta,
+.faction,
+.summary {
+  color: #64748b;
+  font-size: 0.82rem;
+}
+
+.summary {
+  line-height: 1.6;
+}
+
 .state-message,
 .error-message {
   border: 1px dashed #cbd5e1;
@@ -315,74 +549,7 @@ textarea {
   color: #b42318;
 }
 
-.character-list {
-  display: grid;
-  gap: 10px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.character-card {
-  display: grid;
-  gap: 8px;
-  border: 1px solid #edf0f5;
-  border-radius: 8px;
-  padding: 12px;
-  background: #ffffff;
-}
-
-.character-card header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.meta {
-  margin-top: 4px;
-  color: #64748b;
-  font-size: 0.82rem;
-  font-weight: 800;
-}
-
-.summary,
-.note {
-  color: #374151;
-  line-height: 1.7;
-  white-space: pre-wrap;
-}
-
-button {
-  min-height: 34px;
-  border-radius: 6px;
-  border: 1px solid transparent;
-  padding: 0 10px;
-  font: inherit;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-button:disabled {
-  cursor: wait;
-  opacity: 0.65;
-}
-
-.primary-button {
-  background: #2563eb;
-  color: #ffffff;
-}
-
-.secondary-button {
-  border-color: #cfd7e3;
-  background: #ffffff;
-  color: #374151;
-}
-
-.remove-button {
-  flex: 0 0 auto;
-  border-color: #fecaca;
-  background: #fff7f7;
-  color: #b42318;
+.relation-actions {
+  justify-content: flex-end;
 }
 </style>
