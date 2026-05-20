@@ -8,6 +8,7 @@ from app.repositories.project_repo import ProjectRepository
 from app.repositories.setting_repo import SettingRepository
 from app.repositories.timeline_repo import TimelineRepository
 from app.schemas.timeline import TimelineEventCreate, TimelineEventUpdate
+from app.services.timeline_track_service import TimelineTrackService
 
 
 class TimelineEventNotFoundError(Exception):
@@ -40,6 +41,7 @@ class TimelineService:
         self.project_repo = ProjectRepository(db)
         self.chapter_repo = ChapterRepository(db)
         self.setting_repo = SettingRepository(db)
+        self.track_service = TimelineTrackService(db)
 
     def list_project_timeline_events(
         self,
@@ -51,8 +53,8 @@ class TimelineService:
         chapter_id: str | None = None,
         keyword: str | None = None,
     ) -> list[dict[str, object]]:
-        if self.project_repo.get_active(project_id) is None:
-            raise TimelineProjectNotFoundError
+        self._ensure_project_exists(project_id)
+        self.track_service.ensure_main_track(project_id)
 
         events = self.timeline_repo.list_active_by_project(
             project_id,
@@ -68,16 +70,20 @@ class TimelineService:
         chapter = self.chapter_repo.get_active(chapter_id)
         if chapter is None:
             raise TimelineChapterNotFoundError
+
+        self.track_service.ensure_main_track(chapter.project_id)
         return self._attach_related_objects(self.timeline_repo.list_active_by_chapter(chapter_id))
 
     def create_timeline_event(self, project_id: str, data: TimelineEventCreate) -> dict[str, object]:
-        if self.project_repo.get_active(project_id) is None:
-            raise TimelineProjectNotFoundError
-
+        self._ensure_project_exists(project_id)
         self._validate_chapter(project_id, data.chapter_id)
         self._validate_setting(project_id, data.location_setting_id)
 
-        event = TimelineEvent(id=str(uuid4()), project_id=project_id, **data.model_dump())
+        values = data.model_dump()
+        track = self.track_service.validate_track_for_project(project_id, values.get("track_id"))
+        values["track_id"] = track.id
+
+        event = TimelineEvent(id=str(uuid4()), project_id=project_id, **values)
         created = self.timeline_repo.create(event)
         return self._to_read_payload(created)
 
@@ -97,6 +103,10 @@ class TimelineService:
             self._validate_chapter(event.project_id, values["chapter_id"])
         if "location_setting_id" in values:
             self._validate_setting(event.project_id, values["location_setting_id"])
+        if "track_id" in values:
+            track = self.track_service.validate_track_for_project(event.project_id, values["track_id"])
+            values["track_id"] = track.id
+
         updated = self.timeline_repo.update(event, values)
         return self._to_read_payload(updated)
 
@@ -106,6 +116,11 @@ class TimelineService:
             raise TimelineEventNotFoundError
         deleted = self.timeline_repo.soft_delete(event)
         return self._to_read_payload(deleted)
+
+    def _ensure_project_exists(self, project_id: str) -> None:
+        project = self.project_repo.get_active(project_id)
+        if project is None:
+            raise TimelineProjectNotFoundError
 
     def _validate_chapter(self, project_id: str, chapter_id: object) -> None:
         if chapter_id is None:
@@ -165,10 +180,12 @@ class TimelineService:
             "story_date": event.story_date,
             "story_time": event.story_time,
             "order_index": event.order_index,
+            "position_index": event.position_index,
             "importance": event.importance,
             "status": event.status,
             "chapter_id": event.chapter_id,
             "location_setting_id": event.location_setting_id,
+            "track_id": event.track_id,
             "note": event.note,
             "created_at": event.created_at,
             "updated_at": event.updated_at,

@@ -55,6 +55,8 @@ const manageAllLink = computed(() => {
   return manageAllLinks[activeTab.value] ?? ''
 })
 
+const showManageAllLink = computed(() => manageAllLink.value !== '' && activeTab.value !== 'timeline')
+
 const versionsTabMessage = computed(() => {
   if (props.versionMessage) {
     return props.versionMessage
@@ -138,7 +140,7 @@ const versionsTabMessage = computed(() => {
       <p v-else class="state-message">关系图模块将保留为后续功能。</p>
     </section>
 
-    <footer v-if="manageAllLink" class="panel-footer">
+    <footer v-if="showManageAllLink" class="panel-footer">
       <RouterLink class="manage-link" :to="manageAllLink">管理全部</RouterLink>
     </footer>
   </aside>

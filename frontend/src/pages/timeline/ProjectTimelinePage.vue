@@ -1,118 +1,365 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
 import { listChapters } from '@/entities/chapter/api'
 import type { Chapter } from '@/entities/chapter/types'
+import { getProject } from '@/entities/project/api'
+import type { Project } from '@/entities/project/types'
 import { listProjectSettings } from '@/entities/setting/api'
 import type { SettingItem } from '@/entities/setting/types'
-import { settingItemTypeLabels } from '@/entities/setting/types'
 import {
+  createTimelineEdge,
   createTimelineEvent,
+  createTimelineTrack,
+  deleteTimelineEdge,
   deleteTimelineEvent,
-  getTimelineEvent,
+  deleteTimelineTrack,
   listProjectTimelineEvents,
+  listTimelineEdges,
+  listTimelineTracks,
+  updateTimelineEdge,
   updateTimelineEvent,
+  updateTimelineTrack,
 } from '@/entities/timeline/api'
 import type {
+  TimelineEdge,
+  TimelineEdgeCreatePayload,
+  TimelineEdgeLineStyle,
+  TimelineEdgeType,
+  TimelineEdgeUpdatePayload,
+  TimelineEdgeVisibility,
   TimelineEvent,
+  TimelineEventCreatePayload,
   TimelineEventImportance,
   TimelineEventStatus,
   TimelineEventType,
+  TimelineTrack,
+  TimelineTrackCreatePayload,
+  TimelineTrackType,
+  TimelineTrackUpdatePayload,
 } from '@/entities/timeline/types'
 import {
+  timelineEdgeLineStyleLabels,
+  timelineEdgeTypeLabels,
+  timelineEdgeVisibilityLabels,
   timelineEventImportanceLabels,
   timelineEventStatusLabels,
   timelineEventTypeLabels,
+  timelineTrackTypeLabels,
 } from '@/entities/timeline/types'
-import { getProject } from '@/entities/project/api'
-import type { Project } from '@/entities/project/types'
+import ContextMenu, { type ContextMenuItem } from '@/shared/ui/ContextMenu.vue'
 
 const route = useRoute()
+
+type PanelKind = 'none' | 'track' | 'event' | 'edge'
+type PanelMode = 'view' | 'create' | 'edit'
+
+type TrackRow = {
+  id: string
+  title: string
+  description: string
+  track: TimelineTrack | null
+  events: TimelineEvent[]
+  isVirtual: boolean
+}
+
+type RenderedEdge = {
+  id: string
+  edge: TimelineEdge
+  path: string
+  dashed: boolean
+  hasArrow: boolean
+}
 
 const project = ref<Project | null>(null)
 const chapters = ref<Chapter[]>([])
 const settings = ref<SettingItem[]>([])
+const tracks = ref<TimelineTrack[]>([])
 const events = ref<TimelineEvent[]>([])
-const selectedEvent = ref<TimelineEvent | null>(null)
-const isCreating = ref(true)
+const edges = ref<TimelineEdge[]>([])
 const isLoading = ref(false)
 const isSaving = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
+const cleanMode = ref(false)
 
-const filters = reactive({
-  keyword: '',
-  event_type: '',
-  status: '',
-  importance: '',
-})
+const panelKind = ref<PanelKind>('none')
+const panelMode = ref<PanelMode>('view')
+const selectedTrackId = ref<string | null>(null)
+const selectedEventId = ref<string | null>(null)
+const selectedEdgeId = ref<string | null>(null)
 
-const form = reactive({
+const trackForm = reactive({
   title: '',
   description: '',
+  track_type: 'custom' as TimelineTrackType,
+  bound_type: '',
+  bound_id: '',
+  order_index: 0,
+  color: '',
+  is_main: false,
+})
+
+const eventForm = reactive({
+  title: '',
+  description: '',
+  track_id: '',
   event_type: 'plot' as TimelineEventType,
   story_date: '',
   story_time: '',
-  order_index: 0,
-  importance: 'normal' as TimelineEventImportance,
-  status: 'planned' as TimelineEventStatus,
   chapter_id: '',
   location_setting_id: '',
+  order_index: 0,
+  position_index: 0,
+  importance: 'normal' as TimelineEventImportance,
+  status: 'planned' as TimelineEventStatus,
   note: '',
 })
 
-const eventTypes: TimelineEventType[] = [
-  'plot',
-  'background',
-  'character',
-  'world',
-  'clue',
-  'conflict',
-  'custom',
-]
-const importances: TimelineEventImportance[] = ['low', 'normal', 'high', 'critical']
-const statuses: TimelineEventStatus[] = ['planned', 'happened', 'revised', 'deprecated']
+const edgeForm = reactive({
+  from_event_id: '',
+  to_event_id: '',
+  edge_type: 'related' as TimelineEdgeType,
+  line_style: 'straight' as TimelineEdgeLineStyle,
+  label: '',
+  note: '',
+  visibility: 'normal' as TimelineEdgeVisibility,
+})
+
+const trackMenu = reactive({
+  visible: false,
+  x: 0,
+  y: 0,
+  trackId: '',
+})
+
+const eventTypes: TimelineEventType[] = ['plot', 'background', 'character', 'world', 'clue', 'conflict', 'custom']
+const eventImportances: TimelineEventImportance[] = ['low', 'normal', 'high', 'critical']
+const eventStatuses: TimelineEventStatus[] = ['planned', 'happened', 'revised', 'deprecated']
+const trackTypes: TimelineTrackType[] = ['main', 'character', 'organization', 'setting', 'clue', 'volume', 'custom']
+const edgeTypes: TimelineEdgeType[] = ['cause', 'parallel', 'clue_payoff', 'conflict', 'echo', 'related', 'custom']
+const lineStyles: TimelineEdgeLineStyle[] = ['straight', 'arc', 'dashed', 'arrow']
+const visibilities: TimelineEdgeVisibility[] = ['normal', 'subtle', 'hidden']
 
 const projectId = computed<string>(() => {
   const value = route.params.projectId
   return (Array.isArray(value) ? value[0] : value) ?? ''
 })
 
-const chapterTitleMap = computed(() => {
-  return chapters.value.reduce<Record<string, string>>((acc, chapter) => {
-    acc[chapter.id] = chapter.title
+const trackMap = computed(() =>
+  tracks.value.reduce<Record<string, TimelineTrack>>((acc, track) => {
+    acc[track.id] = track
     return acc
-  }, {})
-})
+  }, {}),
+)
 
-const sortedSettings = computed(() =>
-  [...settings.value].sort((left, right) => {
-    const leftPriority = left.item_type === 'location' ? 0 : 1
-    const rightPriority = right.item_type === 'location' ? 0 : 1
+const chapterMap = computed(() =>
+  chapters.value.reduce<Record<string, Chapter>>((acc, chapter) => {
+    acc[chapter.id] = chapter
+    return acc
+  }, {}),
+)
+
+const settingMap = computed(() =>
+  settings.value.reduce<Record<string, SettingItem>>((acc, setting) => {
+    acc[setting.id] = setting
+    return acc
+  }, {}),
+)
+
+const eventMap = computed(() =>
+  events.value.reduce<Record<string, TimelineEvent>>((acc, event) => {
+    acc[event.id] = event
+    return acc
+  }, {}),
+)
+
+const mainTrack = computed(() => tracks.value.find((track) => track.is_main) ?? tracks.value[0] ?? null)
+
+const orderedTracks = computed(() =>
+  [...tracks.value].sort((left, right) => {
+    if (left.is_main !== right.is_main) {
+      return left.is_main ? -1 : 1
+    }
     return (
-      leftPriority - rightPriority ||
-      left.title.localeCompare(right.title, 'zh-Hans-CN')
+      left.order_index - right.order_index ||
+      left.created_at.localeCompare(right.created_at, 'zh-Hans-CN')
     )
   }),
 )
 
-const settingTitleMap = computed(() => {
-  return settings.value.reduce<Record<string, string>>((acc, setting) => {
-    acc[setting.id] = setting.title
-    return acc
-  }, {})
+const groupedEvents = computed(() => {
+  const groups = new Map<string, TimelineEvent[]>()
+  for (const track of orderedTracks.value) {
+    groups.set(track.id, [])
+  }
+
+  for (const event of events.value) {
+    if (!event.track_id) {
+      continue
+    }
+    if (!groups.has(event.track_id)) {
+      groups.set(event.track_id, [])
+    }
+    groups.get(event.track_id)!.push(event)
+  }
+
+  for (const list of groups.values()) {
+    list.sort(sortEvents)
+  }
+
+  return groups
 })
+
+const unassignedEvents = computed(() =>
+  events.value
+    .filter((event) => !event.track_id || !trackMap.value[event.track_id])
+    .slice()
+    .sort(sortEvents),
+)
+
+const rows = computed<TrackRow[]>(() => {
+  const actualRows: TrackRow[] = orderedTracks.value.map((track) => ({
+    id: track.id,
+    title: track.title,
+    description: track.description,
+    track,
+    events: groupedEvents.value.get(track.id) ?? [],
+    isVirtual: false,
+  }))
+
+  if (unassignedEvents.value.length > 0) {
+    actualRows.push({
+      id: '__unassigned__',
+      title: '未分配时间轴',
+      description: '用于暂时没有 track_id 的事件',
+      track: null,
+      events: unassignedEvents.value,
+      isVirtual: true,
+    })
+  }
+
+  return actualRows
+})
+
+const visibleEdges = computed(() =>
+  edges.value.filter((edge) => {
+    if (edge.visibility === 'hidden') {
+      return false
+    }
+    if (cleanMode.value && edge.visibility === 'subtle') {
+      return false
+    }
+    return Boolean(eventMap.value[edge.from_event_id] && eventMap.value[edge.to_event_id])
+  }),
+)
+
+const invalidEdgeCount = computed(() =>
+  edges.value.filter((edge) => !eventMap.value[edge.from_event_id] || !eventMap.value[edge.to_event_id]).length,
+)
+
+const selectedTrack = computed(() => {
+  if (!selectedTrackId.value) {
+    return null
+  }
+  return trackMap.value[selectedTrackId.value] ?? null
+})
+
+const selectedEvent = computed(() => {
+  if (!selectedEventId.value) {
+    return null
+  }
+  return eventMap.value[selectedEventId.value] ?? null
+})
+
+const selectedEdge = computed(() => {
+  if (!selectedEdgeId.value) {
+    return null
+  }
+  return edges.value.find((edge) => edge.id === selectedEdgeId.value) ?? null
+})
+
+const trackOptions = computed(() =>
+  orderedTracks.value.map((track) => ({
+    id: track.id,
+    label: track.title,
+  })),
+)
+
+const eventOptions = computed(() =>
+  events.value
+    .slice()
+    .sort(sortEvents)
+    .map((event) => {
+      const track = event.track_id ? trackMap.value[event.track_id] : null
+      const suffix = track ? `（${track.title}）` : ''
+      return {
+        id: event.id,
+        label: `${event.title}${suffix}`,
+      }
+    }),
+)
+
+const chapterOptions = computed(() =>
+  chapters.value
+    .slice()
+    .sort((left, right) => left.order_index - right.order_index || left.title.localeCompare(right.title, 'zh-Hans-CN'))
+    .map((chapter) => ({
+      id: chapter.id,
+      label: chapter.title,
+    })),
+)
+
+const settingOptions = computed(() =>
+  settings.value
+    .slice()
+    .sort((left, right) => {
+      const leftPriority = left.item_type === 'location' ? 0 : 1
+      const rightPriority = right.item_type === 'location' ? 0 : 1
+      return leftPriority - rightPriority || left.title.localeCompare(right.title, 'zh-Hans-CN')
+    })
+    .map((setting) => ({
+      id: setting.id,
+      label: `${setting.title}（${setting.item_type}）`,
+    })),
+)
+
+const defaultEventTrackId = computed(() => {
+  if (selectedTrackId.value && trackMap.value[selectedTrackId.value]) {
+    return selectedTrackId.value
+  }
+  return mainTrack.value?.id || ''
+})
+
+const edgePoints = ref<RenderedEdge[]>([])
+const canvasWidth = ref(0)
+const canvasHeight = ref(0)
+const canvasViewportRef = ref<HTMLElement | null>(null)
+const canvasBodyRef = ref<HTMLElement | null>(null)
+const eventNodeRefs = ref<Record<string, HTMLElement | null>>({})
 
 onMounted(() => {
   void loadWorkspace()
+  window.addEventListener('resize', scheduleMeasureEdges)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', scheduleMeasureEdges)
 })
 
 watch(projectId, () => {
-  selectedEvent.value = null
-  resetForm()
+  resetSelection()
   void loadWorkspace()
 })
+
+watch(
+  () => [orderedTracks.value.length, events.value.length, edges.value.length, cleanMode.value],
+  () => {
+    void scheduleMeasureEdges()
+  },
+  { deep: true },
+)
 
 async function loadWorkspace() {
   if (!projectId.value) {
@@ -122,69 +369,392 @@ async function loadWorkspace() {
 
   isLoading.value = true
   errorMessage.value = ''
+  successMessage.value = ''
 
   try {
-    const [projectDetail, projectChapters, projectSettings, projectEvents] = await Promise.all([
-      getProject(projectId.value),
-      listChapters(projectId.value),
-      listProjectSettings(projectId.value),
-      listProjectTimelineEvents(projectId.value, buildFilters()),
-    ])
+    const [projectDetail, projectChapters, projectSettings, projectTracks, projectEvents, projectEdges] =
+      await Promise.all([
+        getProject(projectId.value),
+        listChapters(projectId.value),
+        listProjectSettings(projectId.value),
+        listTimelineTracks(projectId.value),
+        listProjectTimelineEvents(projectId.value),
+        listTimelineEdges(projectId.value),
+      ])
+
     project.value = projectDetail
     chapters.value = projectChapters
     settings.value = projectSettings
+    tracks.value = projectTracks
     events.value = projectEvents
+    edges.value = projectEdges
+
+    syncSelectionAfterLoad()
+    await scheduleMeasureEdges()
   } catch (error) {
-    errorMessage.value = getErrorMessage(error, '加载时间轴失败。')
+    errorMessage.value = formatErrorMessage(error, '加载时间轴失败。')
   } finally {
     isLoading.value = false
   }
 }
 
-async function refreshEvents() {
+async function refreshWorkspace() {
+  await loadWorkspace()
+}
+
+function syncSelectionAfterLoad() {
+  if (panelKind.value === 'track') {
+    if (panelMode.value === 'edit' && selectedTrackId.value) {
+      const track = trackMap.value[selectedTrackId.value]
+      if (track) {
+        applyTrackToForm(track)
+      } else {
+        resetSelection()
+      }
+    }
+    return
+  }
+
+  if (panelKind.value === 'event') {
+    if (panelMode.value === 'edit' && selectedEventId.value) {
+      const event = eventMap.value[selectedEventId.value]
+      if (event) {
+        applyEventToForm(event)
+      } else {
+        resetSelection()
+      }
+    }
+    return
+  }
+
+  if (panelKind.value === 'edge') {
+    if (panelMode.value === 'edit' && selectedEdgeId.value) {
+      const edge = edges.value.find((item) => item.id === selectedEdgeId.value)
+      if (edge) {
+        applyEdgeToForm(edge)
+      } else {
+        resetSelection()
+      }
+    }
+    return
+  }
+}
+
+function resetSelection() {
+  panelKind.value = 'none'
+  panelMode.value = 'view'
+  selectedTrackId.value = null
+  selectedEventId.value = null
+  selectedEdgeId.value = null
+}
+
+function openCreateTrack() {
+  panelKind.value = 'track'
+  panelMode.value = 'create'
+  selectedTrackId.value = null
+  selectedEventId.value = null
+  selectedEdgeId.value = null
+  resetTrackForm()
+}
+
+function openCreateEvent() {
+  panelKind.value = 'event'
+  panelMode.value = 'create'
+  selectedTrackId.value = defaultEventTrackId.value || null
+  selectedEventId.value = null
+  selectedEdgeId.value = null
+  resetEventForm()
+  eventForm.track_id = defaultEventTrackId.value
+  eventForm.order_index = nextOrderIndexForTrack(defaultEventTrackId.value)
+  eventForm.position_index = eventForm.order_index
+}
+
+function openCreateEdge() {
+  panelKind.value = 'edge'
+  panelMode.value = 'create'
+  selectedEventId.value = null
+  selectedEdgeId.value = null
+  resetEdgeForm()
+  if (selectedEvent.value) {
+    edgeForm.from_event_id = selectedEvent.value.id
+  }
+}
+
+function selectTrack(track: TimelineTrack) {
+  panelKind.value = 'track'
+  panelMode.value = 'edit'
+  selectedTrackId.value = track.id
+  selectedEventId.value = null
+  selectedEdgeId.value = null
+  applyTrackToForm(track)
+}
+
+function selectEvent(event: TimelineEvent) {
+  panelKind.value = 'event'
+  panelMode.value = 'edit'
+  selectedTrackId.value = event.track_id ?? null
+  selectedEventId.value = event.id
+  selectedEdgeId.value = null
+  applyEventToForm(event)
+}
+
+function selectEdge(edge: TimelineEdge) {
+  panelKind.value = 'edge'
+  panelMode.value = 'edit'
+  selectedTrackId.value = eventMap.value[edge.from_event_id]?.track_id ?? selectedTrackId.value
+  selectedEventId.value = null
+  selectedEdgeId.value = edge.id
+  applyEdgeToForm(edge)
+}
+
+function openTrackMenu(track: TimelineTrack, event: MouseEvent) {
+  event.preventDefault()
+  event.stopPropagation()
+  trackMenu.visible = true
+  trackMenu.x = event.clientX
+  trackMenu.y = event.clientY
+  trackMenu.trackId = track.id
+}
+
+function closeTrackMenu() {
+  trackMenu.visible = false
+}
+
+function handleTrackMenuSelect(item: ContextMenuItem) {
+  const track = trackMap.value[trackMenu.trackId]
+  if (!track) {
+    return
+  }
+
+  if (item.id === 'edit') {
+    selectTrack(track)
+  }
+
+  if (item.id === 'delete') {
+    void handleDeleteTrack(track)
+  }
+}
+
+function applyTrackToForm(track: TimelineTrack) {
+  trackForm.title = track.title
+  trackForm.description = track.description
+  trackForm.track_type = track.track_type
+  trackForm.bound_type = track.bound_type ?? ''
+  trackForm.bound_id = track.bound_id ?? ''
+  trackForm.order_index = track.order_index
+  trackForm.color = track.color ?? ''
+  trackForm.is_main = track.is_main
+}
+
+function resetTrackForm() {
+  trackForm.title = ''
+  trackForm.description = ''
+  trackForm.track_type = 'custom'
+  trackForm.bound_type = ''
+  trackForm.bound_id = ''
+  trackForm.order_index = orderedTracks.value.length
+  trackForm.color = ''
+  trackForm.is_main = false
+}
+
+function applyEventToForm(event: TimelineEvent) {
+  eventForm.title = event.title
+  eventForm.description = event.description
+  eventForm.track_id = event.track_id ?? defaultEventTrackId.value
+  eventForm.event_type = event.event_type
+  eventForm.story_date = event.story_date ?? ''
+  eventForm.story_time = event.story_time ?? ''
+  eventForm.chapter_id = event.chapter_id ?? ''
+  eventForm.location_setting_id = event.location_setting_id ?? ''
+  eventForm.order_index = event.order_index
+  eventForm.position_index = event.position_index
+  eventForm.importance = event.importance
+  eventForm.status = event.status
+  eventForm.note = event.note
+}
+
+function resetEventForm() {
+  eventForm.title = ''
+  eventForm.description = ''
+  eventForm.track_id = defaultEventTrackId.value
+  eventForm.event_type = 'plot'
+  eventForm.story_date = ''
+  eventForm.story_time = ''
+  eventForm.chapter_id = ''
+  eventForm.location_setting_id = ''
+  eventForm.order_index = nextOrderIndexForTrack(defaultEventTrackId.value)
+  eventForm.position_index = eventForm.order_index
+  eventForm.importance = 'normal'
+  eventForm.status = 'planned'
+  eventForm.note = ''
+}
+
+function applyEdgeToForm(edge: TimelineEdge) {
+  edgeForm.from_event_id = edge.from_event_id
+  edgeForm.to_event_id = edge.to_event_id
+  edgeForm.edge_type = edge.edge_type
+  edgeForm.line_style = edge.line_style
+  edgeForm.label = edge.label
+  edgeForm.note = edge.note
+  edgeForm.visibility = edge.visibility
+}
+
+function resetEdgeForm() {
+  edgeForm.from_event_id = selectedEvent.value?.id ?? ''
+  edgeForm.to_event_id = ''
+  edgeForm.edge_type = 'related'
+  edgeForm.line_style = 'straight'
+  edgeForm.label = ''
+  edgeForm.note = ''
+  edgeForm.visibility = 'normal'
+}
+
+function nextOrderIndexForTrack(trackId: string) {
+  return getTrackEvents(trackId).length
+}
+
+function getTrackEvents(trackId: string) {
+  return groupedEvents.value.get(trackId) ?? []
+}
+
+function getTrackEventCount(trackId: string) {
+  return getTrackEvents(trackId).length
+}
+
+function getTrackLabel(track: TimelineTrack) {
+  return timelineTrackTypeLabels[track.track_type]
+}
+
+function getEventSubtitle(event: TimelineEvent) {
+  const timeParts = [event.story_date, event.story_time].filter(Boolean)
+  if (timeParts.length > 0) {
+    return timeParts.join(' · ')
+  }
+
+  const chapterTitle = event.chapter?.title ?? (event.chapter_id ? chapterMap.value[event.chapter_id]?.title : '')
+  if (chapterTitle) {
+    return chapterTitle
+  }
+
+  const settingTitle = event.location_setting?.title ?? (event.location_setting_id ? settingMap.value[event.location_setting_id]?.title : '')
+  if (settingTitle) {
+    return settingTitle
+  }
+
+  return '未填写时间'
+}
+
+function getEventTrackTitle(event: TimelineEvent) {
+  if (event.track_id && trackMap.value[event.track_id]) {
+    return trackMap.value[event.track_id]?.title ?? '未分配时间轴'
+  }
+  return '未分配时间轴'
+}
+
+function getTrackSummary(track: TimelineTrack) {
+  if (!track.description) {
+    return timelineTrackTypeLabels[track.track_type]
+  }
+  return track.description
+}
+
+function getEventDetailChapter(event: TimelineEvent) {
+  if (event.chapter?.title) {
+    return event.chapter.title
+  }
+  if (!event.chapter_id) {
+    return '未绑定'
+  }
+  return chapterMap.value[event.chapter_id]?.title ?? '未知章节'
+}
+
+function getEventDetailSetting(event: TimelineEvent) {
+  if (event.location_setting?.title) {
+    return event.location_setting.title
+  }
+  if (!event.location_setting_id) {
+    return '未绑定'
+  }
+  return settingMap.value[event.location_setting_id]?.title ?? '未知设定'
+}
+
+function getTrackNameById(trackId: string | null) {
+  if (!trackId) {
+    return '自动使用主时间轴'
+  }
+  return trackMap.value[trackId]?.title ?? '未知时间轴'
+}
+
+function getEventNameById(eventId: string) {
+  return eventMap.value[eventId]?.title ?? '未知节点'
+}
+
+function getEdgeLabel(edge: TimelineEdge) {
+  return edge.label || timelineEdgeTypeLabels[edge.edge_type]
+}
+
+function buildEdgeDescription(edge: TimelineEdge) {
+  const fromTitle = getEventNameById(edge.from_event_id)
+  const toTitle = getEventNameById(edge.to_event_id)
+  return `${fromTitle} → ${toTitle}`
+}
+
+function buildEdgeSummary(edge: TimelineEdge) {
+  const label = getEdgeLabel(edge)
+  const style = timelineEdgeLineStyleLabels[edge.line_style]
+  const visibility = timelineEdgeVisibilityLabels[edge.visibility]
+  return `${label} · ${style} · ${visibility}`
+}
+
+function selectTrackMenuButton(track: TimelineTrack, event: MouseEvent) {
+  openTrackMenu(track, event)
+}
+
+async function handleSaveTrack() {
   if (!projectId.value) {
     return
   }
-  events.value = await listProjectTimelineEvents(projectId.value, buildFilters())
-  if (selectedEvent.value) {
-    selectedEvent.value = events.value.find((event) => event.id === selectedEvent.value?.id) ?? null
+
+  await runSave(async () => {
+    const payload: TimelineTrackCreatePayload = {
+      title: trackForm.title,
+      description: trackForm.description,
+      track_type: trackForm.track_type,
+      bound_type: trackForm.bound_type || null,
+      bound_id: trackForm.bound_id || null,
+      order_index: Number(trackForm.order_index) || 0,
+      color: trackForm.color || null,
+      is_main: trackForm.is_main,
+    }
+
+    const saved =
+      panelMode.value === 'create' || !selectedTrackId.value
+        ? await createTimelineTrack(projectId.value, payload)
+        : await updateTimelineTrack(selectedTrackId.value, payload as TimelineTrackUpdatePayload)
+
+    selectedTrackId.value = saved.id
+    panelKind.value = 'track'
+    panelMode.value = 'edit'
+    await loadWorkspace()
+    selectedTrackId.value = saved.id
+    successMessage.value = '时间轴已保存。'
+  }, '保存时间轴失败。')
+}
+
+async function handleDeleteTrack(track: TimelineTrack) {
+  const confirmed = window.confirm(`确认删除该时间轴“${track.title}”吗？`)
+  if (!confirmed) {
+    return
   }
-}
 
-function buildFilters() {
-  return {
-    keyword: filters.keyword.trim() || undefined,
-    event_type: (filters.event_type || undefined) as TimelineEventType | undefined,
-    status: (filters.status || undefined) as TimelineEventStatus | undefined,
-    importance: (filters.importance || undefined) as TimelineEventImportance | undefined,
-  }
-}
-
-async function handleApplyFilters() {
-  await saveSafe(async () => {
-    await refreshEvents()
-  }, '筛选时间轴事件失败。')
-}
-
-async function handleSelectEvent(event: TimelineEvent) {
-  errorMessage.value = ''
-  successMessage.value = ''
-
-  try {
-    selectedEvent.value = await getTimelineEvent(event.id)
-    isCreating.value = false
-    applyEventToForm(selectedEvent.value)
-  } catch (error) {
-    errorMessage.value = getErrorMessage(error, '加载时间轴事件详情失败。')
-  }
-}
-
-function handleNewEvent() {
-  selectedEvent.value = null
-  isCreating.value = true
-  successMessage.value = ''
-  errorMessage.value = ''
-  resetForm()
+  await runSave(async () => {
+    await deleteTimelineTrack(track.id)
+    if (selectedTrackId.value === track.id) {
+      resetSelection()
+    }
+    await loadWorkspace()
+    successMessage.value = '时间轴已删除。'
+  }, '删除时间轴失败。')
 }
 
 async function handleSaveEvent() {
@@ -192,31 +762,37 @@ async function handleSaveEvent() {
     return
   }
 
-  await saveSafe(async () => {
-    const payload = {
-      title: form.title,
-      description: form.description,
-      event_type: form.event_type,
-      story_date: form.story_date || null,
-      story_time: form.story_time || null,
-      order_index: Number(form.order_index) || 0,
-      importance: form.importance,
-      status: form.status,
-      chapter_id: form.chapter_id || null,
-      location_setting_id: form.location_setting_id || null,
-      note: form.note,
+  await runSave(async () => {
+    const payload: TimelineEventCreatePayload = {
+      title: eventForm.title,
+      description: eventForm.description,
+      track_id: eventForm.track_id || null,
+      event_type: eventForm.event_type,
+      story_date: eventForm.story_date || null,
+      story_time: eventForm.story_time || null,
+      chapter_id: eventForm.chapter_id || null,
+      location_setting_id: eventForm.location_setting_id || null,
+      order_index: Number(eventForm.order_index) || 0,
+      position_index: Number(eventForm.position_index) || 0,
+      importance: eventForm.importance,
+      status: eventForm.status,
+      note: eventForm.note,
     }
 
-    const saved = isCreating.value
-      ? await createTimelineEvent(projectId.value, payload)
-      : await updateTimelineEvent(selectedEvent.value!.id, payload)
+    const saved =
+      panelMode.value === 'create' || !selectedEventId.value
+        ? await createTimelineEvent(projectId.value, payload)
+        : await updateTimelineEvent(selectedEventId.value, payload)
 
-    selectedEvent.value = saved
-    isCreating.value = false
-    applyEventToForm(saved)
-    await refreshEvents()
-    successMessage.value = '时间轴事件已保存。'
-  }, '保存时间轴事件失败。')
+    selectedEventId.value = saved.id
+    selectedTrackId.value = saved.track_id
+    panelKind.value = 'event'
+    panelMode.value = 'edit'
+    await loadWorkspace()
+    selectedEventId.value = saved.id
+    selectedTrackId.value = saved.track_id
+    successMessage.value = '时间轴节点已保存。'
+  }, '保存时间轴节点失败。')
 }
 
 async function handleDeleteEvent() {
@@ -224,22 +800,77 @@ async function handleDeleteEvent() {
     return
   }
 
-  const confirmed = window.confirm(`确认删除时间轴事件“${selectedEvent.value.title}”吗？`)
+  const confirmed = window.confirm(`确认删除时间轴节点“${selectedEvent.value.title}”吗？`)
   if (!confirmed) {
     return
   }
 
-  await saveSafe(async () => {
+  const deletedTrackId = selectedEvent.value.track_id
+  await runSave(async () => {
     await deleteTimelineEvent(selectedEvent.value!.id)
-    selectedEvent.value = null
-    isCreating.value = true
-    resetForm()
-    await refreshEvents()
-    successMessage.value = '时间轴事件已删除。'
-  }, '删除时间轴事件失败。')
+    selectedEventId.value = null
+    selectedEdgeId.value = null
+    panelKind.value = 'none'
+    panelMode.value = 'view'
+    if (deletedTrackId && selectedTrackId.value !== deletedTrackId) {
+      selectedTrackId.value = deletedTrackId
+    }
+    await loadWorkspace()
+    successMessage.value = '时间轴节点已删除。'
+  }, '删除时间轴节点失败。')
 }
 
-async function saveSafe(action: () => Promise<void>, fallback: string) {
+async function handleSaveEdge() {
+  if (!projectId.value) {
+    return
+  }
+
+  await runSave(async () => {
+    const payload: TimelineEdgeCreatePayload = {
+      from_event_id: edgeForm.from_event_id,
+      to_event_id: edgeForm.to_event_id,
+      edge_type: edgeForm.edge_type,
+      line_style: edgeForm.line_style,
+      label: edgeForm.label,
+      note: edgeForm.note,
+      visibility: edgeForm.visibility,
+    }
+
+    const saved =
+      panelMode.value === 'create' || !selectedEdgeId.value
+        ? await createTimelineEdge(projectId.value, payload)
+        : await updateTimelineEdge(selectedEdgeId.value, payload as TimelineEdgeUpdatePayload)
+
+    selectedEdgeId.value = saved.id
+    panelKind.value = 'edge'
+    panelMode.value = 'edit'
+    await loadWorkspace()
+    selectedEdgeId.value = saved.id
+    successMessage.value = '时间轴连接已保存。'
+  }, '保存时间轴连接失败。')
+}
+
+async function handleDeleteEdge() {
+  if (!selectedEdge.value) {
+    return
+  }
+
+  const confirmed = window.confirm(`确认删除时间轴连接“${buildEdgeDescription(selectedEdge.value)}”吗？`)
+  if (!confirmed) {
+    return
+  }
+
+  await runSave(async () => {
+    await deleteTimelineEdge(selectedEdge.value!.id)
+    selectedEdgeId.value = null
+    panelKind.value = 'none'
+    panelMode.value = 'view'
+    await loadWorkspace()
+    successMessage.value = '时间轴连接已删除。'
+  }, '删除时间轴连接失败。')
+}
+
+async function runSave(action: () => Promise<void>, fallback: string) {
   isSaving.value = true
   errorMessage.value = ''
   successMessage.value = ''
@@ -247,69 +878,128 @@ async function saveSafe(action: () => Promise<void>, fallback: string) {
   try {
     await action()
   } catch (error) {
-    errorMessage.value = getErrorMessage(error, fallback)
+    errorMessage.value = formatErrorMessage(error, fallback)
   } finally {
     isSaving.value = false
   }
 }
 
-function applyEventToForm(event: TimelineEvent) {
-  form.title = event.title
-  form.description = event.description
-  form.event_type = event.event_type
-  form.story_date = event.story_date ?? ''
-  form.story_time = event.story_time ?? ''
-  form.order_index = event.order_index
-  form.importance = event.importance
-  form.status = event.status
-  form.chapter_id = event.chapter_id ?? ''
-  form.location_setting_id = event.location_setting_id ?? ''
-  form.note = event.note
+function formatErrorMessage(error: unknown, fallback: string) {
+  const message = error instanceof Error ? error.message : ''
+  if (!message) {
+    return fallback
+  }
+
+  const normalized = message.trim()
+  const mapped: Record<string, string> = {
+    'Project not found': '项目不存在。',
+    'Track not found': '时间轴不存在。',
+    'Track does not belong to project': '时间轴不属于当前项目。',
+    'Cannot remove the only main timeline track': '不能移除唯一的主时间轴。',
+    'Cannot delete the only main timeline track': '不能删除唯一的主时间轴。',
+    'Timeline track still has events': '时间轴下还有节点，暂时不能删除。',
+    'Timeline event not found': '时间轴节点不存在。',
+    'Timeline event does not belong to project': '时间轴节点不属于当前项目。',
+    'Edge cannot connect the same event': '连接的起点和终点不能相同。',
+    'Timeline edge not found': '时间轴连接不存在。',
+  }
+
+  return mapped[normalized] ?? normalized
 }
 
-function resetForm() {
-  form.title = ''
-  form.description = ''
-  form.event_type = 'plot'
-  form.story_date = ''
-  form.story_time = ''
-  form.order_index = 0
-  form.importance = 'normal'
-  form.status = 'planned'
-  form.chapter_id = ''
-  form.location_setting_id = ''
-  form.note = ''
+function sortEvents(left: TimelineEvent, right: TimelineEvent) {
+  return (
+    left.position_index - right.position_index ||
+    left.order_index - right.order_index ||
+    left.created_at.localeCompare(right.created_at, 'zh-Hans-CN')
+  )
 }
 
-function getChapterTitle(chapterId: string | null, event?: TimelineEvent) {
-  if (event?.chapter?.title) {
-    return event.chapter.title
+function truncateText(value: string, limit: number) {
+  if (value.length <= limit) {
+    return value
   }
-  if (!chapterId) {
-    return '未绑定'
-  }
-  return chapterTitleMap.value[chapterId] ?? '未知章节'
+  return `${value.slice(0, limit)}…`
 }
 
-function getSettingTitle(settingId: string | null, event?: TimelineEvent) {
-  if (event?.location_setting?.title) {
-    return event.location_setting.title
+function registerEventNode(eventId: string, element: Element | null) {
+  if (element instanceof HTMLElement) {
+    eventNodeRefs.value[eventId] = element
+    return
   }
-  if (!settingId) {
-    return '未绑定'
-  }
-  return settingTitleMap.value[settingId] ?? '未知设定'
+  delete eventNodeRefs.value[eventId]
 }
 
-function getSettingLabel(setting: SettingItem) {
-  return `${setting.title}（${settingItemTypeLabels[setting.item_type]}）`
+async function scheduleMeasureEdges() {
+  await nextTick()
+  measureEdgeOverlay()
 }
 
-function getErrorMessage(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message) {
-    return error.message
+function measureEdgeOverlay() {
+  const viewport = canvasViewportRef.value
+  const body = canvasBodyRef.value
+  if (!viewport || !body) {
+    edgePoints.value = []
+    canvasWidth.value = 0
+    canvasHeight.value = 0
+    return
   }
-  return fallback
+
+  const bodyRect = body.getBoundingClientRect()
+  const scrollLeft = viewport.scrollLeft
+  const scrollTop = viewport.scrollTop
+  const nextPoints: RenderedEdge[] = []
+
+  for (const edge of visibleEdges.value) {
+    const fromNode = eventNodeRefs.value[edge.from_event_id]
+    const toNode = eventNodeRefs.value[edge.to_event_id]
+    if (!fromNode || !toNode) {
+      continue
+    }
+
+    const fromRect = fromNode.getBoundingClientRect()
+    const toRect = toNode.getBoundingClientRect()
+    const start = {
+      x: fromRect.left - bodyRect.left + scrollLeft + fromRect.width / 2,
+      y: fromRect.top - bodyRect.top + scrollTop + fromRect.height / 2,
+    }
+    const end = {
+      x: toRect.left - bodyRect.left + scrollLeft + toRect.width / 2,
+      y: toRect.top - bodyRect.top + scrollTop + toRect.height / 2,
+    }
+
+    const path = buildEdgePath(start.x, start.y, end.x, end.y, edge.line_style)
+    nextPoints.push({
+      id: edge.id,
+      edge,
+      path,
+      dashed: edge.line_style === 'dashed',
+      hasArrow: edge.line_style === 'arrow',
+    })
+  }
+
+  edgePoints.value = nextPoints
+  canvasWidth.value = Math.max(body.scrollWidth, body.clientWidth)
+  canvasHeight.value = Math.max(body.scrollHeight, body.clientHeight)
+}
+
+function buildEdgePath(x1: number, y1: number, x2: number, y2: number, style: TimelineEdgeLineStyle) {
+  if (style === 'arc') {
+    const distance = Math.abs(x2 - x1)
+    const lift = Math.max(32, Math.min(120, distance / 4))
+    const controlX = (x1 + x2) / 2
+    const controlY = Math.min(y1, y2) - lift
+    return `M ${x1} ${y1} Q ${controlX} ${controlY} ${x2} ${y2}`
+  }
+
+  return `M ${x1} ${y1} L ${x2} ${y2}`
+}
+
+function getNodeClass(event: TimelineEvent) {
+  return {
+    active: selectedEventId.value === event.id,
+    clean: cleanMode.value,
+  }
 }
 </script>
 
@@ -318,409 +1008,589 @@ function getErrorMessage(error: unknown, fallback: string): string {
     <header class="page-header">
       <div>
         <RouterLink class="back-link" :to="`/projects/${projectId}`">返回写作页</RouterLink>
-        <p class="eyebrow">故事时间管理</p>
+        <p class="eyebrow">项目时间轴管理</p>
         <h1>时间轴</h1>
+        <p class="page-note">用多条时间轴管理主线、角色线、伏笔线和其他剧情事件。</p>
         <p class="project-title">{{ project?.title || '正在加载项目…' }}</p>
-        <p class="page-note">时间轴用于管理故事事件的先后顺序、发生时间、关联章节和关键剧情节点。</p>
       </div>
-      <button class="primary-button" type="button" :disabled="isSaving" @click="handleNewEvent">
-        新建事件
-      </button>
     </header>
 
-    <section v-if="errorMessage" class="error-banner" role="alert">{{ errorMessage }}</section>
-    <section v-if="successMessage" class="success-banner" role="status">{{ successMessage }}</section>
-    <section v-if="isLoading" class="state-message">正在加载时间轴…</section>
+    <section class="toolbar">
+      <button class="primary-button" type="button" :disabled="isSaving || isLoading" @click="openCreateTrack">
+        新建时间轴
+      </button>
+      <button class="secondary-button" type="button" :disabled="isSaving || isLoading" @click="openCreateEvent">
+        新建节点
+      </button>
+      <button class="secondary-button" type="button" :disabled="isSaving || isLoading" @click="openCreateEdge">
+        新建连接
+      </button>
+      <button class="toggle-button" type="button" :class="{ active: cleanMode }" @click="cleanMode = !cleanMode">
+        纯净模式
+      </button>
+      <button class="secondary-button" type="button" :disabled="isLoading" @click="refreshWorkspace">
+        刷新
+      </button>
+    </section>
 
-    <section v-else class="timeline-layout">
-      <aside class="list-panel">
-        <div class="filters">
-          <input v-model="filters.keyword" type="search" placeholder="搜索标题、描述、故事日期、备注" />
-          <select v-model="filters.event_type">
-            <option value="">全部事件类型</option>
-            <option v-for="eventType in eventTypes" :key="eventType" :value="eventType">
-              {{ timelineEventTypeLabels[eventType] }}
-            </option>
-          </select>
-          <select v-model="filters.status">
-            <option value="">全部状态</option>
-            <option v-for="status in statuses" :key="status" :value="status">
-              {{ timelineEventStatusLabels[status] }}
-            </option>
-          </select>
-          <select v-model="filters.importance">
-            <option value="">全部重要程度</option>
-            <option v-for="importance in importances" :key="importance" :value="importance">
-              {{ timelineEventImportanceLabels[importance] }}
-            </option>
-          </select>
-          <button class="secondary-button" type="button" :disabled="isSaving" @click="handleApplyFilters">
-            筛选
-          </button>
+    <p v-if="errorMessage" class="status-banner error">{{ errorMessage }}</p>
+    <p v-else-if="successMessage" class="status-banner success">{{ successMessage }}</p>
+    <p v-if="invalidEdgeCount > 0" class="status-banner warning">
+      已跳过 {{ invalidEdgeCount }} 条无效连接。
+    </p>
+
+    <section class="workspace">
+      <aside class="left-panel">
+        <div class="panel-head">
+          <div>
+            <p class="panel-eyebrow">时间轴列表</p>
+            <h2>轨道</h2>
+          </div>
+          <span class="count-pill">{{ orderedTracks.length }}</span>
         </div>
 
-        <p v-if="events.length === 0" class="empty-state">暂无时间轴事件，请先新建事件。</p>
+        <p v-if="orderedTracks.length === 0" class="empty-tip">暂无时间轴，请先新建时间轴。</p>
 
-        <ul v-else class="event-list">
-          <li v-for="event in events" :key="event.id">
+        <div v-else class="track-list">
+          <div
+            v-for="track in orderedTracks"
+            :key="track.id"
+            class="track-list-item"
+            :class="{ active: selectedTrackId === track.id }"
+            @click="selectTrack(track)"
+            @contextmenu.prevent="openTrackMenu(track, $event)"
+            role="button"
+            tabindex="0"
+            @keydown.enter.prevent="selectTrack(track)"
+            @keydown.space.prevent="selectTrack(track)"
+          >
+            <span class="track-color" :style="{ background: track.color || '#2563eb' }"></span>
+            <span class="track-content">
+              <span class="track-title">
+                {{ track.title }}
+                <small v-if="track.is_main" class="main-tag">主</small>
+              </span>
+              <span class="track-subtitle">{{ getTrackLabel(track) }} · {{ getTrackEventCount(track.id) }} 个节点</span>
+            </span>
             <button
-              class="event-card"
+              class="mini-menu-button"
               type="button"
-              :class="{ active: selectedEvent?.id === event.id }"
-              @click="handleSelectEvent(event)"
+              aria-label="更多操作"
+              @click.stop="selectTrackMenuButton(track, $event)"
             >
-              <span class="name">{{ event.title }}</span>
-              <span class="meta">
-                {{ timelineEventTypeLabels[event.event_type] }} ·
-                {{ timelineEventImportanceLabels[event.importance] }} ·
-                {{ timelineEventStatusLabels[event.status] }}
-              </span>
-              <span class="meta">
-                {{ event.story_date || '未填写日期' }}
-                <span v-if="event.story_time"> · {{ event.story_time }}</span>
-              </span>
-              <span class="chapter-line">章节：{{ getChapterTitle(event.chapter_id, event) }}</span>
-              <span class="chapter-line">地点：{{ getSettingTitle(event.location_setting_id, event) }}</span>
-              <span class="summary">{{ event.description || '暂无描述' }}</span>
-            </button>
-          </li>
-        </ul>
+              ⋯
+              </button>
+          </div>
+
+          <div v-if="unassignedEvents.length" class="unassigned-note">
+            <p>未分配时间轴</p>
+            <span>{{ unassignedEvents.length }} 个节点</span>
+          </div>
+        </div>
       </aside>
 
-      <form class="editor-panel" @submit.prevent="handleSaveEvent">
-        <header class="editor-header">
-          <div>
-            <p class="eyebrow">{{ isCreating ? '新建事件' : '事件详情' }}</p>
-            <h2>{{ form.title || '未命名事件' }}</h2>
+      <section class="timeline-canvas-panel">
+        <div v-if="isLoading" class="loading-mask">正在加载时间轴…</div>
+
+        <div ref="canvasViewportRef" class="timeline-canvas-viewport">
+          <div ref="canvasBodyRef" class="timeline-canvas-body">
+            <svg
+              v-if="edgePoints.length > 0"
+              class="timeline-edge-overlay"
+              :width="canvasWidth"
+              :height="canvasHeight"
+              :viewBox="`0 0 ${canvasWidth} ${canvasHeight}`"
+            >
+              <defs>
+                <marker
+                  id="timeline-arrow"
+                  markerWidth="10"
+                  markerHeight="10"
+                  refX="8"
+                  refY="3"
+                  orient="auto"
+                  markerUnits="strokeWidth"
+                >
+                  <path d="M0,0 L0,6 L8,3 z" fill="#64748b" />
+                </marker>
+              </defs>
+              <path
+                v-for="edge in edgePoints"
+                :key="edge.id"
+                :d="edge.path"
+                :class="{ dashed: edge.dashed }"
+                :marker-end="edge.hasArrow ? 'url(#timeline-arrow)' : undefined"
+              />
+            </svg>
+
+            <article
+              v-for="row in rows"
+              :key="row.id"
+              class="track-row"
+              :class="{ virtual: row.isVirtual, active: selectedTrackId === row.id }"
+            >
+              <button
+                class="track-row-label"
+                type="button"
+                :class="{ virtual: row.isVirtual }"
+                @click="row.track ? selectTrack(row.track) : resetSelection()"
+              >
+                <span class="row-title">{{ row.title }}</span>
+                <span class="row-meta">
+                  <template v-if="row.track">
+                    {{ timelineTrackTypeLabels[row.track.track_type] }} · {{ row.events.length }} 个节点
+                  </template>
+                  <template v-else>
+                    {{ row.description }}
+                  </template>
+                </span>
+              </button>
+
+              <div class="track-row-lane">
+                <span class="lane-axis"></span>
+
+                <button
+                  v-for="event in row.events"
+                  :key="event.id"
+                  :ref="(element) => registerEventNode(event.id, element as Element | null)"
+                  class="timeline-node"
+                  :class="getNodeClass(event)"
+                  type="button"
+                  @click="selectEvent(event)"
+                >
+                  <span class="node-title">{{ event.title }}</span>
+                  <span class="node-meta">{{ getEventSubtitle(event) }}</span>
+                  <span v-if="!cleanMode && event.chapter_id" class="node-chip">
+                    {{ getEventDetailChapter(event) }}
+                  </span>
+                  <span v-if="!cleanMode && event.description" class="node-description">
+                    {{ truncateText(event.description, 54) }}
+                  </span>
+                </button>
+              </div>
+            </article>
           </div>
-          <span v-if="selectedEvent" class="version">v{{ selectedEvent.version }}</span>
-        </header>
-
-        <div class="form-grid">
-          <label>
-            <span>标题</span>
-            <input v-model.trim="form.title" type="text" required />
-          </label>
-          <label>
-            <span>事件类型</span>
-            <select v-model="form.event_type">
-              <option v-for="eventType in eventTypes" :key="eventType" :value="eventType">
-                {{ timelineEventTypeLabels[eventType] }}
-              </option>
-            </select>
-          </label>
-          <label>
-            <span>故事日期</span>
-            <input v-model.trim="form.story_date" type="text" placeholder="第一卷第一日" />
-          </label>
-          <label>
-            <span>故事时间</span>
-            <input v-model.trim="form.story_time" type="text" placeholder="傍晚" />
-          </label>
-          <label>
-            <span>排序序号</span>
-            <input v-model.number="form.order_index" type="number" min="0" />
-          </label>
-          <label>
-            <span>重要程度</span>
-            <select v-model="form.importance">
-              <option v-for="importance in importances" :key="importance" :value="importance">
-                {{ timelineEventImportanceLabels[importance] }}
-              </option>
-            </select>
-          </label>
-          <label>
-            <span>状态</span>
-            <select v-model="form.status">
-              <option v-for="status in statuses" :key="status" :value="status">
-                {{ timelineEventStatusLabels[status] }}
-              </option>
-            </select>
-          </label>
-          <label>
-            <span>关联章节</span>
-            <select v-model="form.chapter_id">
-              <option value="">未绑定</option>
-              <option v-for="chapter in chapters" :key="chapter.id" :value="chapter.id">
-                {{ chapter.title }}
-              </option>
-            </select>
-          </label>
-          <label>
-            <span>关联地点设定</span>
-            <select v-model="form.location_setting_id">
-              <option value="">未绑定</option>
-              <option v-for="setting in sortedSettings" :key="setting.id" :value="setting.id">
-                {{ getSettingLabel(setting) }}
-              </option>
-            </select>
-          </label>
         </div>
+      </section>
 
-        <label>
-          <span>描述</span>
-          <textarea v-model="form.description" rows="4" />
-        </label>
+      <aside class="detail-panel">
+        <template v-if="panelKind === 'track'">
+          <header class="detail-header">
+            <div>
+              <p class="panel-eyebrow">{{ panelMode === 'create' ? '新建时间轴' : '时间轴详情' }}</p>
+              <h2>{{ panelMode === 'create' ? '创建时间轴' : selectedTrack?.title || '时间轴' }}</h2>
+            </div>
+          </header>
 
-        <label>
-          <span>备注</span>
-          <textarea v-model="form.note" rows="5" />
-        </label>
+          <div class="form-grid">
+            <label class="field">
+              <span>标题</span>
+              <input v-model="trackForm.title" type="text" placeholder="例如：主角成长线" />
+            </label>
 
-        <footer class="editor-actions">
-          <button
-            class="danger-button"
-            type="button"
-            :disabled="isSaving || isCreating || !selectedEvent"
-            @click="handleDeleteEvent"
-          >
-            删除事件
-          </button>
-          <button class="primary-button" type="submit" :disabled="isSaving || !form.title.trim()">
-            {{ isSaving ? '正在保存…' : '保存事件' }}
-          </button>
-        </footer>
-      </form>
+            <label class="field field-wide">
+              <span>描述</span>
+              <textarea v-model="trackForm.description" rows="3" placeholder="说明这条时间轴追踪什么内容" />
+            </label>
+
+            <label class="field">
+              <span>类型</span>
+              <select v-model="trackForm.track_type">
+                <option v-for="trackType in trackTypes" :key="trackType" :value="trackType">
+                  {{ timelineTrackTypeLabels[trackType] }}
+                </option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>排序序号</span>
+              <input v-model.number="trackForm.order_index" type="number" min="0" />
+            </label>
+
+            <label class="field">
+              <span>颜色</span>
+              <input v-model="trackForm.color" type="text" placeholder="#6B8AFD" />
+            </label>
+
+            <label class="field">
+              <span>是否主时间轴</span>
+              <select v-model="trackForm.is_main">
+                <option :value="true">是</option>
+                <option :value="false">否</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>绑定对象类型</span>
+              <input v-model="trackForm.bound_type" type="text" placeholder="例如：character" />
+            </label>
+
+            <label class="field">
+              <span>绑定对象 ID</span>
+              <input v-model="trackForm.bound_id" type="text" placeholder="可选" />
+            </label>
+          </div>
+
+          <div class="form-actions">
+            <button class="primary-button" type="button" :disabled="isSaving" @click="handleSaveTrack">
+              保存时间轴
+            </button>
+            <button
+              v-if="panelMode === 'edit' && selectedTrack"
+              class="danger-button"
+              type="button"
+              :disabled="isSaving"
+              @click="handleDeleteTrack(selectedTrack)"
+            >
+              删除时间轴
+            </button>
+          </div>
+        </template>
+
+        <template v-else-if="panelKind === 'event'">
+          <header class="detail-header">
+            <div>
+              <p class="panel-eyebrow">{{ panelMode === 'create' ? '新建节点' : '节点详情' }}</p>
+              <h2>{{ panelMode === 'create' ? '创建时间轴节点' : selectedEvent?.title || '时间轴节点' }}</h2>
+            </div>
+          </header>
+
+          <div class="form-grid">
+            <label class="field field-wide">
+              <span>标题</span>
+              <input v-model="eventForm.title" type="text" placeholder="例如：主角进入青萍城" />
+            </label>
+
+            <label class="field field-wide">
+              <span>描述</span>
+              <textarea v-model="eventForm.description" rows="3" placeholder="节点发生了什么" />
+            </label>
+
+            <label class="field">
+              <span>所属时间轴</span>
+              <select v-model="eventForm.track_id">
+                <option value="">自动使用主时间轴</option>
+                <option v-for="track in trackOptions" :key="track.id" :value="track.id">
+                  {{ track.label }}
+                </option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>事件类型</span>
+              <select v-model="eventForm.event_type">
+                <option v-for="eventType in eventTypes" :key="eventType" :value="eventType">
+                  {{ timelineEventTypeLabels[eventType] }}
+                </option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>故事日期</span>
+              <input v-model="eventForm.story_date" type="text" placeholder="第一卷第一日" />
+            </label>
+
+            <label class="field">
+              <span>故事时间</span>
+              <input v-model="eventForm.story_time" type="text" placeholder="傍晚" />
+            </label>
+
+            <label class="field">
+              <span>关联章节</span>
+              <select v-model="eventForm.chapter_id">
+                <option value="">未绑定</option>
+                <option v-for="chapter in chapterOptions" :key="chapter.id" :value="chapter.id">
+                  {{ chapter.label }}
+                </option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>发生地点 / 关联地点设定</span>
+              <select v-model="eventForm.location_setting_id">
+                <option value="">未绑定</option>
+                <option v-for="setting in settingOptions" :key="setting.id" :value="setting.id">
+                  {{ setting.label }}
+                </option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>排序序号</span>
+              <input v-model.number="eventForm.order_index" type="number" min="0" />
+            </label>
+
+            <label class="field">
+              <span>位置序号</span>
+              <input v-model.number="eventForm.position_index" type="number" min="0" />
+            </label>
+
+            <label class="field">
+              <span>重要程度</span>
+              <select v-model="eventForm.importance">
+                <option v-for="importance in eventImportances" :key="importance" :value="importance">
+                  {{ timelineEventImportanceLabels[importance] }}
+                </option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>状态</span>
+              <select v-model="eventForm.status">
+                <option v-for="status in eventStatuses" :key="status" :value="status">
+                  {{ timelineEventStatusLabels[status] }}
+                </option>
+              </select>
+            </label>
+
+            <label class="field field-wide">
+              <span>备注</span>
+              <textarea v-model="eventForm.note" rows="3" placeholder="补充说明" />
+            </label>
+          </div>
+
+          <div class="form-actions">
+            <button class="primary-button" type="button" :disabled="isSaving" @click="handleSaveEvent">
+              保存节点
+            </button>
+            <button
+              v-if="panelMode === 'edit' && selectedEvent"
+              class="danger-button"
+              type="button"
+              :disabled="isSaving"
+              @click="handleDeleteEvent"
+            >
+              删除节点
+            </button>
+          </div>
+        </template>
+
+        <template v-else-if="panelKind === 'edge'">
+          <header class="detail-header">
+            <div>
+              <p class="panel-eyebrow">{{ panelMode === 'create' ? '新建连接' : '连接详情' }}</p>
+              <h2>{{ panelMode === 'create' ? '创建时间轴连接' : selectedEdge ? getEdgeLabel(selectedEdge) : '时间轴连接' }}</h2>
+            </div>
+          </header>
+
+          <div class="form-grid">
+            <label class="field field-wide">
+              <span>起点事件</span>
+              <select v-model="edgeForm.from_event_id">
+                <option value="" disabled>请选择起点事件</option>
+                <option v-for="event in eventOptions" :key="event.id" :value="event.id">
+                  {{ event.label }}
+                </option>
+              </select>
+            </label>
+
+            <label class="field field-wide">
+              <span>终点事件</span>
+              <select v-model="edgeForm.to_event_id">
+                <option value="" disabled>请选择终点事件</option>
+                <option v-for="event in eventOptions" :key="event.id" :value="event.id">
+                  {{ event.label }}
+                </option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>关系类型</span>
+              <select v-model="edgeForm.edge_type">
+                <option v-for="edgeType in edgeTypes" :key="edgeType" :value="edgeType">
+                  {{ timelineEdgeTypeLabels[edgeType] }}
+                </option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>线条样式</span>
+              <select v-model="edgeForm.line_style">
+                <option v-for="lineStyle in lineStyles" :key="lineStyle" :value="lineStyle">
+                  {{ timelineEdgeLineStyleLabels[lineStyle] }}
+                </option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>标签</span>
+              <input v-model="edgeForm.label" type="text" placeholder="例如：导致" />
+            </label>
+
+            <label class="field">
+              <span>可见性</span>
+              <select v-model="edgeForm.visibility">
+                <option v-for="visibility in visibilities" :key="visibility" :value="visibility">
+                  {{ timelineEdgeVisibilityLabels[visibility] }}
+                </option>
+              </select>
+            </label>
+
+            <label class="field field-wide">
+              <span>批注</span>
+              <textarea v-model="edgeForm.note" rows="3" placeholder="说明这条连接的用途" />
+            </label>
+          </div>
+
+          <div class="form-actions">
+            <button class="primary-button" type="button" :disabled="isSaving" @click="handleSaveEdge">
+              保存连接
+            </button>
+            <button
+              v-if="panelMode === 'edit' && selectedEdge"
+              class="danger-button"
+              type="button"
+              :disabled="isSaving"
+              @click="handleDeleteEdge"
+            >
+              删除连接
+            </button>
+          </div>
+        </template>
+
+        <template v-else>
+          <section class="empty-detail">
+            <h2>时间轴操作说明</h2>
+            <p>左侧选择时间轴，中间查看轨道式时间线，右侧编辑时间轴、节点或连接。</p>
+            <ul>
+              <li>点击时间轴节点可以编辑节点详情。</li>
+              <li>点击时间轴条目可以编辑时间轴本身。</li>
+              <li>连接列表支持创建、修改和删除。</li>
+              <li>若有无效连接，会在上方显示提示并自动跳过。</li>
+            </ul>
+          </section>
+        </template>
+
+        <section class="edge-list-panel">
+          <div class="panel-head compact">
+            <div>
+              <p class="panel-eyebrow">连接列表</p>
+              <h2>时间轴连接</h2>
+            </div>
+            <span class="count-pill">{{ visibleEdges.length }}</span>
+          </div>
+
+          <p v-if="visibleEdges.length === 0" class="empty-tip">暂无可显示的时间轴连接。</p>
+
+          <div v-else class="edge-list">
+            <button
+              v-for="edge in visibleEdges"
+              :key="edge.id"
+              type="button"
+              class="edge-list-item"
+              :class="{ active: selectedEdgeId === edge.id }"
+              @click="selectEdge(edge)"
+            >
+              <span class="edge-list-title">{{ getEdgeLabel(edge) }}</span>
+              <span class="edge-list-meta">{{ buildEdgeDescription(edge) }}</span>
+              <span class="edge-list-note" v-if="!cleanMode && edge.note">{{ edge.note }}</span>
+            </button>
+          </div>
+        </section>
+      </aside>
     </section>
+
+    <ContextMenu
+      :visible="trackMenu.visible"
+      :x="trackMenu.x"
+      :y="trackMenu.y"
+      :items="[
+        { id: 'edit', label: '编辑时间轴' },
+        { id: 'delete', label: '删除时间轴', danger: true },
+      ]"
+      @close="closeTrackMenu"
+      @select="handleTrackMenuSelect"
+    />
   </main>
 </template>
 
 <style scoped>
 .timeline-page {
-  min-height: 100vh;
-  box-sizing: border-box;
-  padding: 32px;
-  background: #f6f8fb;
-  color: #111827;
+  display: grid;
+  gap: 16px;
+  padding: 20px;
 }
 
 .page-header,
-.error-banner,
-.success-banner,
-.state-message,
-.timeline-layout {
-  max-width: 1280px;
-  margin-right: auto;
-  margin-left: auto;
+.toolbar,
+.status-banner,
+.workspace {
+  max-width: 100%;
 }
 
 .page-header {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 22px;
+  display: grid;
+  gap: 8px;
 }
 
 .back-link {
-  display: inline-flex;
-  margin-bottom: 14px;
   color: #2563eb;
-  font-weight: 800;
+  font-size: 0.85rem;
+  font-weight: 700;
   text-decoration: none;
 }
 
 .eyebrow,
 .project-title,
-.page-note {
+.page-note,
+.panel-eyebrow,
+.status-banner,
+.empty-tip,
+.row-meta,
+.node-meta,
+.node-chip,
+.node-description,
+.edge-list-meta,
+.edge-list-note,
+.empty-detail p,
+.empty-detail li {
   margin: 0;
+}
+
+.eyebrow,
+.panel-eyebrow {
   color: #64748b;
+  font-size: 0.75rem;
   font-weight: 800;
-}
-
-.eyebrow {
-  margin-bottom: 6px;
-  font-size: 0.78rem;
-}
-
-.page-note {
-  max-width: 780px;
-  margin-top: 10px;
-  line-height: 1.7;
-  font-weight: 700;
-}
-
-h1,
-h2 {
-  margin: 0;
-  line-height: 1.15;
+  letter-spacing: 0;
 }
 
 h1 {
-  margin-bottom: 8px;
-  font-size: 2rem;
-}
-
-h2 {
-  font-size: 1.35rem;
-}
-
-.error-banner,
-.success-banner {
-  box-sizing: border-box;
-  margin-bottom: 16px;
-  border-radius: 8px;
-  padding: 12px 14px;
-  font-weight: 800;
-}
-
-.error-banner {
-  border: 1px solid #f4b4ad;
-  background: #fff1f0;
-  color: #9f1c12;
-}
-
-.success-banner {
-  border: 1px solid #bbf7d0;
-  background: #f0fdf4;
-  color: #047857;
-}
-
-.state-message,
-.empty-state {
-  display: grid;
-  place-items: center;
-  min-height: 220px;
-  border: 1px dashed #cbd5e1;
-  border-radius: 8px;
-  background: #ffffff;
-  color: #64748b;
-  text-align: center;
-}
-
-.timeline-layout {
-  display: grid;
-  grid-template-columns: minmax(320px, 400px) minmax(0, 1fr);
-  gap: 18px;
-  align-items: start;
-}
-
-.list-panel,
-.editor-panel {
-  min-width: 0;
-  border: 1px solid #d8dee9;
-  border-radius: 8px;
-  padding: 20px;
-  background: #ffffff;
-  box-shadow: 0 10px 28px rgb(20 24 31 / 6%);
-}
-
-.filters {
-  display: grid;
-  gap: 10px;
-  margin-bottom: 14px;
-}
-
-input,
-select,
-textarea {
-  width: 100%;
-  box-sizing: border-box;
-  border: 1px solid #cfd7e3;
-  border-radius: 6px;
-  padding: 10px 12px;
-  color: #111827;
-  font: inherit;
-}
-
-textarea {
-  resize: vertical;
-  line-height: 1.7;
-}
-
-.event-list {
-  display: grid;
-  gap: 10px;
   margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.event-card {
-  display: grid;
-  gap: 6px;
-  width: 100%;
-  border: 1px solid #d8dee9;
-  border-radius: 8px;
-  padding: 12px;
-  background: #ffffff;
   color: #111827;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
+  font-size: 1.6rem;
 }
 
-.event-card.active {
-  border-color: #2563eb;
-  background: #eff6ff;
+.page-note {
+  color: #475569;
+  line-height: 1.6;
 }
 
-.name {
-  font-size: 1rem;
-  font-weight: 800;
+.project-title {
+  color: #0f172a;
+  font-size: 0.92rem;
+  font-weight: 700;
 }
 
-.meta,
-.chapter-line,
-.summary {
-  color: #64748b;
-  font-size: 0.86rem;
-  line-height: 1.5;
-}
-
-.summary {
-  color: #374151;
-}
-
-.editor-panel {
-  display: grid;
-  gap: 16px;
-}
-
-.editor-header,
-.editor-actions {
+.toolbar {
   display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
 }
 
-.form-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
-}
-
-label {
-  display: grid;
-  gap: 7px;
-  color: #4b5563;
-  font-weight: 800;
-}
-
-.version {
-  flex: 0 0 auto;
-  border-radius: 999px;
-  padding: 4px 9px;
-  background: #eef2ff;
-  color: #3730a3;
-  font-size: 0.78rem;
-  font-weight: 800;
-}
-
-button {
-  min-height: 38px;
-  border-radius: 6px;
+.primary-button,
+.secondary-button,
+.toggle-button,
+.danger-button {
+  min-height: 36px;
   border: 1px solid transparent;
+  border-radius: 8px;
   padding: 0 14px;
   font: inherit;
+  font-size: 0.88rem;
   font-weight: 800;
   cursor: pointer;
-}
-
-button:disabled {
-  cursor: wait;
-  opacity: 0.65;
 }
 
 .primary-button {
@@ -729,30 +1599,512 @@ button:disabled {
 }
 
 .secondary-button {
-  border-color: #cfd7e3;
+  border-color: #d8dee9;
   background: #ffffff;
-  color: #374151;
+  color: #111827;
+}
+
+.toggle-button {
+  border-color: #d8dee9;
+  background: #f8fafc;
+  color: #334155;
+}
+
+.toggle-button.active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
 }
 
 .danger-button {
   border-color: #fecaca;
-  background: #fff7f7;
+  background: #fff1f2;
   color: #b42318;
 }
 
-@media (max-width: 860px) {
-  .timeline-page {
-    padding: 24px 16px;
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.status-banner {
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 0.88rem;
+  line-height: 1.6;
+}
+
+.status-banner.error {
+  background: #fef2f2;
+  color: #b42318;
+}
+
+.status-banner.success {
+  background: #ecfdf5;
+  color: #027a48;
+}
+
+.status-banner.warning {
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr) 360px;
+  gap: 14px;
+  min-height: 0;
+}
+
+.left-panel,
+.timeline-canvas-panel,
+.detail-panel {
+  min-height: 0;
+  border: 1px solid #d8dee9;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.left-panel,
+.detail-panel {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.panel-head.compact {
+  margin-bottom: 2px;
+}
+
+h2 {
+  margin: 0;
+  color: #111827;
+  font-size: 1.03rem;
+}
+
+.count-pill {
+  min-width: 30px;
+  border-radius: 999px;
+  padding: 5px 10px;
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.empty-tip {
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  padding: 12px;
+  color: #64748b;
+  line-height: 1.6;
+}
+
+.track-list {
+  display: grid;
+  gap: 8px;
+}
+
+.track-list-item {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #ffffff;
+  color: #0f172a;
+  text-align: left;
+}
+
+.track-list-item:hover,
+.track-list-item.active {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.track-color {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+}
+
+.track-content {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.track-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.main-tag {
+  border-radius: 999px;
+  padding: 1px 6px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 0.72rem;
+}
+
+.track-subtitle {
+  color: #64748b;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.mini-menu-button {
+  border: 0;
+  border-radius: 6px;
+  padding: 2px 7px;
+  background: transparent;
+  color: #64748b;
+  font-size: 1rem;
+  opacity: 0;
+}
+
+.track-list-item:hover .mini-menu-button,
+.track-list-item:focus-within .mini-menu-button {
+  opacity: 1;
+}
+
+.unassigned-note {
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  color: #475569;
+}
+
+.unassigned-note p {
+  margin: 0 0 4px;
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.unassigned-note span {
+  font-size: 0.78rem;
+}
+
+.timeline-canvas-panel {
+  position: relative;
+  overflow: hidden;
+}
+
+.loading-mask {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  background: rgb(255 255 255 / 75%);
+  color: #475569;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.timeline-canvas-viewport {
+  overflow: auto;
+  width: 100%;
+  height: 100%;
+}
+
+.timeline-canvas-body {
+  position: relative;
+  min-height: 100%;
+  min-width: 100%;
+  padding: 18px 20px 20px;
+}
+
+.timeline-edge-overlay {
+  position: absolute;
+  inset: 0 auto auto 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.timeline-edge-overlay path {
+  fill: none;
+  stroke: #94a3b8;
+  stroke-width: 2;
+  opacity: 0.72;
+}
+
+.timeline-edge-overlay path.dashed {
+  stroke-dasharray: 8 6;
+}
+
+.track-row {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+  padding: 14px 0;
+}
+
+.track-row:not(:last-child) {
+  border-bottom: 1px solid #eef2f7;
+}
+
+.track-row.virtual {
+  background: linear-gradient(90deg, rgb(239 246 255 / 72%), transparent);
+}
+
+.track-row.active .track-row-label {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.track-row-label {
+  display: grid;
+  gap: 5px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px 12px 11px;
+  background: #ffffff;
+  color: #0f172a;
+  text-align: left;
+}
+
+.track-row-label.virtual {
+  background: #f8fafc;
+}
+
+.row-title {
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.row-meta {
+  color: #64748b;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.track-row-lane {
+  position: relative;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 14px;
+  align-items: center;
+  min-height: 76px;
+  padding: 16px 10px 16px 8px;
+  overflow-x: auto;
+}
+
+.lane-axis {
+  position: absolute;
+  inset-inline: 0;
+  top: 50%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #cbd5e1 8%, #cbd5e1 92%, transparent);
+}
+
+.timeline-node {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  flex: 0 0 auto;
+  width: 168px;
+  min-height: 76px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 11px 12px;
+  background: #ffffff;
+  box-shadow: 0 8px 18px rgb(15 23 42 / 5%);
+  text-align: left;
+}
+
+.timeline-node:hover,
+.timeline-node.active {
+  border-color: #60a5fa;
+  background: #f8fbff;
+}
+
+.timeline-node.clean {
+  width: 148px;
+}
+
+.node-title {
+  color: #0f172a;
+  font-size: 0.88rem;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.node-meta {
+  color: #2563eb;
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.node-chip {
+  display: inline-flex;
+  justify-self: start;
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: #eef2ff;
+  color: #4338ca;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.node-description {
+  color: #475569;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.detail-panel {
+  overflow: auto;
+  align-content: start;
+}
+
+.detail-header {
+  display: grid;
+  gap: 6px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field-wide {
+  grid-column: 1 / -1;
+}
+
+.field span {
+  color: #475569;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: #ffffff;
+  color: #111827;
+  font: inherit;
+  font-size: 0.88rem;
+}
+
+textarea {
+  resize: vertical;
+}
+
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.empty-detail {
+  display: grid;
+  gap: 12px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  padding: 14px;
+  background: #f8fafc;
+  color: #475569;
+}
+
+.empty-detail h2 {
+  font-size: 0.98rem;
+}
+
+.empty-detail ul {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.7;
+}
+
+.edge-list-panel {
+  display: grid;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #eef2f7;
+}
+
+.edge-list {
+  display: grid;
+  gap: 8px;
+}
+
+.edge-list-item {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #ffffff;
+  color: #0f172a;
+  text-align: left;
+}
+
+.edge-list-item:hover,
+.edge-list-item.active {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.edge-list-title {
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.edge-list-meta,
+.edge-list-note {
+  color: #64748b;
+  font-size: 0.77rem;
+  line-height: 1.45;
+}
+
+@media (max-width: 1280px) {
+  .workspace {
+    grid-template-columns: 260px minmax(0, 1fr);
   }
 
-  .page-header,
-  .timeline-layout {
-    align-items: stretch;
+  .detail-panel {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 900px) {
+  .workspace {
     grid-template-columns: 1fr;
   }
 
-  .page-header {
-    flex-direction: column;
+  .timeline-canvas-panel {
+    min-height: 520px;
   }
 }
 </style>
