@@ -38,6 +38,7 @@ import EditChapterDialog from '@/features/chapters/EditChapterDialog.vue'
 import { clearRecoveryDraft } from '@/features/chapters/recoveryDraft'
 import CreateVolumeDialog from '@/features/volumes/CreateVolumeDialog.vue'
 import EditVolumeDialog from '@/features/volumes/EditVolumeDialog.vue'
+import WritingAidPanel from '@/features/writing/WritingAidPanel.vue'
 
 const route = useRoute()
 
@@ -395,12 +396,7 @@ function getStatusLabel(status: ChapterStatus): string {
         <h1>{{ project?.title || '正在加载项目……' }}</h1>
       </div>
       <div class="header-actions">
-        <button class="secondary-button" type="button" :disabled="isSaving" @click="showCreateVolumeDialog = true">
-          新建分卷
-        </button>
-        <button class="primary-button" type="button" :disabled="isSaving" @click="showCreateChapterDialog = true">
-          新建章节
-        </button>
+        <RouterLink class="outline-link" :to="`/projects/${projectId}/outlines`">打开完整大纲</RouterLink>
       </div>
     </header>
 
@@ -412,6 +408,18 @@ function getStatusLabel(status: ChapterStatus): string {
 
     <section v-else class="workspace-layout">
       <aside class="sidebar">
+        <nav class="project-nav" aria-label="项目导航">
+          <RouterLink class="nav-link" to="/projects">项目列表</RouterLink>
+          <RouterLink class="nav-link" :to="`/projects/${projectId}/outlines`">完整大纲</RouterLink>
+        </nav>
+        <div class="sidebar-actions">
+          <button class="secondary-button" type="button" :disabled="isSaving" @click="showCreateVolumeDialog = true">
+            新建分卷
+          </button>
+          <button class="primary-button" type="button" :disabled="isSaving" @click="showCreateChapterDialog = true">
+            新建章节
+          </button>
+        </div>
         <ChapterTree
           :volumes="sortedVolumes"
           :chapters="sortedChapters"
@@ -506,6 +514,10 @@ function getStatusLabel(status: ChapterStatus): string {
           <p class="summary-text">{{ project?.summary || '暂无项目简介。' }}</p>
         </article>
       </section>
+
+      <aside class="aid-sidebar">
+        <WritingAidPanel :project-id="projectId" :chapter-id="selectedChapter?.id ?? null" />
+      </aside>
     </section>
 
     <CreateVolumeDialog
@@ -559,7 +571,7 @@ function getStatusLabel(status: ChapterStatus): string {
   align-items: flex-end;
   justify-content: space-between;
   gap: 24px;
-  max-width: 1280px;
+  max-width: 1600px;
   margin: 0 auto 22px;
 }
 
@@ -602,6 +614,20 @@ h2 {
   gap: 12px;
 }
 
+.outline-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  box-sizing: border-box;
+  border: 1px solid #cfd7e3;
+  border-radius: 6px;
+  padding: 0 14px;
+  background: #ffffff;
+  color: #2563eb;
+  font-weight: 800;
+  text-decoration: none;
+}
+
 .panel-badges {
   display: flex;
   flex-wrap: wrap;
@@ -612,7 +638,7 @@ h2 {
 .error-banner,
 .state-message,
 .workspace-layout {
-  max-width: 1280px;
+  max-width: 1600px;
   margin: 0 auto;
 }
 
@@ -639,22 +665,58 @@ h2 {
 
 .workspace-layout {
   display: grid;
-  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+  grid-template-columns: minmax(260px, 320px) minmax(520px, 1fr) minmax(300px, 380px);
   gap: 18px;
   align-items: start;
+  height: calc(100vh - 150px);
+  min-height: 560px;
 }
 
 .sidebar,
-.detail-panel {
+.detail-panel,
+.aid-sidebar {
   min-width: 0;
+  max-height: 100%;
+  overflow: auto;
+}
+
+.sidebar {
+  display: grid;
+  gap: 14px;
 }
 
 .detail-panel > article {
+  min-height: 100%;
+  box-sizing: border-box;
   border: 1px solid #d8dee9;
   border-radius: 8px;
   padding: 24px;
   background: #ffffff;
   box-shadow: 0 10px 28px rgb(20 24 31 / 6%);
+}
+
+.project-nav,
+.sidebar-actions {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #d8dee9;
+  border-radius: 8px;
+  padding: 12px;
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgb(20 24 31 / 6%);
+}
+
+.nav-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  border: 1px solid #cfd7e3;
+  border-radius: 6px;
+  background: #fbfcfe;
+  color: #2563eb;
+  font-weight: 800;
+  text-decoration: none;
 }
 
 .metadata-grid {
@@ -767,7 +829,8 @@ button:disabled {
   }
 
   .workspace-layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(260px, 320px) minmax(520px, 1fr) minmax(300px, 380px);
+    overflow-x: auto;
   }
 }
 </style>

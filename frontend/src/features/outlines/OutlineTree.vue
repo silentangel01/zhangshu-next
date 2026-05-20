@@ -1,0 +1,155 @@
+<script setup lang="ts">
+import { computed } from 'vue'
+
+import type { OutlineItem, OutlineTreeNodeData } from '@/entities/outline/types'
+import OutlineTreeNode from './OutlineTreeNode.vue'
+
+const props = defineProps<{
+  items: OutlineItem[]
+  selectedOutlineId: string | null
+}>()
+
+const emit = defineEmits<{
+  select: [item: OutlineItem]
+}>()
+
+const treeGroups = computed(() => buildOutlineTree(props.items))
+
+function buildOutlineTree(items: OutlineItem[]): {
+  roots: OutlineTreeNodeData[]
+  orphanRoots: OutlineTreeNodeData[]
+} {
+  const nodes = new Map<string, OutlineTreeNodeData>()
+
+  for (const item of items) {
+    nodes.set(item.id, { item, children: [] })
+  }
+
+  const roots: OutlineTreeNodeData[] = []
+  const orphanRoots: OutlineTreeNodeData[] = []
+
+  for (const node of nodes.values()) {
+    const parentId = node.item.parent_id
+    const parent = parentId ? nodes.get(parentId) : null
+
+    if (parent) {
+      parent.children.push(node)
+    } else if (parentId) {
+      orphanRoots.push(node)
+    } else {
+      roots.push(node)
+    }
+  }
+
+  sortTreeNodes(roots)
+  sortTreeNodes(orphanRoots)
+  return { roots, orphanRoots }
+}
+
+function sortTreeNodes(nodes: OutlineTreeNodeData[]) {
+  nodes.sort((left, right) => compareOutlineItems(left.item, right.item))
+  for (const node of nodes) {
+    sortTreeNodes(node.children)
+  }
+}
+
+function compareOutlineItems(left: OutlineItem, right: OutlineItem): number {
+  if (left.order_index !== right.order_index) {
+    return left.order_index - right.order_index
+  }
+  return new Date(left.created_at).getTime() - new Date(right.created_at).getTime()
+}
+</script>
+
+<template>
+  <section class="outline-tree">
+    <header class="tree-header">
+      <h2>大纲树</h2>
+    </header>
+
+    <p v-if="items.length === 0" class="empty-state">暂无大纲内容。</p>
+
+    <div v-else class="tree-groups">
+      <ul v-if="treeGroups.roots.length" class="tree-list">
+        <OutlineTreeNode
+          v-for="node in treeGroups.roots"
+          :key="node.item.id"
+          :node="node"
+          :depth="0"
+          :selected-outline-id="selectedOutlineId"
+          @select="emit('select', $event)"
+        />
+      </ul>
+
+      <section v-if="treeGroups.orphanRoots.length" class="orphan-group">
+        <h3>未归类大纲</h3>
+        <ul class="tree-list">
+          <OutlineTreeNode
+            v-for="node in treeGroups.orphanRoots"
+            :key="node.item.id"
+            :node="node"
+            :depth="0"
+            :selected-outline-id="selectedOutlineId"
+            @select="emit('select', $event)"
+          />
+        </ul>
+      </section>
+    </div>
+  </section>
+</template>
+
+<style scoped>
+.outline-tree {
+  display: grid;
+  gap: 12px;
+}
+
+.tree-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+h2,
+h3 {
+  margin: 0;
+}
+
+h2 {
+  font-size: 1.1rem;
+}
+
+h3 {
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.empty-state {
+  margin: 0;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  padding: 18px;
+  background: #fbfcfe;
+  color: #64748b;
+  text-align: center;
+}
+
+.tree-groups,
+.orphan-group {
+  display: grid;
+  gap: 10px;
+}
+
+.orphan-group {
+  border-top: 1px solid #e5e7eb;
+  padding-top: 12px;
+}
+
+.tree-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+</style>

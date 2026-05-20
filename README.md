@@ -63,6 +63,8 @@ http://localhost:5173/projects
 - 从历史版本恢复正文
 - 旧版 JSON 导入预览与确认导入
 - 文件夹压缩包导入预览与确认导入
+- 基础大纲模块
+- 章节细纲与章节编辑器联动
 
 ## 章节版本历史
 
@@ -83,6 +85,18 @@ http://localhost:5173/projects
 - 确认导入会调用 `POST /api/imports/{import_id}/confirm` 创建新项目、分卷和章节。
 - 当前只支持创建新项目，不会覆盖现有项目。
 - 导入报告保存在 `data/imports/reports/`，预览和临时文件保存在 `data/imports/`。
+
+## 大纲与细纲
+
+- 大纲入口：项目详情页点击“打开大纲”，进入 `/projects/{project_id}/outlines`。
+- 后端数据表：`outline_items`。
+- 大纲条目支持父子层级，使用 `parent_id` 和 `order_index` 组织树形结构。
+- 条目类型包括 `book_outline`、`volume_outline`、`chapter_outline`、`scene`、`plot_point`、`note`。
+- 状态包括 `planned`、`writing`、`done`、`abandoned`。
+- 重要程度包括 `normal`、`important`、`critical`。
+- 大纲条目可以绑定分卷或章节，用于“大纲规划 → 绑定章节 → 写作时查看细纲”的基础流程。
+- 章节编辑器旁会显示“当前章节细纲”，内容来自 `GET /api/chapters/{chapter_id}/outlines`。
+- 当前阶段不实现 AI 大纲生成、拖拽排序、复杂图谱或角色/线索/设定联动。
 
 ## 编码说明
 
