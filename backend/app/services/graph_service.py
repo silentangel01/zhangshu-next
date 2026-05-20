@@ -1,0 +1,218 @@
+from uuid import uuid4
+
+from sqlalchemy.orm import Session
+
+from app.models.graph_edge import GraphEdge
+from app.models.graph_node import GraphNode
+from app.repositories.character_repo import CharacterRepository
+from app.repositories.clue_repo import ClueRepository
+from app.repositories.project_repo import ProjectRepository
+from app.repositories.setting_repo import SettingRepository
+from app.repositories.timeline_repo import TimelineRepository
+from app.repositories.graph_edge_repo import GraphEdgeRepository
+from app.repositories.graph_node_repo import GraphNodeRepository
+from app.schemas.graph import GraphEdgeCreate, GraphEdgeUpdate, GraphNodeCreate, GraphNodeUpdate
+
+
+class GraphProjectNotFoundError(Exception):
+    pass
+
+
+class GraphNodeNotFoundError(Exception):
+    pass
+
+
+class GraphEdgeNotFoundError(Exception):
+    pass
+
+
+class GraphNodeProjectMismatchError(Exception):
+    pass
+
+
+class GraphEdgeSelfReferenceError(Exception):
+    pass
+
+
+class GraphBoundNotFoundError(Exception):
+    pass
+
+
+class GraphBoundProjectMismatchError(Exception):
+    pass
+
+
+class GraphService:
+    def __init__(self, db: Session):
+        self.db = db
+        self.project_repo = ProjectRepository(db)
+        self.character_repo = CharacterRepository(db)
+        self.setting_repo = SettingRepository(db)
+        self.clue_repo = ClueRepository(db)
+        self.timeline_repo = TimelineRepository(db)
+        self.node_repo = GraphNodeRepository(db)
+        self.edge_repo = GraphEdgeRepository(db)
+
+    def list_project_graph_nodes(
+        self,
+        project_id: str,
+        *,
+        node_type: str | None = None,
+        bound_type: str | None = None,
+        visibility: str | None = None,
+        keyword: str | None = None,
+    ) -> list[GraphNode]:
+        self._ensure_project_exists(project_id)
+        return self.node_repo.list_active_by_project(
+            project_id,
+            node_type=node_type,
+            bound_type=bound_type,
+            visibility=visibility,
+            keyword=keyword,
+        )
+
+    def create_graph_node(self, project_id: str, data: GraphNodeCreate) -> GraphNode:
+        self._ensure_project_exists(project_id)
+        self._validate_bound_reference(project_id, data.bound_type, data.bound_id)
+
+        node = GraphNode(
+            id=str(uuid4()),
+            project_id=project_id,
+            title=data.title,
+            node_type=data.node_type,
+            bound_type=data.bound_type,
+            bound_id=data.bound_id,
+            summary=data.summary,
+            x=data.x,
+            y=data.y,
+            color=data.color,
+            size=data.size,
+            visibility=data.visibility,
+        )
+        return self.node_repo.create(node)
+
+    def get_graph_node(self, node_id: str) -> GraphNode:
+        node = self.node_repo.get_active(node_id)
+        if node is None:
+            raise GraphNodeNotFoundError
+        return node
+
+    def update_graph_node(self, node_id: str, data: GraphNodeUpdate) -> GraphNode:
+        node = self.get_graph_node(node_id)
+        values = data.model_dump(exclude_unset=True)
+
+        bound_type = values.get("bound_type", node.bound_type)
+        bound_id = values.get("bound_id", node.bound_id)
+        self._validate_bound_reference(node.project_id, bound_type, bound_id)
+
+        return self.node_repo.update(node, values)
+
+    def delete_graph_node(self, node_id: str) -> GraphNode:
+        node = self.get_graph_node(node_id)
+        connected_edges = self.edge_repo.list_active_connected_to_node(node.id)
+        for edge in connected_edges:
+            self.edge_repo.soft_delete(edge, commit=False)
+        deleted = self.node_repo.soft_delete(node, commit=False)
+        self.db.commit()
+        self.db.refresh(deleted)
+        return deleted
+
+    def list_project_graph_edges(
+        self,
+        project_id: str,
+        *,
+        relation_type: str | None = None,
+        visibility: str | None = None,
+    ) -> list[GraphEdge]:
+        self._ensure_project_exists(project_id)
+        return self.edge_repo.list_active_by_project(
+            project_id,
+            relation_type=relation_type,
+            visibility=visibility,
+        )
+
+    def create_graph_edge(self, project_id: str, data: GraphEdgeCreate) -> GraphEdge:
+        self._ensure_project_exists(project_id)
+        self._validate_node_pair(project_id, data.from_node_id, data.to_node_id)
+
+        edge = GraphEdge(
+            id=str(uuid4()),
+            project_id=project_id,
+            from_node_id=data.from_node_id,
+            to_node_id=data.to_node_id,
+            relation_type=data.relation_type,
+            direction=data.direction,
+            strength=data.strength,
+            label=data.label,
+            note=data.note,
+            line_style=data.line_style,
+            visibility=data.visibility,
+        )
+        return self.edge_repo.create(edge)
+
+    def get_graph_edge(self, edge_id: str) -> GraphEdge:
+        edge = self.edge_repo.get_active(edge_id)
+        if edge is None:
+            raise GraphEdgeNotFoundError
+        return edge
+
+    def update_graph_edge(self, edge_id: str, data: GraphEdgeUpdate) -> GraphEdge:
+        edge = self.get_graph_edge(edge_id)
+        values = data.model_dump(exclude_unset=True)
+
+        from_node_id = values.get("from_node_id", edge.from_node_id)
+        to_node_id = values.get("to_node_id", edge.to_node_id)
+        self._validate_node_pair(edge.project_id, from_node_id, to_node_id)
+
+        return self.edge_repo.update(edge, values)
+
+    def delete_graph_edge(self, edge_id: str) -> GraphEdge:
+        edge = self.get_graph_edge(edge_id)
+        return self.edge_repo.soft_delete(edge)
+
+    def _ensure_project_exists(self, project_id: str) -> None:
+        project = self.project_repo.get_active(project_id)
+        if project is None:
+            raise GraphProjectNotFoundError
+
+    def _validate_bound_reference(
+        self,
+        project_id: str,
+        bound_type: str | None,
+        bound_id: str | None,
+    ) -> None:
+        if bound_type is None or bound_id is None:
+            return
+        if bound_type == "custom":
+            return
+        if bound_type == "character":
+            bound_object = self.character_repo.get_active(bound_id)
+        elif bound_type == "setting":
+            bound_object = self.setting_repo.get_active(bound_id)
+        elif bound_type == "clue":
+            bound_object = self.clue_repo.get_active(bound_id)
+        elif bound_type == "timeline_event":
+            bound_object = self.timeline_repo.get_active(bound_id)
+        else:
+            bound_object = None
+
+        if bound_object is None:
+            raise GraphBoundNotFoundError
+        if bound_object.project_id != project_id:
+            raise GraphBoundProjectMismatchError
+
+    def _validate_node_pair(self, project_id: str, from_node_id: str, to_node_id: str) -> None:
+        if from_node_id == to_node_id:
+            raise GraphEdgeSelfReferenceError
+
+        from_node = self.node_repo.get_active(from_node_id)
+        if from_node is None:
+            raise GraphNodeNotFoundError
+        if from_node.project_id != project_id:
+            raise GraphNodeProjectMismatchError
+
+        to_node = self.node_repo.get_active(to_node_id)
+        if to_node is None:
+            raise GraphNodeNotFoundError
+        if to_node.project_id != project_id:
+            raise GraphNodeProjectMismatchError

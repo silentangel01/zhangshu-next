@@ -214,6 +214,8 @@ def init_database() -> None:
     from app.models import clue  # noqa: F401
     from app.models import clue_character  # noqa: F401
     from app.models import clue_setting  # noqa: F401
+    from app.models import graph_edge  # noqa: F401
+    from app.models import graph_node  # noqa: F401
     from app.models import outline_item  # noqa: F401
     from app.models import timeline_event  # noqa: F401
     from app.models import timeline_edge  # noqa: F401
