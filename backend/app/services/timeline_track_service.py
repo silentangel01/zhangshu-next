@@ -86,6 +86,7 @@ class TimelineTrackService:
     def ensure_main_track(self, project_id: str) -> TimelineTrack:
         self._ensure_project_exists(project_id)
         main_track = self.track_repo.get_main_active_by_project(project_id)
+        created_main_track = False
         if main_track is None:
             main_track = TimelineTrack(
                 id=str(uuid4()),
@@ -101,8 +102,11 @@ class TimelineTrackService:
             )
             self.track_repo.create(main_track, commit=False)
             self.db.flush()
+            created_main_track = True
 
         self.timeline_repo.backfill_untracked_events(project_id, main_track.id, commit=False)
+        if created_main_track:
+            self._distribute_track_position_ratios(main_track.id)
         self.db.commit()
         self.db.refresh(main_track)
         return main_track
@@ -120,3 +124,15 @@ class TimelineTrackService:
         project = self.project_repo.get_active(project_id)
         if project is None:
             raise TimelineProjectNotFoundError
+
+    def _distribute_track_position_ratios(self, track_id: str) -> None:
+        events = self.timeline_repo.list_active_by_track(track_id)
+        event_count = len(events)
+        if event_count == 0:
+            return
+
+        for index, event in enumerate(events):
+            if event_count == 1:
+                event.position_ratio = 50.0
+            else:
+                event.position_ratio = round(100.0 * (index + 1) / (event_count + 1), 2)

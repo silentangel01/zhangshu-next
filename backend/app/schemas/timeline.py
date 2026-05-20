@@ -12,6 +12,7 @@ TimelineEventImportance = Literal["low", "normal", "high", "critical"]
 TimelineEventStatus = Literal["planned", "happened", "revised", "deprecated"]
 TimelineTrackType = Literal["main", "character", "organization", "setting", "clue", "volume", "custom"]
 TimelineEdgeType = Literal["cause", "parallel", "clue_payoff", "conflict", "echo", "related", "custom"]
+TimelineEdgeTemporalRelation = Literal["previous", "parallel", "delayed", "future", "unordered"]
 TimelineEdgeLineStyle = Literal["straight", "arc", "dashed", "arrow"]
 TimelineEdgeVisibility = Literal["normal", "subtle", "hidden"]
 
@@ -99,6 +100,7 @@ class TimelineEdgeBase(BaseModel):
     from_event_id: str
     to_event_id: str
     edge_type: TimelineEdgeType = "related"
+    temporal_relation: TimelineEdgeTemporalRelation = "unordered"
     line_style: TimelineEdgeLineStyle = "straight"
     label: str = ""
     note: str = ""
@@ -113,6 +115,7 @@ class TimelineEdgeUpdate(BaseModel):
     from_event_id: str | None = None
     to_event_id: str | None = None
     edge_type: TimelineEdgeType | None = None
+    temporal_relation: TimelineEdgeTemporalRelation | None = None
     line_style: TimelineEdgeLineStyle | None = None
     label: str | None = None
     note: str | None = None
@@ -127,6 +130,7 @@ class TimelineEdgeRead(BaseModel):
     from_event_id: str
     to_event_id: str
     edge_type: str
+    temporal_relation: TimelineEdgeTemporalRelation
     line_style: str
     label: str
     note: str
@@ -145,6 +149,7 @@ class TimelineEventBase(BaseModel):
     story_time: str | None = None
     order_index: int = 0
     position_index: int = 0
+    position_ratio: float | None = None
     importance: TimelineEventImportance = "normal"
     status: TimelineEventStatus = "planned"
     chapter_id: str | None = None
@@ -167,6 +172,15 @@ class TimelineEventBase(BaseModel):
             raise ValueError("Index must not be negative")
         return value
 
+    @field_validator("position_ratio")
+    @classmethod
+    def position_ratio_must_be_within_range(cls, value: float | None) -> float | None:
+        if value is None:
+            return value
+        if value < 0 or value > 100:
+            raise ValueError("Position ratio must be between 0 and 100")
+        return value
+
 
 class TimelineEventCreate(TimelineEventBase):
     pass
@@ -180,6 +194,7 @@ class TimelineEventUpdate(BaseModel):
     story_time: str | None = None
     order_index: int | None = None
     position_index: int | None = None
+    position_ratio: float | None = None
     importance: TimelineEventImportance | None = None
     status: TimelineEventStatus | None = None
     chapter_id: str | None = None
@@ -206,6 +221,15 @@ class TimelineEventUpdate(BaseModel):
             raise ValueError("Index must not be negative")
         return value
 
+    @field_validator("position_ratio")
+    @classmethod
+    def position_ratio_must_be_within_range(cls, value: float | None) -> float | None:
+        if value is None:
+            return value
+        if value < 0 or value > 100:
+            raise ValueError("Position ratio must be between 0 and 100")
+        return value
+
 
 class TimelineEventRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -219,6 +243,7 @@ class TimelineEventRead(BaseModel):
     story_time: str | None
     order_index: int
     position_index: int
+    position_ratio: float
     importance: str
     status: str
     chapter_id: str | None

@@ -62,6 +62,7 @@ class TimelineEdgeService:
             from_event_id=data.from_event_id,
             to_event_id=data.to_event_id,
             edge_type=data.edge_type,
+            temporal_relation=data.temporal_relation,
             line_style=data.line_style,
             label=data.label,
             note=data.note,

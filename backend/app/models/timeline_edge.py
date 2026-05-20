@@ -33,6 +33,7 @@ class TimelineEdge(Base):
         index=True,
     )
     edge_type: Mapped[str] = mapped_column(String(32), default="related", nullable=False, index=True)
+    temporal_relation: Mapped[str] = mapped_column(String(32), default="unordered", nullable=False, index=True)
     line_style: Mapped[str] = mapped_column(String(32), default="straight", nullable=False, index=True)
     label: Mapped[str] = mapped_column(String(255), default="", nullable=False)
     note: Mapped[str] = mapped_column(Text, default="", nullable=False)

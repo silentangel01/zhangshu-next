@@ -26,6 +26,7 @@ import type {
   TimelineEdge,
   TimelineEdgeCreatePayload,
   TimelineEdgeLineStyle,
+  TimelineEdgeTemporalRelation,
   TimelineEdgeType,
   TimelineEdgeUpdatePayload,
   TimelineEdgeVisibility,
@@ -41,6 +42,7 @@ import type {
 } from '@/entities/timeline/types'
 import {
   timelineEdgeLineStyleLabels,
+  timelineEdgeTemporalRelationLabels,
   timelineEdgeTypeLabels,
   timelineEdgeVisibilityLabels,
   timelineEventImportanceLabels,
@@ -121,6 +123,7 @@ const edgeForm = reactive({
   from_event_id: '',
   to_event_id: '',
   edge_type: 'related' as TimelineEdgeType,
+  temporal_relation: 'unordered' as TimelineEdgeTemporalRelation,
   line_style: 'straight' as TimelineEdgeLineStyle,
   label: '',
   note: '',
@@ -139,8 +142,24 @@ const eventImportances: TimelineEventImportance[] = ['low', 'normal', 'high', 'c
 const eventStatuses: TimelineEventStatus[] = ['planned', 'happened', 'revised', 'deprecated']
 const trackTypes: TimelineTrackType[] = ['main', 'character', 'organization', 'setting', 'clue', 'volume', 'custom']
 const edgeTypes: TimelineEdgeType[] = ['cause', 'parallel', 'clue_payoff', 'conflict', 'echo', 'related', 'custom']
+const temporalRelations: TimelineEdgeTemporalRelation[] = ['previous', 'parallel', 'delayed', 'future', 'unordered']
 const lineStyles: TimelineEdgeLineStyle[] = ['straight', 'arc', 'dashed', 'arrow']
 const visibilities: TimelineEdgeVisibility[] = ['normal', 'subtle', 'hidden']
+const hiddenTrackIds = ref<string[]>([])
+const progressMessage = ref('')
+const DRAG_START_THRESHOLD_PX = 4
+const dragState = reactive({
+  active: false,
+  eventId: '',
+  trackId: '',
+  pointerId: -1,
+  startX: 0,
+  startY: 0,
+  startRatio: 0,
+  currentRatio: 0,
+  dragging: false,
+  suppressClick: false,
+})
 
 const projectId = computed<string>(() => {
   const value = route.params.projectId
@@ -189,6 +208,8 @@ const orderedTracks = computed(() =>
   }),
 )
 
+const visibleTracks = computed(() => orderedTracks.value.filter((track) => !isTrackHidden(track.id)))
+
 const groupedEvents = computed(() => {
   const groups = new Map<string, TimelineEvent[]>()
   for (const track of orderedTracks.value) {
@@ -220,7 +241,7 @@ const unassignedEvents = computed(() =>
 )
 
 const rows = computed<TrackRow[]>(() => {
-  const actualRows: TrackRow[] = orderedTracks.value.map((track) => ({
+  const actualRows: TrackRow[] = visibleTracks.value.map((track) => ({
     id: track.id,
     title: track.title,
     description: track.description,
@@ -245,13 +266,21 @@ const rows = computed<TrackRow[]>(() => {
 
 const visibleEdges = computed(() =>
   edges.value.filter((edge) => {
+    const fromEvent = eventMap.value[edge.from_event_id]
+    const toEvent = eventMap.value[edge.to_event_id]
+    if (!fromEvent || !toEvent) {
+      return false
+    }
     if (edge.visibility === 'hidden') {
       return false
     }
     if (cleanMode.value && edge.visibility === 'subtle') {
       return false
     }
-    return Boolean(eventMap.value[edge.from_event_id] && eventMap.value[edge.to_event_id])
+    if (isTrackHidden(fromEvent.track_id) || isTrackHidden(toEvent.track_id)) {
+      return false
+    }
+    return true
   }),
 )
 
@@ -332,12 +361,16 @@ const defaultEventTrackId = computed(() => {
   return mainTrack.value?.id || ''
 })
 
+const hasDetailSelection = computed(() => panelKind.value !== 'none')
+
 const edgePoints = ref<RenderedEdge[]>([])
 const canvasWidth = ref(0)
 const canvasHeight = ref(0)
 const canvasViewportRef = ref<HTMLElement | null>(null)
 const canvasBodyRef = ref<HTMLElement | null>(null)
+const trackLaneRefs = ref<Record<string, HTMLElement | null>>({})
 const eventNodeRefs = ref<Record<string, HTMLElement | null>>({})
+let edgeMeasureFrameId: number | null = null
 
 onMounted(() => {
   void loadWorkspace()
@@ -346,6 +379,10 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', scheduleMeasureEdges)
+  if (edgeMeasureFrameId !== null) {
+    window.cancelAnimationFrame(edgeMeasureFrameId)
+    edgeMeasureFrameId = null
+  }
 })
 
 watch(projectId, () => {
@@ -593,6 +630,7 @@ function applyEdgeToForm(edge: TimelineEdge) {
   edgeForm.from_event_id = edge.from_event_id
   edgeForm.to_event_id = edge.to_event_id
   edgeForm.edge_type = edge.edge_type
+  edgeForm.temporal_relation = edge.temporal_relation as TimelineEdgeTemporalRelation
   edgeForm.line_style = edge.line_style
   edgeForm.label = edge.label
   edgeForm.note = edge.note
@@ -603,6 +641,7 @@ function resetEdgeForm() {
   edgeForm.from_event_id = selectedEvent.value?.id ?? ''
   edgeForm.to_event_id = ''
   edgeForm.edge_type = 'related'
+  edgeForm.temporal_relation = 'unordered'
   edgeForm.line_style = 'straight'
   edgeForm.label = ''
   edgeForm.note = ''
@@ -699,11 +738,18 @@ function buildEdgeDescription(edge: TimelineEdge) {
   return `${fromTitle} → ${toTitle}`
 }
 
+function shouldShowEdgeTemporalRelation(edge: TimelineEdge) {
+  return !cleanMode.value || selectedEdgeId.value === edge.id
+}
+
 function buildEdgeSummary(edge: TimelineEdge) {
   const label = getEdgeLabel(edge)
+  const temporalRelation = shouldShowEdgeTemporalRelation(edge)
+    ? timelineEdgeTemporalRelationLabels[edge.temporal_relation]
+    : ''
   const style = timelineEdgeLineStyleLabels[edge.line_style]
   const visibility = timelineEdgeVisibilityLabels[edge.visibility]
-  return `${label} · ${style} · ${visibility}`
+  return temporalRelation ? `${label} · ${temporalRelation} · ${style} · ${visibility}` : `${label} · ${style} · ${visibility}`
 }
 
 function selectTrackMenuButton(track: TimelineTrack, event: MouseEvent) {
@@ -830,6 +876,7 @@ async function handleSaveEdge() {
       from_event_id: edgeForm.from_event_id,
       to_event_id: edgeForm.to_event_id,
       edge_type: edgeForm.edge_type,
+      temporal_relation: edgeForm.temporal_relation,
       line_style: edgeForm.line_style,
       label: edgeForm.label,
       note: edgeForm.note,
@@ -900,6 +947,7 @@ function formatErrorMessage(error: unknown, fallback: string) {
     'Timeline track still has events': '时间轴下还有节点，暂时不能删除。',
     'Timeline event not found': '时间轴节点不存在。',
     'Timeline event does not belong to project': '时间轴节点不属于当前项目。',
+    'Position ratio must be between 0 and 100': '节点位置必须在 0 到 100 之间。',
     'Edge cannot connect the same event': '连接的起点和终点不能相同。',
     'Timeline edge not found': '时间轴连接不存在。',
   }
@@ -909,10 +957,17 @@ function formatErrorMessage(error: unknown, fallback: string) {
 
 function sortEvents(left: TimelineEvent, right: TimelineEvent) {
   return (
+    getEventPositionRatio(left) - getEventPositionRatio(right) ||
     left.position_index - right.position_index ||
     left.order_index - right.order_index ||
     left.created_at.localeCompare(right.created_at, 'zh-Hans-CN')
   )
+}
+
+function getEventPositionRatio(event: TimelineEvent) {
+  return typeof event.position_ratio === 'number' && Number.isFinite(event.position_ratio)
+    ? event.position_ratio
+    : 50
 }
 
 function truncateText(value: string, limit: number) {
@@ -930,9 +985,28 @@ function registerEventNode(eventId: string, element: Element | null) {
   delete eventNodeRefs.value[eventId]
 }
 
+function registerTrackLane(trackId: string, element: Element | null) {
+  if (element instanceof HTMLElement) {
+    trackLaneRefs.value[trackId] = element
+    return
+  }
+  delete trackLaneRefs.value[trackId]
+}
+
 async function scheduleMeasureEdges() {
   await nextTick()
   measureEdgeOverlay()
+}
+
+function requestMeasureEdges() {
+  if (edgeMeasureFrameId !== null) {
+    return
+  }
+
+  edgeMeasureFrameId = window.requestAnimationFrame(() => {
+    edgeMeasureFrameId = null
+    void scheduleMeasureEdges()
+  })
 }
 
 function measureEdgeOverlay() {
@@ -999,7 +1073,251 @@ function getNodeClass(event: TimelineEvent) {
   return {
     active: selectedEventId.value === event.id,
     clean: cleanMode.value,
+    dragging: dragState.dragging && dragState.eventId === event.id,
   }
+}
+
+function getNodeStyle(row: TrackRow, event: TimelineEvent) {
+  const ratio = getDisplayPositionRatio(row, event)
+  return {
+    left: `${ratio}%`,
+  }
+}
+
+function getDisplayPositionRatio(row: TrackRow, event: TimelineEvent) {
+  if (dragState.dragging && dragState.eventId === event.id) {
+    return clampNumber(dragState.currentRatio, 0, 100)
+  }
+
+  return getStaticNodePositionRatio(row, event)
+}
+
+function getStaticNodePositionRatio(row: TrackRow, event: TimelineEvent) {
+  if (typeof event.position_ratio === 'number' && Number.isFinite(event.position_ratio)) {
+    return clampNumber(event.position_ratio, 0, 100)
+  }
+
+  const sameRowEvents = row.events
+  const index = sameRowEvents.findIndex((item) => item.id === event.id)
+  if (index < 0 || sameRowEvents.length <= 1) {
+    return 50
+  }
+
+  return clampNumber(((index + 1) / (sameRowEvents.length + 1)) * 100, 0, 100)
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value))
+}
+
+function getNodeWidth(eventId: string) {
+  return eventNodeRefs.value[eventId]?.offsetWidth ?? 156
+}
+
+function getLaneWidth(trackId: string) {
+  return trackLaneRefs.value[trackId]?.getBoundingClientRect().width ?? 0
+}
+
+function clampNodePositionRatio(trackId: string, eventId: string, candidateRatio: number) {
+  const laneWidth = getLaneWidth(trackId)
+  if (laneWidth <= 0) {
+    return clampNumber(candidateRatio, 0, 100)
+  }
+
+  const draggedWidth = getNodeWidth(eventId)
+  const minCenter = (draggedWidth / 2 / laneWidth) * 100
+  const maxCenter = 100 - minCenter
+
+  const siblings = getTrackEvents(trackId)
+    .filter((item) => item.id !== eventId)
+    .map((item) => ({
+      event: item,
+      ratio: getEventPositionRatio(item),
+      width: getNodeWidth(item.id),
+    }))
+    .sort((left, right) => left.ratio - right.ratio)
+
+  let lowerBound = minCenter
+  let upperBound = maxCenter
+
+  for (const sibling of siblings) {
+    const gapRatio = ((draggedWidth / 2 + sibling.width / 2 + 12) / laneWidth) * 100
+    if (sibling.ratio <= candidateRatio) {
+      lowerBound = Math.max(lowerBound, sibling.ratio + gapRatio)
+      continue
+    }
+
+    upperBound = Math.min(upperBound, sibling.ratio - gapRatio)
+    break
+  }
+
+  if (lowerBound > upperBound) {
+    return clampNumber(candidateRatio, minCenter, maxCenter)
+  }
+
+  return clampNumber(candidateRatio, lowerBound, upperBound)
+}
+
+function handleNodePointerDown(track: TimelineTrack, event: TimelineEvent, pointerEvent: PointerEvent) {
+  if (pointerEvent.button !== 0) {
+    return
+  }
+
+  const currentTarget = pointerEvent.currentTarget
+  if (!(currentTarget instanceof HTMLElement)) {
+    return
+  }
+
+  dragState.active = true
+  dragState.eventId = event.id
+  dragState.trackId = track.id
+  dragState.pointerId = pointerEvent.pointerId
+  dragState.startX = pointerEvent.clientX
+  dragState.startY = pointerEvent.clientY
+  dragState.startRatio = getStaticNodePositionRatio(
+    { id: track.id, title: track.title, description: track.description, track, events: getTrackEvents(track.id), isVirtual: false },
+    event,
+  )
+  dragState.currentRatio = dragState.startRatio
+  dragState.dragging = false
+  dragState.suppressClick = false
+
+  try {
+    currentTarget.setPointerCapture(pointerEvent.pointerId)
+  } catch {
+    // 某些浏览器/测试环境可能不支持 capture，忽略即可。
+  }
+}
+
+function handleNodePointerMove(track: TimelineTrack, event: TimelineEvent, pointerEvent: PointerEvent) {
+  if (!dragState.active || dragState.pointerId !== pointerEvent.pointerId || dragState.eventId !== event.id) {
+    return
+  }
+
+  const lane = trackLaneRefs.value[track.id]
+  if (!lane) {
+    return
+  }
+
+  const movedDistance = Math.max(
+    Math.abs(pointerEvent.clientX - dragState.startX),
+    Math.abs(pointerEvent.clientY - dragState.startY),
+  )
+  if (!dragState.dragging && movedDistance < DRAG_START_THRESHOLD_PX) {
+    return
+  }
+
+  dragState.dragging = true
+  pointerEvent.preventDefault()
+
+  const laneRect = lane.getBoundingClientRect()
+  if (laneRect.width <= 0) {
+    return
+  }
+
+  const candidateRatio = dragState.startRatio + ((pointerEvent.clientX - dragState.startX) / laneRect.width) * 100
+  dragState.currentRatio = clampNodePositionRatio(track.id, event.id, candidateRatio)
+  requestMeasureEdges()
+}
+
+async function handleNodePointerUp(_track: TimelineTrack, event: TimelineEvent, pointerEvent: PointerEvent) {
+  if (!dragState.active || dragState.pointerId !== pointerEvent.pointerId || dragState.eventId !== event.id) {
+    return
+  }
+
+  const currentTarget = pointerEvent.currentTarget
+  if (currentTarget instanceof HTMLElement) {
+    try {
+      if (currentTarget.hasPointerCapture(pointerEvent.pointerId)) {
+        currentTarget.releasePointerCapture(pointerEvent.pointerId)
+      }
+    } catch {
+      // ignore release issues
+    }
+  }
+
+  if (!dragState.dragging) {
+    clearDragState()
+    return
+  }
+
+  dragState.suppressClick = true
+  progressMessage.value = '正在调整节点位置……'
+
+  try {
+    await runSave(async () => {
+      const saved = await updateTimelineEvent(event.id, {
+        position_ratio: clampNumber(Number(dragState.currentRatio.toFixed(2)), 0, 100),
+      })
+      events.value = events.value.map((item) => (item.id === saved.id ? saved : item))
+      successMessage.value = '节点位置已更新'
+    }, '节点位置更新失败，请重试')
+    await scheduleMeasureEdges()
+  } finally {
+    progressMessage.value = ''
+    clearDragState()
+    window.setTimeout(() => {
+      dragState.suppressClick = false
+    }, 0)
+  }
+}
+
+function handleNodePointerCancel(_track: TimelineTrack, event: TimelineEvent, pointerEvent: PointerEvent) {
+  if (!dragState.active || dragState.pointerId !== pointerEvent.pointerId || dragState.eventId !== event.id) {
+    return
+  }
+
+  const currentTarget = pointerEvent.currentTarget
+  if (currentTarget instanceof HTMLElement) {
+    try {
+      if (currentTarget.hasPointerCapture(pointerEvent.pointerId)) {
+        currentTarget.releasePointerCapture(pointerEvent.pointerId)
+      }
+    } catch {
+      // ignore release issues
+    }
+  }
+
+  clearDragState()
+}
+
+function handleNodeClick(event: TimelineEvent) {
+  if (dragState.dragging || dragState.suppressClick) {
+    return
+  }
+
+  selectEvent(event)
+}
+
+function isTrackHidden(trackId: string | null | undefined) {
+  if (!trackId) {
+    return false
+  }
+  return hiddenTrackIds.value.includes(trackId)
+}
+
+function toggleTrackVisibility(track: TimelineTrack) {
+  const next = new Set(hiddenTrackIds.value)
+  if (next.has(track.id)) {
+    next.delete(track.id)
+  } else {
+    next.add(track.id)
+  }
+
+  hiddenTrackIds.value = Array.from(next)
+  void scheduleMeasureEdges()
+}
+
+function clearDragState() {
+  dragState.active = false
+  dragState.eventId = ''
+  dragState.trackId = ''
+  dragState.pointerId = -1
+  dragState.startX = 0
+  dragState.startY = 0
+  dragState.startRatio = 0
+  dragState.currentRatio = 0
+  dragState.dragging = false
 }
 </script>
 
@@ -1033,13 +1351,14 @@ function getNodeClass(event: TimelineEvent) {
       </button>
     </section>
 
+    <p v-if="progressMessage" class="status-banner warning">{{ progressMessage }}</p>
     <p v-if="errorMessage" class="status-banner error">{{ errorMessage }}</p>
     <p v-else-if="successMessage" class="status-banner success">{{ successMessage }}</p>
     <p v-if="invalidEdgeCount > 0" class="status-banner warning">
       已跳过 {{ invalidEdgeCount }} 条无效连接。
     </p>
 
-    <section class="workspace">
+    <section class="workspace" :class="{ 'detail-visible': hasDetailSelection }">
       <aside class="left-panel">
         <div class="panel-head">
           <div>
@@ -1056,7 +1375,7 @@ function getNodeClass(event: TimelineEvent) {
             v-for="track in orderedTracks"
             :key="track.id"
             class="track-list-item"
-            :class="{ active: selectedTrackId === track.id }"
+            :class="{ active: selectedTrackId === track.id, hidden: isTrackHidden(track.id) }"
             @click="selectTrack(track)"
             @contextmenu.prevent="openTrackMenu(track, $event)"
             role="button"
@@ -1069,9 +1388,19 @@ function getNodeClass(event: TimelineEvent) {
               <span class="track-title">
                 {{ track.title }}
                 <small v-if="track.is_main" class="main-tag">主</small>
+                <small v-if="isTrackHidden(track.id)" class="hidden-tag">已隐藏</small>
               </span>
               <span class="track-subtitle">{{ getTrackLabel(track) }} · {{ getTrackEventCount(track.id) }} 个节点</span>
             </span>
+            <button
+              class="track-visibility-button"
+              type="button"
+              :aria-label="isTrackHidden(track.id) ? '显示时间轴' : '隐藏时间轴'"
+              :title="isTrackHidden(track.id) ? '显示时间轴' : '隐藏时间轴'"
+              @click.stop="toggleTrackVisibility(track)"
+            >
+              {{ isTrackHidden(track.id) ? '👁' : '👁' }}
+            </button>
             <button
               class="mini-menu-button"
               type="button"
@@ -1092,8 +1421,8 @@ function getNodeClass(event: TimelineEvent) {
       <section class="timeline-canvas-panel">
         <div v-if="isLoading" class="loading-mask">正在加载时间轴…</div>
 
-        <div ref="canvasViewportRef" class="timeline-canvas-viewport">
-          <div ref="canvasBodyRef" class="timeline-canvas-body">
+        <div ref="canvasViewportRef" class="timeline-canvas-viewport" @click.self="resetSelection">
+          <div ref="canvasBodyRef" class="timeline-canvas-body" @click.self="resetSelection">
             <svg
               v-if="edgePoints.length > 0"
               class="timeline-edge-overlay"
@@ -1118,8 +1447,9 @@ function getNodeClass(event: TimelineEvent) {
                 v-for="edge in edgePoints"
                 :key="edge.id"
                 :d="edge.path"
-                :class="{ dashed: edge.dashed }"
+                :class="{ dashed: edge.dashed, selected: selectedEdgeId === edge.id }"
                 :marker-end="edge.hasArrow ? 'url(#timeline-arrow)' : undefined"
+                @click.stop="selectEdge(edge.edge)"
               />
             </svg>
 
@@ -1127,7 +1457,8 @@ function getNodeClass(event: TimelineEvent) {
               v-for="row in rows"
               :key="row.id"
               class="track-row"
-              :class="{ virtual: row.isVirtual, active: selectedTrackId === row.id }"
+              :class="{ virtual: row.isVirtual, active: selectedTrackId === row.id, dragging: dragState.dragging && dragState.trackId === row.id }"
+              @click.self="resetSelection"
             >
               <button
                 class="track-row-label"
@@ -1146,25 +1477,38 @@ function getNodeClass(event: TimelineEvent) {
                 </span>
               </button>
 
-              <div class="track-row-lane">
+              <div
+                :ref="(element) => registerTrackLane(row.id, element as Element | null)"
+                class="track-row-lane"
+                :class="{ dragging: dragState.dragging && dragState.trackId === row.id }"
+                @click.self="resetSelection"
+              >
                 <span class="lane-axis"></span>
 
                 <button
-                  v-for="event in row.events"
-                  :key="event.id"
-                  :ref="(element) => registerEventNode(event.id, element as Element | null)"
+                  v-for="trackEvent in row.events"
+                  :key="trackEvent.id"
+                  :ref="(element) => registerEventNode(trackEvent.id, element as Element | null)"
                   class="timeline-node"
-                  :class="getNodeClass(event)"
+                  :class="getNodeClass(trackEvent)"
+                  :style="getNodeStyle(row, trackEvent)"
                   type="button"
-                  @click="selectEvent(event)"
+                  @click="handleNodeClick(trackEvent)"
+                  @pointerdown="row.track ? handleNodePointerDown(row.track, trackEvent, $event) : undefined"
+                  @pointermove="row.track ? handleNodePointerMove(row.track, trackEvent, $event) : undefined"
+                  @pointerup="row.track ? handleNodePointerUp(row.track, trackEvent, $event) : undefined"
+                  @pointercancel="row.track ? handleNodePointerCancel(row.track, trackEvent, $event) : undefined"
                 >
-                  <span class="node-title">{{ event.title }}</span>
-                  <span class="node-meta">{{ getEventSubtitle(event) }}</span>
-                  <span v-if="!cleanMode && event.chapter_id" class="node-chip">
-                    {{ getEventDetailChapter(event) }}
+                  <span v-if="row.track" class="drag-handle" aria-hidden="true">
+                    ⋮⋮
                   </span>
-                  <span v-if="!cleanMode && event.description" class="node-description">
-                    {{ truncateText(event.description, 54) }}
+                  <span class="node-title">{{ trackEvent.title }}</span>
+                  <span class="node-meta">{{ getEventSubtitle(trackEvent) }}</span>
+                  <span v-if="!cleanMode && trackEvent.chapter_id" class="node-chip">
+                    {{ getEventDetailChapter(trackEvent) }}
+                  </span>
+                  <span v-if="!cleanMode && trackEvent.description" class="node-description">
+                    {{ truncateText(trackEvent.description, 54) }}
                   </span>
                 </button>
               </div>
@@ -1173,7 +1517,7 @@ function getNodeClass(event: TimelineEvent) {
         </div>
       </section>
 
-      <aside class="detail-panel">
+      <aside v-if="hasDetailSelection" class="detail-panel">
         <template v-if="panelKind === 'track'">
           <header class="detail-header">
             <div>
@@ -1399,6 +1743,15 @@ function getNodeClass(event: TimelineEvent) {
               <select v-model="edgeForm.edge_type">
                 <option v-for="edgeType in edgeTypes" :key="edgeType" :value="edgeType">
                   {{ timelineEdgeTypeLabels[edgeType] }}
+                </option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>时序关系</span>
+              <select v-model="edgeForm.temporal_relation">
+                <option v-for="temporalRelation in temporalRelations" :key="temporalRelation" :value="temporalRelation">
+                  {{ timelineEdgeTemporalRelationLabels[temporalRelation] }}
                 </option>
               </select>
             </label>
@@ -1651,9 +2004,13 @@ button:disabled {
 
 .workspace {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) 360px;
+  grid-template-columns: 280px minmax(0, 1fr);
   gap: 14px;
   min-height: 0;
+}
+
+.workspace.detail-visible {
+  grid-template-columns: 280px minmax(0, 1fr) 360px;
 }
 
 .left-panel,
@@ -1715,7 +2072,7 @@ h2 {
 
 .track-list-item {
   display: grid;
-  grid-template-columns: 12px minmax(0, 1fr) auto;
+  grid-template-columns: 12px minmax(0, 1fr) auto auto;
   gap: 10px;
   align-items: center;
   border: 1px solid #e2e8f0;
@@ -1730,6 +2087,10 @@ h2 {
 .track-list-item.active {
   border-color: #93c5fd;
   background: #eff6ff;
+}
+
+.track-list-item.hidden {
+  opacity: 0.66;
 }
 
 .track-color {
@@ -1761,10 +2122,28 @@ h2 {
   font-size: 0.72rem;
 }
 
+.hidden-tag {
+  border-radius: 999px;
+  padding: 1px 6px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 0.72rem;
+}
+
 .track-subtitle {
   color: #64748b;
   font-size: 0.78rem;
   line-height: 1.4;
+}
+
+.track-visibility-button {
+  border: 0;
+  border-radius: 6px;
+  padding: 4px 6px;
+  background: transparent;
+  color: #475569;
+  font-size: 0.92rem;
+  cursor: pointer;
 }
 
 .mini-menu-button {
@@ -1833,7 +2212,7 @@ h2 {
   position: absolute;
   inset: 0 auto auto 0;
   z-index: 0;
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .timeline-edge-overlay path {
@@ -1841,10 +2220,18 @@ h2 {
   stroke: #94a3b8;
   stroke-width: 2;
   opacity: 0.72;
+  pointer-events: stroke;
+  cursor: pointer;
 }
 
 .timeline-edge-overlay path.dashed {
   stroke-dasharray: 8 6;
+}
+
+.timeline-edge-overlay path.selected {
+  stroke: #2563eb;
+  stroke-width: 3;
+  opacity: 0.98;
 }
 
 .track-row {
@@ -1898,38 +2285,42 @@ h2 {
 
 .track-row-lane {
   position: relative;
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 14px;
-  align-items: center;
-  min-height: 76px;
-  padding: 16px 10px 16px 8px;
-  overflow-x: auto;
+  min-height: 128px;
+  padding: 18px 10px 18px 8px;
+  overflow: visible;
 }
 
 .lane-axis {
   position: absolute;
   inset-inline: 0;
   top: 50%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, #cbd5e1 8%, #cbd5e1 92%, transparent);
+  height: 2px;
+  transform: translateY(-50%);
+  background: linear-gradient(90deg, transparent, #cbd5e1 8%, #94a3b8 50%, #cbd5e1 92%, transparent);
+}
+
+.track-row-lane.dragging .lane-axis {
+  background: linear-gradient(90deg, transparent, #93c5fd 8%, #3b82f6 50%, #93c5fd 92%, transparent);
 }
 
 .timeline-node {
-  position: relative;
+  position: absolute;
+  top: 50%;
   z-index: 1;
   display: grid;
   align-content: start;
   gap: 4px;
-  flex: 0 0 auto;
-  width: 168px;
-  min-height: 76px;
+  width: 156px;
+  min-height: 70px;
   border: 1px solid #cbd5e1;
   border-radius: 10px;
-  padding: 11px 12px;
+  padding: 20px 12px 11px;
   background: #ffffff;
   box-shadow: 0 8px 18px rgb(15 23 42 / 5%);
   text-align: left;
+  transform: translate(-50%, -50%);
+  touch-action: none;
+  cursor: grab;
 }
 
 .timeline-node:hover,
@@ -1938,8 +2329,16 @@ h2 {
   background: #f8fbff;
 }
 
+.timeline-node.dragging {
+  opacity: 0.82;
+  border-style: dashed;
+  box-shadow: 0 16px 32px rgb(37 99 235 / 14%);
+  cursor: grabbing;
+}
+
 .timeline-node.clean {
   width: 148px;
+  min-height: 66px;
 }
 
 .node-title {
@@ -1970,6 +2369,26 @@ h2 {
   color: #475569;
   font-size: 0.76rem;
   line-height: 1.45;
+}
+
+.drag-handle {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  color: #94a3b8;
+  font-size: 0.9rem;
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+}
+
+.track-row.dragging .track-row-label {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.track-row-lane.dragging {
+  background: linear-gradient(90deg, rgb(239 246 255 / 25%), transparent);
 }
 
 .detail-panel {
@@ -2089,7 +2508,8 @@ textarea {
 }
 
 @media (max-width: 1280px) {
-  .workspace {
+  .workspace,
+  .workspace.detail-visible {
     grid-template-columns: 260px minmax(0, 1fr);
   }
 
@@ -2099,7 +2519,8 @@ textarea {
 }
 
 @media (max-width: 900px) {
-  .workspace {
+  .workspace,
+  .workspace.detail-visible {
     grid-template-columns: 1fr;
   }
 

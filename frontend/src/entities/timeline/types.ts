@@ -7,6 +7,7 @@ export type TimelineEventStatus = 'planned' | 'happened' | 'revised' | 'deprecat
 
 export type TimelineTrackType = 'main' | 'character' | 'organization' | 'setting' | 'clue' | 'volume' | 'custom'
 export type TimelineEdgeType = 'cause' | 'parallel' | 'clue_payoff' | 'conflict' | 'echo' | 'related' | 'custom'
+export type TimelineEdgeTemporalRelation = 'previous' | 'parallel' | 'delayed' | 'future' | 'unordered'
 export type TimelineEdgeLineStyle = 'straight' | 'arc' | 'dashed' | 'arrow'
 export type TimelineEdgeVisibility = 'normal' | 'subtle' | 'hidden'
 
@@ -46,6 +47,7 @@ export interface TimelineEdge {
   from_event_id: string
   to_event_id: string
   edge_type: TimelineEdgeType
+  temporal_relation: TimelineEdgeTemporalRelation
   line_style: TimelineEdgeLineStyle
   label: string
   note: string
@@ -60,6 +62,7 @@ export interface TimelineEdgeCreatePayload {
   from_event_id: string
   to_event_id: string
   edge_type?: TimelineEdgeType
+  temporal_relation?: TimelineEdgeTemporalRelation
   line_style?: TimelineEdgeLineStyle
   label?: string
   note?: string
@@ -78,6 +81,7 @@ export interface TimelineEvent {
   story_time: string | null
   order_index: number
   position_index: number
+  position_ratio: number
   importance: TimelineEventImportance
   status: TimelineEventStatus
   chapter_id: string | null
@@ -100,6 +104,7 @@ export interface TimelineEventCreatePayload {
   story_time?: string | null
   order_index?: number
   position_index?: number
+  position_ratio?: number | null
   importance?: TimelineEventImportance
   status?: TimelineEventStatus
   chapter_id?: string | null
@@ -173,6 +178,14 @@ export const timelineEdgeTypeLabels: Record<TimelineEdgeType, string> = {
   echo: '呼应',
   related: '相关',
   custom: '自定义',
+}
+
+export const timelineEdgeTemporalRelationLabels: Record<TimelineEdgeTemporalRelation, string> = {
+  previous: '过去 / 前置',
+  parallel: '并行',
+  delayed: '滞后',
+  future: '后续',
+  unordered: '无明确时序',
 }
 
 export const timelineEdgeLineStyleLabels: Record<TimelineEdgeLineStyle, string> = {

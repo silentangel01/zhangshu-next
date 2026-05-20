@@ -3,8 +3,13 @@ import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import { listChapterTimelineEvents, listProjectTimelineEvents, listTimelineEdges, listTimelineTracks } from '@/entities/timeline/api'
-import type { TimelineEdge, TimelineEvent, TimelineTrack } from '@/entities/timeline/types'
-import { timelineEdgeTypeLabels, timelineEventTypeLabels, timelineTrackTypeLabels } from '@/entities/timeline/types'
+import type { TimelineEdge, TimelineEdgeTemporalRelation, TimelineEvent, TimelineTrack } from '@/entities/timeline/types'
+import {
+  timelineEdgeTemporalRelationLabels,
+  timelineEdgeTypeLabels,
+  timelineEventTypeLabels,
+  timelineTrackTypeLabels,
+} from '@/entities/timeline/types'
 
 const props = defineProps<{
   projectId: string
@@ -25,6 +30,7 @@ type RelatedConnection = {
   id: string
   edgeTypeLabel: string
   directionLabel: string
+  temporalRelationLabel: string
   visibilityLabel: string
   note: string
   orderRank: number
@@ -132,35 +138,71 @@ const relatedConnections = computed<RelatedConnection[]>(() => {
 
   return edges.value
     .filter((edge) => edge.visibility !== 'hidden')
-    .map((edge) => {
+    .flatMap((edge) => {
       const fromEvent = eventMap.value[edge.from_event_id] ?? null
       const toEvent = eventMap.value[edge.to_event_id] ?? null
       if (!fromEvent || !toEvent) {
-        return null
+        return []
       }
 
       if (!directIds.has(edge.from_event_id) && !directIds.has(edge.to_event_id)) {
-        return null
+        return []
       }
 
-      const directEvent = directIds.has(edge.from_event_id) ? fromEvent : toEvent
-      const otherEvent = directIds.has(edge.from_event_id) ? toEvent : fromEvent
-      const orderRank = directEventOrderMap.value.get(directEvent.id) ?? Number.MAX_SAFE_INTEGER
+      const relatedEntries: RelatedConnection[] = []
 
-      return {
-        id: edge.id,
-        edgeTypeLabel: timelineEdgeTypeLabels[edge.edge_type],
-        directionLabel: directIds.has(edge.from_event_id)
-          ? `${directEvent.title} → ${otherEvent.title}`
-          : `${otherEvent.title} → ${directEvent.title}`,
-        visibilityLabel: edge.visibility === 'normal' ? '正常' : edge.visibility === 'subtle' ? '弱化' : '隐藏',
-        note: edge.note,
-        orderRank,
+      if (directIds.has(edge.from_event_id)) {
+        relatedEntries.push(buildRelatedConnection(edge, fromEvent, toEvent))
       }
+
+      if (directIds.has(edge.to_event_id)) {
+        relatedEntries.push(buildRelatedConnection(edge, toEvent, fromEvent))
+      }
+
+      return relatedEntries
     })
     .filter((item): item is RelatedConnection => Boolean(item))
     .sort((left, right) => left.orderRank - right.orderRank || left.id.localeCompare(right.id))
 })
+
+function buildRelatedConnection(edge: TimelineEdge, currentEvent: TimelineEvent, otherEvent: TimelineEvent): RelatedConnection {
+  const orderRank = directEventOrderMap.value.get(currentEvent.id) ?? Number.MAX_SAFE_INTEGER
+  const temporalRelation = getTemporalRelationForCurrentEvent(edge, currentEvent.id)
+
+  return {
+    id: `${edge.id}:${currentEvent.id}`,
+    edgeTypeLabel: timelineEdgeTypeLabels[edge.edge_type],
+    directionLabel: `${currentEvent.title} → ${otherEvent.title}`,
+    temporalRelationLabel: timelineEdgeTemporalRelationLabels[temporalRelation],
+    visibilityLabel: edge.visibility === 'normal' ? '正常' : edge.visibility === 'subtle' ? '弱化' : '隐藏',
+    note: edge.note,
+    orderRank,
+  }
+}
+
+function getTemporalRelationForCurrentEvent(edge: TimelineEdge, currentEventId: string): TimelineEdgeTemporalRelation {
+  if (edge.from_event_id === currentEventId) {
+    return edge.temporal_relation
+  }
+
+  return invertTemporalRelation(edge.temporal_relation)
+}
+
+function invertTemporalRelation(relation: TimelineEdgeTemporalRelation): TimelineEdgeTemporalRelation {
+  switch (relation) {
+    case 'previous':
+      return 'future'
+    case 'future':
+      return 'previous'
+    case 'delayed':
+      return 'previous'
+    case 'parallel':
+      return 'parallel'
+    case 'unordered':
+    default:
+      return 'unordered'
+  }
+}
 
 const hasChapterEvents = computed(() => directEventSummaries.value.length > 0)
 
@@ -260,10 +302,15 @@ function getDescriptionPreview(event: TimelineEvent) {
 
 function sortEvents(left: TimelineEvent, right: TimelineEvent) {
   return (
+    getEventPositionRatio(left) - getEventPositionRatio(right) ||
     left.position_index - right.position_index ||
     left.order_index - right.order_index ||
     left.created_at.localeCompare(right.created_at, 'zh-Hans-CN')
   )
+}
+
+function getEventPositionRatio(event: TimelineEvent) {
+  return typeof event.position_ratio === 'number' ? event.position_ratio : 50
 }
 </script>
 
@@ -362,6 +409,7 @@ function sortEvents(left: TimelineEvent, right: TimelineEvent) {
             <article v-for="connection in relatedConnections" :key="connection.id" class="connection-card">
               <div class="connection-head">
                 <span class="edge-label">{{ connection.edgeTypeLabel }}</span>
+                <span class="temporal-pill">{{ connection.temporalRelationLabel }}</span>
                 <span class="visibility-pill">{{ connection.visibilityLabel }}</span>
               </div>
               <p class="connection-title">{{ connection.directionLabel }}</p>
@@ -588,6 +636,7 @@ h2 {
 }
 
 .edge-label,
+.temporal-pill,
 .visibility-pill {
   border-radius: 999px;
   padding: 3px 8px;
@@ -598,6 +647,11 @@ h2 {
 .edge-label {
   background: #eff6ff;
   color: #1d4ed8;
+}
+
+.temporal-pill {
+  background: #fef3c7;
+  color: #92400e;
 }
 
 .visibility-pill {

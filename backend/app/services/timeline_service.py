@@ -82,6 +82,8 @@ class TimelineService:
         values = data.model_dump()
         track = self.track_service.validate_track_for_project(project_id, values.get("track_id"))
         values["track_id"] = track.id
+        if values.get("position_ratio") is None:
+            values["position_ratio"] = self._suggest_position_ratio(track.id)
 
         event = TimelineEvent(id=str(uuid4()), project_id=project_id, **values)
         created = self.timeline_repo.create(event)
@@ -106,6 +108,10 @@ class TimelineService:
         if "track_id" in values:
             track = self.track_service.validate_track_for_project(event.project_id, values["track_id"])
             values["track_id"] = track.id
+            if values.get("position_ratio") is None:
+                values["position_ratio"] = self._suggest_position_ratio(track.id)
+        if "position_ratio" in values and values["position_ratio"] is None:
+            values.pop("position_ratio")
 
         updated = self.timeline_repo.update(event, values)
         return self._to_read_payload(updated)
@@ -181,6 +187,7 @@ class TimelineService:
             "story_time": event.story_time,
             "order_index": event.order_index,
             "position_index": event.position_index,
+            "position_ratio": event.position_ratio,
             "importance": event.importance,
             "status": event.status,
             "chapter_id": event.chapter_id,
@@ -216,3 +223,19 @@ class TimelineService:
         if setting_id not in cache:
             cache[setting_id] = self.setting_repo.get_active(setting_id)
         return cache[setting_id]
+
+    def _suggest_position_ratio(self, track_id: str) -> float:
+        events = self.timeline_repo.list_active_by_track(track_id)
+        ratios = [float(event.position_ratio) for event in events if event.position_ratio is not None]
+        if not ratios:
+            return 50.0
+
+        candidate = max(ratios) + 8.0
+        if candidate <= 92.0:
+            return round(candidate, 2)
+
+        candidate = min(ratios) - 8.0
+        if candidate >= 8.0:
+            return round(candidate, 2)
+
+        return round(100.0 * (len(ratios) + 1) / (len(ratios) + 2), 2)
