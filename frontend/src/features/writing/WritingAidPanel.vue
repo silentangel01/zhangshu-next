@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import ChapterCharacterPanel from '@/features/characters/ChapterCharacterPanel.vue'
+import ChapterCluePanel from '@/features/clues/ChapterCluePanel.vue'
 import ChapterOutlinePanel from '@/features/outlines/ChapterOutlinePanel.vue'
 import ChapterSettingPanel from '@/features/settings/ChapterSettingPanel.vue'
 
@@ -25,15 +26,19 @@ const tabs: Array<{ id: AidTab; label: string }> = [
   { id: 'versions', label: '版本' },
 ]
 
-const placeholders: Record<Exclude<AidTab, 'outline' | 'characters' | 'settings'>, string> = {
+const placeholders: Record<Exclude<AidTab, 'outline' | 'characters' | 'settings' | 'foreshadowing'>, string> = {
   graph: '关系图模块将在后续版本实现。',
   timeline: '时间轴模块将在后续版本实现。',
-  foreshadowing: '伏笔模块将在后续版本实现。',
   versions: '版本历史仍在正文编辑区下方查看，后续会整理到这里。',
 }
 
 const placeholderText = computed(() => {
-  if (activeTab.value === 'outline' || activeTab.value === 'characters' || activeTab.value === 'settings') {
+  if (
+    activeTab.value === 'outline' ||
+    activeTab.value === 'characters' ||
+    activeTab.value === 'settings' ||
+    activeTab.value === 'foreshadowing'
+  ) {
     return ''
   }
   return placeholders[activeTab.value]
@@ -49,7 +54,8 @@ const placeholderText = computed(() => {
       </div>
       <div class="header-links">
         <RouterLink class="outline-link" :to="`/projects/${projectId}/outlines`">打开完整大纲</RouterLink>
-        <RouterLink class="outline-link" :to="`/projects/${projectId}/settings`">打开设定集</RouterLink>
+        <RouterLink class="outline-link" :to="`/projects/${projectId}/settings`">打开设定库</RouterLink>
+        <RouterLink class="outline-link" :to="`/projects/${projectId}/clues`">打开伏笔库</RouterLink>
       </div>
     </header>
 
@@ -84,6 +90,12 @@ const placeholderText = computed(() => {
 
       <ChapterSettingPanel
         v-else-if="activeTab === 'settings'"
+        :project-id="projectId"
+        :chapter-id="chapterId"
+      />
+
+      <ChapterCluePanel
+        v-else-if="activeTab === 'foreshadowing'"
         :project-id="projectId"
         :chapter-id="chapterId"
       />

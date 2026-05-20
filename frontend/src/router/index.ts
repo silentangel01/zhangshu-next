@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
 import ProjectCharactersPage from '@/pages/characters/ProjectCharactersPage.vue'
+import ProjectCluesPage from '@/pages/clues/ProjectCluesPage.vue'
 import ImportPage from '@/pages/imports/ImportPage.vue'
 import ProjectOutlinePage from '@/pages/outlines/ProjectOutlinePage.vue'
 import ProjectDetailPage from '@/pages/projects/ProjectDetailPage.vue'
@@ -38,6 +39,11 @@ const router = createRouter({
       path: '/projects/:projectId/settings',
       name: 'project-settings',
       component: ProjectSettingsPage,
+    },
+    {
+      path: '/projects/:projectId/clues',
+      name: 'project-clues',
+      component: ProjectCluesPage,
     },
     {
       path: '/imports',

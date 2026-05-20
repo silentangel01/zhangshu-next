@@ -116,3 +116,15 @@ http://localhost:5173/projects
 - 避免把文件保存为 GBK/ANSI。
 - 如果遇到编码、权限或文件锁问题，避免把项目放在中文路径或 OneDrive 同步路径中。
 - 推荐路径：`C:\dev\zhangshu-next`
+
+## 伏笔库
+
+- 伏笔库入口：项目写作页右侧资料面板点击“打开伏笔库”，进入 `/projects/{project_id}/clues`。
+- 后端数据表：`clues`、`chapter_clues`、`clue_characters`、`clue_settings`。
+- 伏笔状态包括 `planned`（计划中）、`planted`（已埋设）、`developing`（推进中）、`resolved`（已回收）、`abandoned`（已废弃）。
+- 可见程度包括 `hidden`（隐藏）、`hinted`（暗示）、`revealed`（已揭示）。
+- 伏笔支持记录埋设章节、回收章节、重要程度、描述、回收计划、实际回收和备注。
+- 本章伏笔绑定通过 `POST /api/chapters/{chapter_id}/clues` 创建，关系类型包括 `setup`（埋设）、`mention`（提及）、`develop`（推进）、`payoff`（回收）、`related`（相关）。
+- 写作页右侧“伏笔”Tab 会显示当前章节绑定的伏笔、关系类型、生命周期状态、可见程度、重要程度、描述、回收计划和备注。
+- 伏笔删除使用软删除；章节伏笔、人物伏笔、设定伏笔关联删除会直接移除关联记录。
+- 当前阶段不实现关系图、时间轴、AI 自动提取伏笔、RAG、同步、Tauri 写作房间、全文搜索或检查功能。
