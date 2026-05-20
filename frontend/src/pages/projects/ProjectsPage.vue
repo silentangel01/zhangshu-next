@@ -112,9 +112,12 @@ function getErrorMessage(error: unknown, fallback: string): string {
         <p class="eyebrow">掌书 Next</p>
         <h1>项目</h1>
       </div>
-      <button class="primary-button" type="button" :disabled="isSaving" @click="showCreateDialog = true">
-        新建项目
-      </button>
+      <div class="header-actions">
+        <RouterLink class="secondary-link" to="/imports">导入作品</RouterLink>
+        <button class="primary-button" type="button" :disabled="isSaving" @click="showCreateDialog = true">
+          新建项目
+        </button>
+      </div>
     </header>
 
     <section v-if="errorMessage" class="error-banner" role="alert">
@@ -188,6 +191,12 @@ function getErrorMessage(error: unknown, fallback: string): string {
   gap: 24px;
   max-width: 1120px;
   margin: 0 auto 24px;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .eyebrow {
@@ -336,6 +345,20 @@ h1 {
   text-decoration: none;
 }
 
+.secondary-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  box-sizing: border-box;
+  border: 1px solid #cfd7e3;
+  border-radius: 6px;
+  padding: 0 14px;
+  background: #ffffff;
+  color: #374151;
+  font-weight: 800;
+  text-decoration: none;
+}
+
 button {
   min-height: 38px;
   border-radius: 6px;
@@ -374,12 +397,15 @@ button:disabled {
   }
 
   .page-header,
+  .header-actions,
   .project-card-footer {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .primary-button {
+  .primary-button,
+  .secondary-link {
+    justify-content: center;
     width: 100%;
   }
 }
