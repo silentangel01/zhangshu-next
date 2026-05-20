@@ -6,6 +6,7 @@ import ChapterCharacterPanel from '@/features/characters/ChapterCharacterPanel.v
 import ChapterCluePanel from '@/features/clues/ChapterCluePanel.vue'
 import ChapterOutlinePanel from '@/features/outlines/ChapterOutlinePanel.vue'
 import ChapterSettingPanel from '@/features/settings/ChapterSettingPanel.vue'
+import ChapterTimelinePanel from '@/features/timeline/ChapterTimelinePanel.vue'
 
 defineProps<{
   projectId: string
@@ -37,7 +38,8 @@ const placeholderText = computed(() => {
     activeTab.value === 'outline' ||
     activeTab.value === 'characters' ||
     activeTab.value === 'settings' ||
-    activeTab.value === 'foreshadowing'
+    activeTab.value === 'foreshadowing' ||
+    activeTab.value === 'timeline'
   ) {
     return ''
   }
@@ -56,6 +58,7 @@ const placeholderText = computed(() => {
         <RouterLink class="outline-link" :to="`/projects/${projectId}/outlines`">打开完整大纲</RouterLink>
         <RouterLink class="outline-link" :to="`/projects/${projectId}/settings`">打开设定库</RouterLink>
         <RouterLink class="outline-link" :to="`/projects/${projectId}/clues`">打开伏笔库</RouterLink>
+        <RouterLink class="outline-link" :to="`/projects/${projectId}/timeline`">打开时间轴</RouterLink>
       </div>
     </header>
 
@@ -96,6 +99,12 @@ const placeholderText = computed(() => {
 
       <ChapterCluePanel
         v-else-if="activeTab === 'foreshadowing'"
+        :project-id="projectId"
+        :chapter-id="chapterId"
+      />
+
+      <ChapterTimelinePanel
+        v-else-if="activeTab === 'timeline'"
         :project-id="projectId"
         :chapter-id="chapterId"
       />

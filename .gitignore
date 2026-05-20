@@ -41,3 +41,6 @@ Thumbs.db
 
 # Tauri build output
 frontend/src-tauri/target/
+
+# Agents-Rules
+AGENTS.md
