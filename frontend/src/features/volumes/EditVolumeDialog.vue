@@ -1,25 +1,32 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { reactive, ref, watch } from 'vue'
 
-import type { CreateProjectPayload } from '@/entities/project/types'
+import type { UpdateVolumePayload, Volume } from '@/entities/volume/types'
+
+const props = defineProps<{
+  volume: Volume
+}>()
 
 const emit = defineEmits<{
   close: []
-  submit: [payload: CreateProjectPayload]
+  submit: [payload: UpdateVolumePayload]
 }>()
 
 const form = reactive({
-  title: '',
-  genre: '',
-  summary: '',
+  title: props.volume.title,
+  order_index: props.volume.order_index,
 })
 
 const titleError = ref('')
 
-function normalizeOptional(value: string): string | null {
-  const trimmed = value.trim()
-  return trimmed ? trimmed : null
-}
+watch(
+  () => props.volume,
+  (volume) => {
+    form.title = volume.title
+    form.order_index = volume.order_index
+    titleError.value = ''
+  },
+)
 
 function handleSubmit() {
   const title = form.title.trim()
@@ -32,40 +39,34 @@ function handleSubmit() {
   titleError.value = ''
   emit('submit', {
     title,
-    genre: normalizeOptional(form.genre),
-    summary: normalizeOptional(form.summary),
+    order_index: Number(form.order_index),
   })
 }
 </script>
 
 <template>
   <div class="dialog-backdrop" role="presentation">
-    <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="create-project-title">
+    <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="edit-volume-title">
       <header class="dialog-header">
-        <h2 id="create-project-title">新建项目</h2>
+        <h2 id="edit-volume-title">编辑分卷</h2>
         <button class="icon-button" type="button" aria-label="关闭" @click="emit('close')">x</button>
       </header>
 
-      <form class="project-form" @submit.prevent="handleSubmit">
+      <form class="form" @submit.prevent="handleSubmit">
         <label>
           <span>标题</span>
-          <input v-model="form.title" name="title" type="text" autocomplete="off" required />
+          <input v-model="form.title" type="text" required autocomplete="off" />
         </label>
         <p v-if="titleError" class="field-error">{{ titleError }}</p>
 
         <label>
-          <span>类型</span>
-          <input v-model="form.genre" name="genre" type="text" autocomplete="off" />
-        </label>
-
-        <label>
-          <span>简介</span>
-          <textarea v-model="form.summary" name="summary" rows="5" />
+          <span>排序</span>
+          <input v-model.number="form.order_index" type="number" min="0" required />
         </label>
 
         <footer class="dialog-actions">
           <button class="secondary-button" type="button" @click="emit('close')">取消</button>
-          <button class="primary-button" type="submit">新建</button>
+          <button class="primary-button" type="submit">保存</button>
         </footer>
       </form>
     </section>
@@ -84,7 +85,7 @@ function handleSubmit() {
 }
 
 .dialog {
-  width: min(560px, 100%);
+  width: min(480px, 100%);
   border: 1px solid #d8dee9;
   border-radius: 8px;
   background: #ffffff;
@@ -110,7 +111,7 @@ h2 {
   font-size: 1.25rem;
 }
 
-.project-form {
+.form {
   display: grid;
   gap: 16px;
   padding: 20px 24px 24px;
@@ -121,11 +122,10 @@ label {
   gap: 8px;
   color: #4b5563;
   font-size: 0.9rem;
-  font-weight: 600;
+  font-weight: 700;
 }
 
-input,
-textarea {
+input {
   width: 100%;
   box-sizing: border-box;
   border: 1px solid #cfd7e3;
@@ -135,12 +135,7 @@ textarea {
   font: inherit;
 }
 
-textarea {
-  resize: vertical;
-}
-
-input:focus,
-textarea:focus {
+input:focus {
   border-color: #2563eb;
   outline: 3px solid rgb(37 99 235 / 15%);
 }
@@ -161,7 +156,7 @@ button {
   border: 1px solid transparent;
   padding: 0 14px;
   font: inherit;
-  font-weight: 700;
+  font-weight: 800;
   cursor: pointer;
 }
 

@@ -42,14 +42,21 @@ class ChapterRepository:
         self.db.refresh(chapter)
         return chapter
 
-    def update(self, chapter: Chapter, values: dict[str, object]) -> Chapter:
+    def update(
+        self,
+        chapter: Chapter,
+        values: dict[str, object],
+        *,
+        commit: bool = True,
+    ) -> Chapter:
         for field, value in values.items():
             setattr(chapter, field, value)
 
         chapter.updated_at = utc_now()
         chapter.version += 1
-        self.db.commit()
-        self.db.refresh(chapter)
+        if commit:
+            self.db.commit()
+            self.db.refresh(chapter)
         return chapter
 
     def soft_delete(self, chapter: Chapter) -> Chapter:

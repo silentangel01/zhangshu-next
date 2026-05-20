@@ -13,6 +13,8 @@ backend/**/__pycache__/
 
 # SQLite / local data
 data/
+/imports/
+*.zip
 *.db
 *.sqlite
 *.sqlite3

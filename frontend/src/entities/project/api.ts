@@ -6,6 +6,10 @@ export function listProjects(): Promise<Project[]> {
   return apiRequest<Project[]>('/api/projects')
 }
 
+export function getProject(projectId: string): Promise<Project> {
+  return apiRequest<Project>(`/api/projects/${projectId}`)
+}
+
 export function createProject(payload: CreateProjectPayload): Promise<Project> {
   return apiRequest<Project>('/api/projects', {
     method: 'POST',

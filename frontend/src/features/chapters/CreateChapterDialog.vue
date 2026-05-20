@@ -1,25 +1,28 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 
-import type { CreateProjectPayload } from '@/entities/project/types'
+import type { ChapterStatus, CreateChapterPayload } from '@/entities/chapter/types'
+import type { Volume } from '@/entities/volume/types'
+
+defineProps<{
+  volumes: Volume[]
+}>()
 
 const emit = defineEmits<{
   close: []
-  submit: [payload: CreateProjectPayload]
+  submit: [payload: CreateChapterPayload]
 }>()
+
+const statuses: ChapterStatus[] = ['draft', 'writing', 'revised', 'completed']
 
 const form = reactive({
   title: '',
-  genre: '',
-  summary: '',
+  volume_id: '',
+  order_index: 0,
+  status: 'draft' as ChapterStatus,
 })
 
 const titleError = ref('')
-
-function normalizeOptional(value: string): string | null {
-  const trimmed = value.trim()
-  return trimmed ? trimmed : null
-}
 
 function handleSubmit() {
   const title = form.title.trim()
@@ -32,35 +35,62 @@ function handleSubmit() {
   titleError.value = ''
   emit('submit', {
     title,
-    genre: normalizeOptional(form.genre),
-    summary: normalizeOptional(form.summary),
+    volume_id: form.volume_id || null,
+    content: '',
+    order_index: Number(form.order_index),
+    status: form.status,
   })
+}
+
+function getStatusLabel(status: ChapterStatus): string {
+  const labels: Record<ChapterStatus, string> = {
+    draft: '草稿',
+    writing: '写作中',
+    revised: '已修订',
+    completed: '已完成',
+  }
+
+  return labels[status]
 }
 </script>
 
 <template>
   <div class="dialog-backdrop" role="presentation">
-    <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="create-project-title">
+    <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="create-chapter-title">
       <header class="dialog-header">
-        <h2 id="create-project-title">新建项目</h2>
+        <h2 id="create-chapter-title">新建章节</h2>
         <button class="icon-button" type="button" aria-label="关闭" @click="emit('close')">x</button>
       </header>
 
-      <form class="project-form" @submit.prevent="handleSubmit">
+      <form class="form" @submit.prevent="handleSubmit">
         <label>
           <span>标题</span>
-          <input v-model="form.title" name="title" type="text" autocomplete="off" required />
+          <input v-model="form.title" type="text" required autocomplete="off" />
         </label>
         <p v-if="titleError" class="field-error">{{ titleError }}</p>
 
         <label>
-          <span>类型</span>
-          <input v-model="form.genre" name="genre" type="text" autocomplete="off" />
+          <span>分卷</span>
+          <select v-model="form.volume_id">
+            <option value="">未分卷章节</option>
+            <option v-for="volume in volumes" :key="volume.id" :value="volume.id">
+              {{ volume.title }}
+            </option>
+          </select>
         </label>
 
         <label>
-          <span>简介</span>
-          <textarea v-model="form.summary" name="summary" rows="5" />
+          <span>排序</span>
+          <input v-model.number="form.order_index" type="number" min="0" required />
+        </label>
+
+        <label>
+          <span>状态</span>
+          <select v-model="form.status">
+            <option v-for="status in statuses" :key="status" :value="status">
+              {{ getStatusLabel(status) }}
+            </option>
+          </select>
         </label>
 
         <footer class="dialog-actions">
@@ -84,7 +114,7 @@ function handleSubmit() {
 }
 
 .dialog {
-  width: min(560px, 100%);
+  width: min(520px, 100%);
   border: 1px solid #d8dee9;
   border-radius: 8px;
   background: #ffffff;
@@ -110,7 +140,7 @@ h2 {
   font-size: 1.25rem;
 }
 
-.project-form {
+.form {
   display: grid;
   gap: 16px;
   padding: 20px 24px 24px;
@@ -121,11 +151,11 @@ label {
   gap: 8px;
   color: #4b5563;
   font-size: 0.9rem;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 input,
-textarea {
+select {
   width: 100%;
   box-sizing: border-box;
   border: 1px solid #cfd7e3;
@@ -135,12 +165,8 @@ textarea {
   font: inherit;
 }
 
-textarea {
-  resize: vertical;
-}
-
 input:focus,
-textarea:focus {
+select:focus {
   border-color: #2563eb;
   outline: 3px solid rgb(37 99 235 / 15%);
 }
@@ -161,7 +187,7 @@ button {
   border: 1px solid transparent;
   padding: 0 14px;
   font: inherit;
-  font-weight: 700;
+  font-weight: 800;
   cursor: pointer;
 }
 
