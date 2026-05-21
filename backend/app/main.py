@@ -11,6 +11,7 @@ from app.api.graphs import router as graphs_router
 from app.api.imports import projects_import_router, router as imports_router
 from app.api.outlines import router as outlines_router
 from app.api.projects import router as projects_router
+from app.api.recovery import router as recovery_router
 from app.api.review import router as review_router
 from app.api.search import router as search_router
 from app.api.timeline import router as timeline_router
@@ -45,6 +46,7 @@ def health_check():
 app.include_router(projects_router)
 app.include_router(backups_router)
 app.include_router(exports_router)
+app.include_router(recovery_router)
 app.include_router(review_router)
 app.include_router(search_router)
 app.include_router(volumes_router)

@@ -272,6 +272,7 @@ def init_database() -> None:
     from app.models import graph_node  # noqa: F401
     from app.models import outline_item  # noqa: F401
     from app.models import prohibited_term  # noqa: F401
+    from app.models import recovery_draft  # noqa: F401
     from app.models import timeline_event  # noqa: F401
     from app.models import timeline_edge  # noqa: F401
     from app.models import timeline_track  # noqa: F401
