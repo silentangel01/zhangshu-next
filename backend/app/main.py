@@ -8,7 +8,7 @@ from app.api.characters import router as characters_router
 from app.api.clues import router as clues_router
 from app.api.exports import router as exports_router
 from app.api.graphs import router as graphs_router
-from app.api.imports import router as imports_router
+from app.api.imports import projects_import_router, router as imports_router
 from app.api.outlines import router as outlines_router
 from app.api.projects import router as projects_router
 from app.api.review import router as review_router
@@ -50,6 +50,7 @@ app.include_router(search_router)
 app.include_router(volumes_router)
 app.include_router(chapters_router)
 app.include_router(chapter_versions_router)
+app.include_router(projects_import_router)
 app.include_router(imports_router)
 app.include_router(outlines_router)
 app.include_router(characters_router)

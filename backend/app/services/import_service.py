@@ -17,6 +17,7 @@ from app.models.volume import Volume
 from app.schemas.imports import ConfirmImportRequest
 from app.utils.import_parsers import (
     calculate_word_count,
+    parse_external_files,
     parse_folder_zip_bytes,
     parse_legacy_json_bytes,
 )
@@ -65,6 +66,29 @@ class ImportService:
         self._write_preview(import_id, preview)
         return self._to_preview_response(preview)
 
+    def preview_external_files(
+        self,
+        *,
+        source_filename: str,
+        files: list[tuple[str, bytes]],
+    ) -> dict[str, Any]:
+        import_id = str(uuid.uuid4())
+        temp_dir = IMPORTS_TMP_DIR / import_id
+        temp_dir.mkdir(parents=True, exist_ok=True)
+
+        for filename, content in files:
+            safe_relative = PurePosixPath(filename)
+            if any(part == ".." for part in safe_relative.parts) or safe_relative.is_absolute():
+                continue
+            destination = temp_dir.joinpath(*safe_relative.parts)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(content)
+
+        preview = parse_external_files(files, source_filename)
+        preview["import_id"] = import_id
+        self._write_preview(import_id, preview)
+        return self._to_preview_response(preview)
+
     def confirm_import(self, import_id: str, data: ConfirmImportRequest) -> dict[str, Any]:
         preview = self._load_preview(import_id)
         if not preview.get("can_import"):
@@ -75,38 +99,52 @@ class ImportService:
             project_title = "未命名导入项目"
 
         try:
-            project = Project(
-                id=str(uuid.uuid4()),
-                title=project_title,
-                summary=preview.get("summary"),
-            )
-            self.db.add(project)
+            if data.mode == "append_project":
+                if not data.project_id:
+                    raise ImportPreviewInvalidError
+                project = self.db.get(Project, data.project_id)
+                if project is None or project.deleted_at is not None:
+                    raise ImportPreviewInvalidError
+                project_id = project.id
+                created_project_id = project.id
+            else:
+                project = Project(
+                    id=str(uuid.uuid4()),
+                    title=project_title,
+                    summary=preview.get("summary"),
+                )
+                self.db.add(project)
+                project_id = project.id
+                created_project_id = project.id
 
             created_volume_count = 0
             created_chapter_count = 0
+            base_volume_count = self._count_existing_volumes(project_id) if data.mode == "append_project" else 0
+            base_unassigned_count = self._count_existing_unassigned_chapters(project_id) if data.mode == "append_project" else 0
 
             for volume_data in preview.get("volumes", []):
                 volume = Volume(
                     id=str(uuid.uuid4()),
-                    project_id=project.id,
+                    project_id=project_id,
                     title=volume_data["title"],
-                    order_index=volume_data["order_index"],
+                    order_index=base_volume_count + volume_data["order_index"],
                 )
                 self.db.add(volume)
                 created_volume_count += 1
 
                 for chapter_data in volume_data.get("chapters", []):
-                    self._add_chapter(project.id, volume.id, chapter_data)
+                    self._add_chapter(project_id, volume.id, chapter_data)
                     created_chapter_count += 1
 
             for chapter_data in preview.get("unassigned_chapters", []):
-                self._add_chapter(project.id, None, chapter_data)
+                chapter_data = {**chapter_data, "order_index": base_unassigned_count + chapter_data["order_index"]}
+                self._add_chapter(project_id, None, chapter_data)
                 created_chapter_count += 1
 
             report = self._write_report(
                 import_id=import_id,
                 preview=preview,
-                created_project_id=project.id,
+                created_project_id=created_project_id,
                 created_volume_count=created_volume_count,
                 created_chapter_count=created_chapter_count,
             )
@@ -190,15 +228,45 @@ class ImportService:
                     "title": volume["title"],
                     "order_index": volume["order_index"],
                     "chapter_count": len(volume.get("chapters", [])),
+                    "chapters": [chapter["title"] for chapter in volume.get("chapters", [])],
                 }
                 for volume in preview.get("volumes", [])
             ],
             "unassigned_chapter_count": preview["unassigned_chapter_count"],
+            "unassigned_chapters": [
+                chapter["title"] for chapter in preview.get("unassigned_chapters", [])
+            ],
             "warnings": preview["warnings"],
             "unsupported_items": preview["unsupported_items"],
             "failed_files": preview["failed_files"],
+            "report": preview.get("report", {
+                "files_detected": [],
+                "files_skipped": [],
+                "encoding_issues": preview["failed_files"],
+                "empty_files": [],
+                "duplicate_titles": [],
+                "unsupported_files": preview["unsupported_items"],
+            }),
             "can_import": preview["can_import"],
         }
+
+    def _count_existing_volumes(self, project_id: str) -> int:
+        from sqlalchemy import select
+
+        return len(self.db.scalars(select(Volume).where(Volume.project_id == project_id, Volume.deleted_at.is_(None))).all())
+
+    def _count_existing_unassigned_chapters(self, project_id: str) -> int:
+        from sqlalchemy import select
+
+        return len(
+            self.db.scalars(
+                select(Chapter).where(
+                    Chapter.project_id == project_id,
+                    Chapter.volume_id.is_(None),
+                    Chapter.deleted_at.is_(None),
+                )
+            ).all()
+        )
 
     def _safe_extract_zip(self, content: bytes, target_dir: Path) -> None:
         if target_dir.exists():
