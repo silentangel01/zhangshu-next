@@ -10,6 +10,7 @@ import ProjectDetailPage from '@/pages/projects/ProjectDetailPage.vue'
 import ProjectsPage from '@/pages/projects/ProjectsPage.vue'
 import ProjectTimelinePage from '@/pages/timeline/ProjectTimelinePage.vue'
 import ProjectSettingsPage from '@/pages/settings/ProjectSettingsPage.vue'
+import SearchPage from '@/pages/search/SearchPage.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -62,6 +63,11 @@ const router = createRouter({
       path: '/projects/:projectId/backup',
       name: 'project-backup',
       component: ProjectBackupPage,
+    },
+    {
+      path: '/projects/:projectId/search',
+      name: 'project-search',
+      component: SearchPage,
     },
     {
       path: '/backup',

@@ -516,6 +516,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
       <aside class="sidebar">
         <nav class="project-nav" aria-label="项目导航">
           <RouterLink class="nav-link" to="/projects">项目列表</RouterLink>
+          <RouterLink class="nav-link" :to="`/projects/${projectId}/search`">搜索</RouterLink>
           <RouterLink class="nav-link" :to="`/projects/${projectId}/outlines`">完整大纲</RouterLink>
           <RouterLink class="nav-link" :to="`/projects/${projectId}/characters`">人物库</RouterLink>
           <RouterLink class="nav-link" :to="`/projects/${projectId}/backup`">备份恢复</RouterLink>
