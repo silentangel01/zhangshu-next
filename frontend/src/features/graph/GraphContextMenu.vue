@@ -1,65 +1,61 @@
 <script setup lang="ts">
-import type { GraphEdge, GraphNode } from '@/entities/graph/types'
-
-export type GraphContextMenuKind = 'canvas' | 'node' | 'edge'
+export interface GraphContextMenuItem {
+  key: string
+  label: string
+  danger?: boolean
+  disabled?: boolean
+}
 
 defineProps<{
   visible: boolean
-  kind: GraphContextMenuKind
   x: number
   y: number
-  node: GraphNode | null
-  edge: GraphEdge | null
+  items: GraphContextMenuItem[]
 }>()
 
 const emit = defineEmits<{
-  createNode: []
-  fitView: []
-  resetView: []
-  editNode: []
-  startEdge: []
-  duplicateNode: []
-  deleteNode: []
-  openBound: []
-  editEdge: []
-  deleteEdge: []
+  select: [itemKey: string]
 }>()
+
+function selectItem(item: GraphContextMenuItem) {
+  if (item.disabled) {
+    return
+  }
+  emit('select', item.key)
+}
 </script>
 
 <template>
   <div
     v-if="visible"
     class="context-menu"
+    data-graph-context-menu="true"
     :style="{ left: `${x}px`, top: `${y}px` }"
     role="menu"
+    @pointerdown.stop
+    @mousedown.stop
     @click.stop
+    @contextmenu.prevent.stop
   >
-    <template v-if="kind === 'canvas'">
-      <button type="button" @click="emit('createNode')">在此处新建节点</button>
-      <button type="button" disabled>粘贴节点</button>
-      <button type="button" @click="emit('fitView')">适应画布</button>
-      <button type="button" @click="emit('resetView')">重置视图</button>
-    </template>
-
-    <template v-else-if="kind === 'node' && node">
-      <button type="button" @click="emit('editNode')">编辑节点</button>
-      <button type="button" @click="emit('startEdge')">从此节点连线</button>
-      <button type="button" @click="emit('duplicateNode')">复制节点</button>
-      <button type="button" class="danger" @click="emit('deleteNode')">删除节点</button>
-      <button type="button" :disabled="!node.bound_type || !node.bound_id" @click="emit('openBound')">打开绑定资料</button>
-    </template>
-
-    <template v-else-if="kind === 'edge' && edge">
-      <button type="button" @click="emit('editEdge')">编辑关系</button>
-      <button type="button" class="danger" @click="emit('deleteEdge')">删除关系</button>
-    </template>
+    <button
+      v-for="item in items"
+      :key="item.key"
+      type="button"
+      :class="{ danger: item.danger }"
+      :disabled="item.disabled"
+      @pointerdown.stop
+      @mousedown.stop
+      @click.stop="selectItem(item)"
+    >
+      {{ item.label }}
+    </button>
   </div>
 </template>
 
 <style scoped>
 .context-menu {
   position: fixed;
-  z-index: 50;
+  z-index: 1000;
   display: grid;
   min-width: 168px;
   border: 1px solid #d8dee9;
@@ -67,6 +63,7 @@ const emit = defineEmits<{
   padding: 6px;
   background: #ffffff;
   box-shadow: 0 18px 36px rgb(15 23 42 / 18%);
+  pointer-events: auto;
 }
 
 button {

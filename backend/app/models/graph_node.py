@@ -27,6 +27,8 @@ class GraphNode(Base):
     summary: Mapped[str] = mapped_column(Text, default="", nullable=False)
     x: Mapped[float] = mapped_column(Float, default=0, nullable=False)
     y: Mapped[float] = mapped_column(Float, default=0, nullable=False)
+    width: Mapped[float] = mapped_column(Float, default=160, nullable=False)
+    height: Mapped[float] = mapped_column(Float, default=72, nullable=False)
     color: Mapped[str | None] = mapped_column(String(32), nullable=True)
     size: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     visibility: Mapped[str] = mapped_column(String(32), default="normal", nullable=False, index=True)

@@ -85,6 +85,8 @@ class GraphService:
             summary=data.summary,
             x=data.x,
             y=data.y,
+            width=data.width,
+            height=data.height,
             color=data.color,
             size=data.size,
             visibility=data.visibility,

@@ -36,6 +36,8 @@ export interface GraphNode {
   summary: string
   x: number
   y: number
+  width: number
+  height: number
   color: string | null
   size: number
   visibility: GraphVisibility
@@ -53,6 +55,8 @@ export interface GraphNodePayload {
   summary?: string
   x?: number
   y?: number
+  width?: number
+  height?: number
   color?: string | null
   size?: number
   visibility?: GraphVisibility

@@ -37,16 +37,26 @@ const emit = defineEmits<{
       v-for="item in edges"
       :key="item.edge.id"
       class="edge-group"
+      data-graph-edge="true"
       :class="[item.edge.visibility, { selected: selectedEdgeId === item.edge.id }]"
+      @dblclick.stop="emit('selectEdge', item.edge)"
       @contextmenu.prevent.stop="emit('contextMenu', $event, item.edge)"
     >
-      <path class="edge-hit" :d="item.path" @click.stop="emit('selectEdge', item.edge)" />
+      <path
+        class="edge-hit"
+        data-graph-edge="true"
+        :d="item.path"
+        @click.stop="emit('selectEdge', item.edge)"
+        @dblclick.stop="emit('selectEdge', item.edge)"
+      />
       <path
         class="edge-line"
+        data-graph-edge="true"
         :class="[item.edge.line_style, { selected: selectedEdgeId === item.edge.id }]"
         :d="item.path"
         :stroke-width="Math.max(1.4, Math.min(5, item.edge.strength))"
         :marker-end="item.edge.direction === 'directed' ? 'url(#graph-arrow)' : undefined"
+        @dblclick.stop="emit('selectEdge', item.edge)"
       />
       <text
         v-if="item.edge.label && (!cleanMode || selectedEdgeId === item.edge.id)"

@@ -32,6 +32,8 @@ class GraphNodeBase(BaseModel):
     summary: str = ""
     x: float = 0
     y: float = 0
+    width: float = Field(default=160, ge=80, le=420)
+    height: float = Field(default=72, ge=40, le=260)
     color: str | None = None
     size: int = Field(default=1, ge=1)
     visibility: GraphVisibility = "normal"
@@ -57,6 +59,8 @@ class GraphNodeUpdate(BaseModel):
     summary: str | None = None
     x: float | None = None
     y: float | None = None
+    width: float | None = Field(default=None, ge=80, le=420)
+    height: float | None = Field(default=None, ge=40, le=260)
     color: str | None = None
     size: int | None = Field(default=None, ge=1)
     visibility: GraphVisibility | None = None
@@ -84,6 +88,8 @@ class GraphNodeRead(BaseModel):
     summary: str
     x: float
     y: float
+    width: float
+    height: float
     color: str | None
     size: int
     visibility: str

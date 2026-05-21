@@ -43,6 +43,7 @@ function submit() {
 <template>
   <section class="binding-panel">
     <header>
+      <p>快速创建</p>
       <h2>从资料创建节点</h2>
     </header>
     <label>
@@ -72,8 +73,23 @@ function submit() {
   padding-top: 12px;
 }
 
-h2 {
+header {
+  display: grid;
+  gap: 3px;
+}
+
+h2,
+p {
   margin: 0;
+}
+
+p {
+  color: #64748b;
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+h2 {
   color: #111827;
   font-size: 0.96rem;
 }

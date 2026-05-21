@@ -83,6 +83,59 @@ def _ensure_timeline_edge_columns() -> bool:
     return added_temporal_relation
 
 
+def _ensure_graph_node_size_columns() -> None:
+    inspector = inspect(engine)
+    if "graph_nodes" not in inspector.get_table_names():
+        return
+
+    existing_columns = {column["name"] for column in inspector.get_columns("graph_nodes")}
+    with engine.begin() as connection:
+        added_width = "width" not in existing_columns
+        added_height = "height" not in existing_columns
+        if "width" not in existing_columns:
+            connection.execute(
+                text("ALTER TABLE graph_nodes ADD COLUMN width FLOAT NOT NULL DEFAULT 160")
+            )
+        if "height" not in existing_columns:
+            connection.execute(
+                text("ALTER TABLE graph_nodes ADD COLUMN height FLOAT NOT NULL DEFAULT 72")
+            )
+        width_where = "1 = 1" if added_width else "width IS NULL OR width <= 0"
+        height_where = "1 = 1" if added_height else "height IS NULL OR height <= 0"
+        width_count = connection.scalar(text(f"SELECT COUNT(*) FROM graph_nodes WHERE {width_where}"))
+        if width_count:
+            connection.execute(
+                text(
+                    f"""
+                    UPDATE graph_nodes
+                    SET width = CASE
+                        WHEN size = 1 THEN 120
+                        WHEN size = 2 THEN 160
+                        WHEN size = 3 THEN 220
+                        ELSE 160
+                    END
+                    WHERE {width_where}
+                    """
+                )
+            )
+        height_count = connection.scalar(text(f"SELECT COUNT(*) FROM graph_nodes WHERE {height_where}"))
+        if height_count:
+            connection.execute(
+                text(
+                    f"""
+                    UPDATE graph_nodes
+                    SET height = CASE
+                        WHEN size = 1 THEN 56
+                        WHEN size = 2 THEN 72
+                        WHEN size = 3 THEN 96
+                        ELSE 72
+                    END
+                    WHERE {height_where}
+                    """
+                )
+            )
+
+
 def _backfill_timeline_tracks() -> None:
     from app.models.timeline_event import TimelineEvent
     from app.models.timeline_track import TimelineTrack
@@ -224,6 +277,7 @@ def init_database() -> None:
 
     ensure_database_directory()
     Base.metadata.create_all(bind=engine)
+    _ensure_graph_node_size_columns()
     added_position_ratio = _ensure_timeline_event_columns()
     _ensure_timeline_edge_columns()
     _backfill_timeline_tracks()

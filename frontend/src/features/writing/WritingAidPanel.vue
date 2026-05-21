@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import ChapterCharacterPanel from '@/features/characters/ChapterCharacterPanel.vue'
@@ -14,6 +14,7 @@ import type { ChapterVersionListItem } from '@/entities/chapter-version/types'
 const props = defineProps<{
   projectId: string
   chapterId: string | null
+  initialActiveTab: AidTab | null
   versions: ChapterVersionListItem[]
   versionErrorMessage: string
   versionMessage: string
@@ -25,11 +26,12 @@ const emit = defineEmits<{
   createSnapshot: []
   viewVersion: [versionId: string]
   restoreVersion: [versionId: string]
+  activeTabChange: [tab: AidTab]
 }>()
 
 type AidTab = 'outline' | 'characters' | 'settings' | 'graph' | 'timeline' | 'foreshadowing' | 'versions'
 
-const activeTab = ref<AidTab>('outline')
+const activeTab = ref<AidTab>(isAidTab(props.initialActiveTab) ? props.initialActiveTab : 'outline')
 
 const tabs: Array<{ id: AidTab; label: string }> = [
   { id: 'outline', label: '大纲' },
@@ -64,6 +66,27 @@ const versionsTabMessage = computed(() => {
   }
   return ''
 })
+
+watch(() => props.initialActiveTab, (tab) => {
+  if (isAidTab(tab) && tab !== activeTab.value) {
+    activeTab.value = tab
+  }
+})
+
+function setActiveTab(tab: AidTab) {
+  activeTab.value = tab
+  emit('activeTabChange', tab)
+}
+
+function isAidTab(value: unknown): value is AidTab {
+  return value === 'outline'
+    || value === 'characters'
+    || value === 'settings'
+    || value === 'graph'
+    || value === 'timeline'
+    || value === 'foreshadowing'
+    || value === 'versions'
+}
 </script>
 
 <template>
@@ -81,7 +104,7 @@ const versionsTabMessage = computed(() => {
         :key="tab.id"
         type="button"
         :class="{ active: activeTab === tab.id }"
-        @click="activeTab = tab.id"
+        @click="setActiveTab(tab.id)"
       >
         {{ tab.label }}
       </button>

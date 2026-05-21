@@ -28,6 +28,8 @@ export interface NodeDraft {
   summary: string
   x: number
   y: number
+  width: number
+  height: number
   color: string
   size: number
   visibility: GraphVisibility
@@ -61,7 +63,11 @@ const emit = defineEmits<{
   saveEdge: []
   deleteEdge: []
   openBound: []
+  syncFromBound: []
+  createMaterialFromNode: []
   boundTypeChanged: []
+  boundSelectionChanged: []
+  sizePresetChanged: []
   createFromBinding: [boundType: Exclude<GraphNodeBoundType, 'custom'>, boundId: string]
 }>()
 
@@ -71,6 +77,11 @@ const visibilityOptions: GraphVisibility[] = ['normal', 'subtle', 'hidden']
 const relationTypes: GraphEdgeRelationType[] = ['relationship', 'conflict', 'ally', 'family', 'belongs_to', 'controls', 'clue_related', 'timeline_related', 'setting_related', 'cause', 'custom']
 const directions: GraphEdgeDirection[] = ['undirected', 'directed']
 const lineStyles: GraphEdgeLineStyle[] = ['solid', 'dashed', 'dotted', 'arc']
+const reverseCreationLabels: Partial<Record<GraphNodeType, string>> = {
+  character: '创建对应人物资料',
+  setting: '创建对应设定',
+  clue: '创建对应伏笔',
+}
 
 function getBindingList(
   options: Record<'character' | 'setting' | 'clue' | 'timeline_event', BindingOption[]>,
@@ -82,45 +93,86 @@ function getBindingList(
   return options[boundType]
 }
 
+function canCreateMaterialFromNode(node: GraphNode) {
+  return !node.bound_type && !node.bound_id && Boolean(reverseCreationLabels[node.node_type])
+}
+
 function handleCreateFromBinding(boundType: Exclude<GraphNodeBoundType, 'custom'>, boundId: string) {
   emit('createFromBinding', boundType, boundId)
 }
 </script>
 
 <template>
-  <aside class="graph-inspector">
+  <aside class="graph-inspector" data-graph-inspector="true">
     <template v-if="selectedNode">
-      <header>
+      <header class="inspector-header">
         <p>节点详情</p>
         <h2>{{ selectedNode.title }}</h2>
       </header>
-      <div class="form-grid">
-        <label class="wide"><span>标题</span><input v-model.trim="nodeDraft.title" type="text" /></label>
-        <label><span>类型</span><select v-model="nodeDraft.node_type"><option v-for="type in nodeTypes" :key="type" :value="type">{{ graphNodeTypeLabels[type] }}</option></select></label>
-        <label>
-          <span>绑定对象类型</span>
-          <select v-model="nodeDraft.bound_type" @change="emit('boundTypeChanged')">
-            <option v-for="type in boundTypes" :key="type || 'none'" :value="type || null">
-              {{ type ? graphNodeBoundTypeLabels[type] : '未绑定' }}
-            </option>
-          </select>
-        </label>
-        <label v-if="nodeDraft.bound_type && nodeDraft.bound_type !== 'custom'" class="wide">
-          <span>绑定对象</span>
-          <select v-model="nodeDraft.bound_id">
-            <option value="">请选择绑定对象</option>
-            <option v-for="item in getBindingList(bindingOptions, nodeDraft.bound_type)" :key="item.id" :value="item.id">{{ item.label }}</option>
-          </select>
-        </label>
-        <label v-else class="wide"><span>绑定对象</span><input v-model.trim="nodeDraft.bound_id" type="text" placeholder="可选" /></label>
-        <p v-if="nodeDraft.bound_type && nodeDraft.bound_type !== 'custom' && !nodeDraft.bound_id" class="hint wide">请选择绑定对象</p>
-        <label class="wide"><span>简介</span><textarea v-model="nodeDraft.summary" rows="4" /></label>
-        <label><span>颜色</span><input v-model.trim="nodeDraft.color" type="text" placeholder="#4f7cff" /></label>
-        <label><span>大小</span><select v-model.number="nodeDraft.size"><option :value="1">1</option><option :value="2">2</option><option :value="3">3</option></select></label>
-        <label><span>可见性</span><select v-model="nodeDraft.visibility"><option v-for="item in visibilityOptions" :key="item" :value="item">{{ graphVisibilityLabels[item] }}</option></select></label>
-        <label><span>x</span><input v-model.number="nodeDraft.x" type="number" /></label>
-        <label><span>y</span><input v-model.number="nodeDraft.y" type="number" /></label>
-      </div>
+
+      <section class="field-section">
+        <h3>基础信息</h3>
+        <div class="form-grid">
+          <label class="wide"><span>标题</span><input v-model.trim="nodeDraft.title" type="text" /></label>
+          <label><span>类型</span><select v-model="nodeDraft.node_type"><option v-for="type in nodeTypes" :key="type" :value="type">{{ graphNodeTypeLabels[type] }}</option></select></label>
+          <label><span>可见性</span><select v-model="nodeDraft.visibility"><option v-for="item in visibilityOptions" :key="item" :value="item">{{ graphVisibilityLabels[item] }}</option></select></label>
+          <label class="wide"><span>简介</span><textarea v-model="nodeDraft.summary" rows="4" /></label>
+        </div>
+      </section>
+
+      <section class="field-section">
+        <h3>绑定资料</h3>
+        <div class="form-grid">
+          <label>
+            <span>绑定对象类型</span>
+            <select v-model="nodeDraft.bound_type" @change="emit('boundTypeChanged')">
+              <option v-for="type in boundTypes" :key="type || 'none'" :value="type || null">
+                {{ type ? graphNodeBoundTypeLabels[type] : '未绑定' }}
+              </option>
+            </select>
+          </label>
+          <label v-if="nodeDraft.bound_type && nodeDraft.bound_type !== 'custom'" class="wide">
+            <span>绑定对象</span>
+            <select v-model="nodeDraft.bound_id" @change="emit('boundSelectionChanged')">
+              <option value="">请选择绑定对象</option>
+              <option v-for="item in getBindingList(bindingOptions, nodeDraft.bound_type)" :key="item.id" :value="item.id">{{ item.label }}</option>
+            </select>
+          </label>
+          <label v-else class="wide"><span>绑定对象</span><input v-model.trim="nodeDraft.bound_id" type="text" placeholder="可选" /></label>
+          <p v-if="nodeDraft.bound_type && nodeDraft.bound_type !== 'custom' && !nodeDraft.bound_id" class="hint wide">请选择绑定对象</p>
+          <button
+            v-if="nodeDraft.bound_type && nodeDraft.bound_type !== 'custom' && nodeDraft.bound_id"
+            type="button"
+            class="wide"
+            :disabled="isSaving"
+            @click="emit('syncFromBound')"
+          >
+            从绑定资料同步
+          </button>
+          <button
+            v-if="canCreateMaterialFromNode(selectedNode)"
+            type="button"
+            class="wide"
+            :disabled="isSaving || !nodeDraft.title.trim()"
+            @click="emit('createMaterialFromNode')"
+          >
+            {{ reverseCreationLabels[selectedNode.node_type] }}
+          </button>
+        </div>
+      </section>
+
+      <section class="field-section">
+        <h3>样式与位置</h3>
+        <div class="form-grid">
+          <label><span>颜色</span><input v-model.trim="nodeDraft.color" type="text" placeholder="#4f7cff" /></label>
+          <label><span>大小预设</span><select v-model.number="nodeDraft.size" @change="emit('sizePresetChanged')"><option :value="1">1</option><option :value="2">2</option><option :value="3">3</option></select></label>
+          <label><span>宽度</span><input v-model.number="nodeDraft.width" min="80" max="420" type="number" /></label>
+          <label><span>高度</span><input v-model.number="nodeDraft.height" min="40" max="260" type="number" /></label>
+          <label><span>x</span><input v-model.number="nodeDraft.x" type="number" /></label>
+          <label><span>y</span><input v-model.number="nodeDraft.y" type="number" /></label>
+        </div>
+      </section>
+
       <div class="actions">
         <button type="button" class="primary" :disabled="isSaving || !nodeDraft.title.trim()" @click="emit('saveNode')">保存</button>
         <button type="button" :disabled="!selectedNode.bound_type || !selectedNode.bound_id" @click="emit('openBound')">打开绑定资料</button>
@@ -129,21 +181,32 @@ function handleCreateFromBinding(boundType: Exclude<GraphNodeBoundType, 'custom'
     </template>
 
     <template v-else-if="selectedEdge">
-      <header>
+      <header class="inspector-header">
         <p>关系详情</p>
         <h2>{{ selectedEdge.label || graphEdgeRelationLabels[selectedEdge.relation_type] }}</h2>
       </header>
-      <div class="form-grid">
-        <label class="wide"><span>起点节点</span><select v-model="edgeDraft.from_node_id"><option v-for="node in nodes" :key="node.id" :value="node.id">{{ node.title }}</option></select></label>
-        <label class="wide"><span>终点节点</span><select v-model="edgeDraft.to_node_id"><option v-for="node in nodes" :key="node.id" :value="node.id">{{ node.title }}</option></select></label>
-        <label><span>关系类型</span><select v-model="edgeDraft.relation_type"><option v-for="type in relationTypes" :key="type" :value="type">{{ graphEdgeRelationLabels[type] }}</option></select></label>
-        <label><span>方向</span><select v-model="edgeDraft.direction"><option v-for="item in directions" :key="item" :value="item">{{ graphEdgeDirectionLabels[item] }}</option></select></label>
-        <label><span>强度</span><input v-model.number="edgeDraft.strength" min="1" max="5" type="number" /></label>
-        <label><span>线条样式</span><select v-model="edgeDraft.line_style"><option v-for="item in lineStyles" :key="item" :value="item">{{ graphEdgeLineStyleLabels[item] }}</option></select></label>
-        <label class="wide"><span>标签</span><input v-model.trim="edgeDraft.label" type="text" /></label>
-        <label><span>可见性</span><select v-model="edgeDraft.visibility"><option v-for="item in visibilityOptions" :key="item" :value="item">{{ graphVisibilityLabels[item] }}</option></select></label>
-        <label class="wide"><span>批注</span><textarea v-model="edgeDraft.note" rows="4" /></label>
-      </div>
+
+      <section class="field-section">
+        <h3>端点</h3>
+        <div class="form-grid">
+          <label class="wide"><span>起点节点</span><select v-model="edgeDraft.from_node_id"><option v-for="node in nodes" :key="node.id" :value="node.id">{{ node.title }}</option></select></label>
+          <label class="wide"><span>终点节点</span><select v-model="edgeDraft.to_node_id"><option v-for="node in nodes" :key="node.id" :value="node.id">{{ node.title }}</option></select></label>
+        </div>
+      </section>
+
+      <section class="field-section">
+        <h3>关系属性</h3>
+        <div class="form-grid">
+          <label><span>关系类型</span><select v-model="edgeDraft.relation_type"><option v-for="type in relationTypes" :key="type" :value="type">{{ graphEdgeRelationLabels[type] }}</option></select></label>
+          <label><span>方向</span><select v-model="edgeDraft.direction"><option v-for="item in directions" :key="item" :value="item">{{ graphEdgeDirectionLabels[item] }}</option></select></label>
+          <label><span>强度</span><input v-model.number="edgeDraft.strength" min="1" max="5" type="number" /></label>
+          <label><span>线条样式</span><select v-model="edgeDraft.line_style"><option v-for="item in lineStyles" :key="item" :value="item">{{ graphEdgeLineStyleLabels[item] }}</option></select></label>
+          <label class="wide"><span>标签</span><input v-model.trim="edgeDraft.label" type="text" /></label>
+          <label><span>可见性</span><select v-model="edgeDraft.visibility"><option v-for="item in visibilityOptions" :key="item" :value="item">{{ graphVisibilityLabels[item] }}</option></select></label>
+          <label class="wide"><span>批注</span><textarea v-model="edgeDraft.note" rows="4" /></label>
+        </div>
+      </section>
+
       <div class="actions">
         <button type="button" class="primary" :disabled="isSaving || edgeDraft.from_node_id === edgeDraft.to_node_id" @click="emit('saveEdge')">保存</button>
         <button type="button" class="danger" :disabled="isSaving" @click="emit('deleteEdge')">删除</button>
@@ -153,10 +216,10 @@ function handleCreateFromBinding(boundType: Exclude<GraphNodeBoundType, 'custom'
     <template v-else>
       <section class="placeholder">
         <h2>请选择节点或关系查看详情。</h2>
+        <p>快速创建</p>
       </section>
+      <GraphBindingPanel :options="bindingOptions" @create-from-binding="handleCreateFromBinding" />
     </template>
-
-    <GraphBindingPanel :options="bindingOptions" @create-from-binding="handleCreateFromBinding" />
   </aside>
 </template>
 
@@ -173,24 +236,48 @@ function handleCreateFromBinding(boundType: Exclude<GraphNodeBoundType, 'custom'
   overflow: auto;
 }
 
-header p,
-header h2,
+.inspector-header,
+.field-section {
+  display: grid;
+  gap: 8px;
+}
+
+.inspector-header {
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 10px;
+}
+
+.inspector-header p,
+.inspector-header h2,
+.field-section h3,
 .placeholder h2,
+.placeholder p,
 .hint {
   margin: 0;
 }
 
-header p {
+.inspector-header p {
   color: #64748b;
   font-size: 0.76rem;
-  font-weight: 800;
+  font-weight: 900;
 }
 
-header h2,
+.inspector-header h2,
 .placeholder h2 {
-  margin-top: 4px;
   color: #111827;
   font-size: 1rem;
+}
+
+.field-section {
+  border: 1px solid #eef2f7;
+  border-radius: 8px;
+  padding: 10px;
+  background: #fbfdff;
+}
+
+.field-section h3 {
+  color: #334155;
+  font-size: 0.84rem;
 }
 
 .form-grid {
@@ -270,9 +357,17 @@ button:disabled {
 }
 
 .placeholder {
+  display: grid;
+  gap: 8px;
   border: 1px dashed #cbd5e1;
   border-radius: 8px;
   padding: 14px;
   background: #f8fafc;
+}
+
+.placeholder p {
+  color: #64748b;
+  font-size: 0.84rem;
+  font-weight: 800;
 }
 </style>
