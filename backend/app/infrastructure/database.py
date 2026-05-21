@@ -263,6 +263,7 @@ def init_database() -> None:
     from app.models import chapter_clue  # noqa: F401
     from app.models import chapter_setting  # noqa: F401
     from app.models import chapter_version  # noqa: F401
+    from app.models import check_result  # noqa: F401
     from app.models import character  # noqa: F401
     from app.models import clue  # noqa: F401
     from app.models import clue_character  # noqa: F401
@@ -270,6 +271,7 @@ def init_database() -> None:
     from app.models import graph_edge  # noqa: F401
     from app.models import graph_node  # noqa: F401
     from app.models import outline_item  # noqa: F401
+    from app.models import prohibited_term  # noqa: F401
     from app.models import timeline_event  # noqa: F401
     from app.models import timeline_edge  # noqa: F401
     from app.models import timeline_track  # noqa: F401
