@@ -6,6 +6,7 @@ from app.api.chapter_versions import router as chapter_versions_router
 from app.api.chapters import router as chapters_router
 from app.api.characters import router as characters_router
 from app.api.clues import router as clues_router
+from app.api.exports import router as exports_router
 from app.api.graphs import router as graphs_router
 from app.api.imports import router as imports_router
 from app.api.outlines import router as outlines_router
@@ -41,6 +42,7 @@ def health_check():
 
 app.include_router(projects_router)
 app.include_router(backups_router)
+app.include_router(exports_router)
 app.include_router(volumes_router)
 app.include_router(chapters_router)
 app.include_router(chapter_versions_router)
