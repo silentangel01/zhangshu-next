@@ -6,9 +6,10 @@ import uuid
 import zipfile
 from pathlib import PurePosixPath
 from typing import Any
+from xml.etree import ElementTree
 
 
-SUPPORTED_TEXT_SUFFIXES = {".txt", ".md"}
+SUPPORTED_TEXT_SUFFIXES = {".txt", ".md", ".docx"}
 IGNORED_NAMES = {".ds_store", "thumbs.db"}
 UNSUPPORTED_LEGACY_NOTE = "暂未导入：人物、关系图、时间线、知识库等复杂资料将在后续版本支持。"
 
@@ -119,6 +120,7 @@ def parse_folder_zip_bytes(content: bytes, source_filename: str) -> dict[str, An
     warnings: list[str] = []
     unsupported_items: list[str] = []
     failed_files: list[str] = []
+    empty_files: list[str] = []
     text_entries: list[tuple[PurePosixPath, str]] = []
 
     try:
@@ -137,8 +139,11 @@ def parse_folder_zip_bytes(content: bytes, source_filename: str) -> dict[str, An
                     continue
 
                 file_content = archive.read(info)
-                text = decode_text(file_content, info.filename, failed_files)
+                text = parse_supported_file(file_content, info.filename, failed_files)
                 if text is not None:
+                    if not text.strip():
+                        empty_files.append(info.filename)
+                        continue
                     text_entries.append((path, text))
     except zipfile.BadZipFile:
         return empty_preview_payload(
@@ -159,23 +164,7 @@ def parse_folder_zip_bytes(content: bytes, source_filename: str) -> dict[str, An
 
     root_prefix = detect_common_root([path for path, _text in text_entries])
     project_title = root_prefix or strip_extension(source_filename)
-    volumes: list[dict[str, Any]] = []
-    volume_lookup: dict[str, dict[str, Any]] = {}
-    unassigned_chapters: list[dict[str, Any]] = []
-
-    for order_index, (path, text) in enumerate(sorted(text_entries, key=lambda item: natural_sort_key(str(item[0])))):
-        relative_path = remove_root_prefix(path, root_prefix)
-        if len(relative_path.parts) >= 2:
-            volume_title = relative_path.parts[0]
-            chapter_name = relative_path.name
-            volume = volume_lookup.get(volume_title)
-            if volume is None:
-                volume = create_volume_payload(title=volume_title, order_index=len(volumes))
-                volume_lookup[volume_title] = volume
-                volumes.append(volume)
-            volume["chapters"].append(create_chapter_payload(chapter_name, text, len(volume["chapters"])))
-        else:
-            unassigned_chapters.append(create_chapter_payload(relative_path.name, text, order_index))
+    volumes, unassigned_chapters = build_structure_from_text_entries(text_entries, root_prefix)
 
     return build_preview_payload(
         import_type="folder_zip",
@@ -187,6 +176,55 @@ def parse_folder_zip_bytes(content: bytes, source_filename: str) -> dict[str, An
         warnings=warnings,
         unsupported_items=unsupported_items,
         failed_files=failed_files,
+        empty_files=empty_files,
+    )
+
+
+def parse_external_files(file_entries: list[tuple[str, bytes]], source_filename: str) -> dict[str, Any]:
+    warnings: list[str] = []
+    unsupported_items: list[str] = []
+    failed_files: list[str] = []
+    empty_files: list[str] = []
+    text_entries: list[tuple[PurePosixPath, str]] = []
+
+    for filename, content in file_entries:
+        path = PurePosixPath(filename)
+        if should_ignore_zip_path(path) or not path.name:
+            continue
+        if path.suffix.lower() not in SUPPORTED_TEXT_SUFFIXES:
+            unsupported_items.append(filename)
+            continue
+        text = parse_supported_file(content, filename, failed_files)
+        if text is not None:
+            if not text.strip():
+                empty_files.append(filename)
+                continue
+            text_entries.append((path, text))
+
+    if not text_entries:
+        return empty_preview_payload(
+            import_type="external_files",
+            source_filename=source_filename,
+            warnings=["未找到可导入的 .txt、.md 或 .docx 文件。"],
+            unsupported_items=unsupported_items,
+            failed_files=failed_files,
+            empty_files=empty_files,
+        )
+
+    root_prefix = detect_common_root([path for path, _text in text_entries])
+    volumes, unassigned_chapters = build_structure_from_text_entries(text_entries, root_prefix)
+
+    return build_preview_payload(
+        import_type="external_files",
+        source_filename=root_prefix or source_filename,
+        detected_project_title=root_prefix or strip_extension(source_filename),
+        summary=None,
+        volumes=volumes,
+        unassigned_chapters=unassigned_chapters,
+        warnings=warnings,
+        unsupported_items=unsupported_items,
+        failed_files=failed_files,
+        empty_files=empty_files,
     )
 
 
@@ -204,6 +242,35 @@ def decode_text(content: bytes, filename: str, failed_files: list[str]) -> str |
     return None
 
 
+def parse_supported_file(content: bytes, filename: str, failed_files: list[str]) -> str | None:
+    if PurePosixPath(filename).suffix.lower() == ".docx":
+        return parse_docx_text(content, filename, failed_files)
+    return decode_text(content, filename, failed_files)
+
+
+def parse_docx_text(content: bytes, filename: str, failed_files: list[str]) -> str | None:
+    try:
+        with zipfile.ZipFile(io_bytes(content)) as archive:
+            xml_content = archive.read("word/document.xml")
+    except (KeyError, zipfile.BadZipFile):
+        failed_files.append(filename)
+        return None
+
+    try:
+        root = ElementTree.fromstring(xml_content)
+    except ElementTree.ParseError:
+        failed_files.append(filename)
+        return None
+
+    namespace = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    paragraphs: list[str] = []
+    for paragraph in root.findall(".//w:body/w:p", namespace):
+        text = "".join(node.text or "" for node in paragraph.findall(".//w:t", namespace)).strip()
+        if text:
+            paragraphs.append(text)
+    return "\n\n".join(paragraphs)
+
+
 def build_preview_payload(
     *,
     import_type: str,
@@ -215,6 +282,7 @@ def build_preview_payload(
     warnings: list[str],
     unsupported_items: list[str],
     failed_files: list[str],
+    empty_files: list[str] | None = None,
 ) -> dict[str, Any]:
     total_word_count = sum(
         chapter["word_count"]
@@ -226,6 +294,30 @@ def build_preview_payload(
         for chapter in volume["chapters"]
     )
     chapter_count = len(unassigned_chapters) + sum(len(volume["chapters"]) for volume in volumes)
+    files_detected = [
+        chapter.get("source_path", chapter["title"])
+        for chapter in unassigned_chapters
+    ] + [
+        chapter.get("source_path", chapter["title"])
+        for volume in volumes
+        for chapter in volume["chapters"]
+    ]
+    detected_empty_files = [
+        chapter.get("source_path", chapter["title"])
+        for chapter in unassigned_chapters
+        if not chapter.get("content", "").strip()
+    ] + [
+        chapter.get("source_path", chapter["title"])
+        for volume in volumes
+        for chapter in volume["chapters"]
+        if not chapter.get("content", "").strip()
+    ]
+    empty_files = sorted(set((empty_files or []) + detected_empty_files))
+    duplicate_titles = find_duplicate_titles(volumes, unassigned_chapters)
+    if empty_files:
+        warnings.append(f"发现 {len(empty_files)} 个空文件。")
+    if duplicate_titles:
+        warnings.append(f"发现重复章节标题：{', '.join(duplicate_titles)}")
 
     return {
         "import_id": "",
@@ -242,6 +334,14 @@ def build_preview_payload(
         "warnings": warnings,
         "unsupported_items": sorted(set(unsupported_items)),
         "failed_files": failed_files,
+        "report": {
+            "files_detected": files_detected,
+            "files_skipped": sorted(set(unsupported_items + failed_files + empty_files)),
+            "encoding_issues": failed_files,
+            "empty_files": empty_files,
+            "duplicate_titles": duplicate_titles,
+            "unsupported_files": sorted(set(unsupported_items)),
+        },
         "can_import": chapter_count > 0,
     }
 
@@ -253,6 +353,7 @@ def empty_preview_payload(
     warnings: list[str],
     unsupported_items: list[str] | None = None,
     failed_files: list[str] | None = None,
+    empty_files: list[str] | None = None,
 ) -> dict[str, Any]:
     return build_preview_payload(
         import_type=import_type,
@@ -264,6 +365,7 @@ def empty_preview_payload(
         warnings=warnings,
         unsupported_items=unsupported_items or [],
         failed_files=failed_files or [],
+        empty_files=empty_files or [],
     )
 
 
@@ -297,7 +399,49 @@ def create_chapter_payload(filename_or_title: str, content: str, order_index: in
         "content": content,
         "order_index": order_index,
         "word_count": calculate_word_count(content),
+        "source_path": filename_or_title,
     }
+
+
+def build_structure_from_text_entries(
+    text_entries: list[tuple[PurePosixPath, str]],
+    root_prefix: str | None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    volumes: list[dict[str, Any]] = []
+    volume_lookup: dict[str, dict[str, Any]] = {}
+    unassigned_chapters: list[dict[str, Any]] = []
+
+    for order_index, (path, text) in enumerate(sorted(text_entries, key=lambda item: natural_sort_key(str(item[0])))):
+        relative_path = remove_root_prefix(path, root_prefix)
+        if len(relative_path.parts) >= 2:
+            volume_title = relative_path.parts[0]
+            chapter_name = relative_path.name
+            volume = volume_lookup.get(volume_title)
+            if volume is None:
+                volume = create_volume_payload(title=volume_title, order_index=len(volumes))
+                volume_lookup[volume_title] = volume
+                volumes.append(volume)
+            volume["chapters"].append(create_chapter_payload(chapter_name, text, len(volume["chapters"])))
+        else:
+            unassigned_chapters.append(create_chapter_payload(relative_path.name, text, order_index))
+
+    return volumes, unassigned_chapters
+
+
+def find_duplicate_titles(
+    volumes: list[dict[str, Any]],
+    unassigned_chapters: list[dict[str, Any]],
+) -> list[str]:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for chapter in list(unassigned_chapters) + [
+        chapter for volume in volumes for chapter in volume["chapters"]
+    ]:
+        title = chapter["title"]
+        if title in seen:
+            duplicates.add(title)
+        seen.add(title)
+    return sorted(duplicates)
 
 
 def pick_string(data: Any, keys: list[str]) -> str | None:

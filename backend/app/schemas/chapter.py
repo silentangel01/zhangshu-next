@@ -48,6 +48,21 @@ class ChapterUpdate(BaseModel):
         return title
 
 
+class ChapterReorderItem(BaseModel):
+    chapter_id: str
+    volume_id: str | None = None
+    order_index: int = Field(default=0, ge=0)
+
+
+class ChapterReorderRequest(BaseModel):
+    items: list[ChapterReorderItem]
+
+
+class ChapterReorderResponse(BaseModel):
+    updated_count: int
+    warnings: list[str]
+
+
 class ChapterRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

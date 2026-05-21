@@ -2,7 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.infrastructure.database import get_db
-from app.schemas.chapter import ChapterCreate, ChapterRead, ChapterUpdate
+from app.schemas.chapter import (
+    ChapterCreate,
+    ChapterRead,
+    ChapterReorderRequest,
+    ChapterReorderResponse,
+    ChapterUpdate,
+)
 from app.services.chapter_service import (
     ChapterNotFoundError,
     ChapterProjectNotFoundError,
@@ -66,6 +72,26 @@ def update_chapter(
 ):
     try:
         return service.update_chapter(chapter_id, data)
+    except ChapterNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Chapter not found") from exc
+    except ChapterVolumeNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Volume not found") from exc
+
+
+@router.patch(
+    "/api/projects/{project_id}/chapters/reorder",
+    response_model=ChapterReorderResponse,
+)
+def reorder_chapters(
+    project_id: str,
+    data: ChapterReorderRequest,
+    service: ChapterService = Depends(get_chapter_service),
+):
+    try:
+        updated_count, warnings = service.reorder_chapters(project_id, data)
+        return ChapterReorderResponse(updated_count=updated_count, warnings=warnings)
+    except ChapterProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Project not found") from exc
     except ChapterNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Chapter not found") from exc
     except ChapterVolumeNotFoundError as exc:

@@ -14,6 +14,9 @@ class ChapterRepository:
     def __init__(self, db: Session):
         self.db = db
 
+    def list_active_by_project_map(self, project_id: str) -> dict[str, Chapter]:
+        return {chapter.id: chapter for chapter in self.list_active_by_project(project_id)}
+
     def list_active_by_project(self, project_id: str) -> list[Chapter]:
         statement = (
             select(Chapter)

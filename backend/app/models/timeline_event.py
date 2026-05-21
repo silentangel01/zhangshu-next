@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.database import Base
@@ -20,12 +20,20 @@ class TimelineEvent(Base):
         nullable=False,
         index=True,
     )
+    track_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("timeline_tracks.id"),
+        nullable=True,
+        index=True,
+    )
     title: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     description: Mapped[str] = mapped_column(Text, default="", nullable=False)
     event_type: Mapped[str] = mapped_column(String(32), default="plot", nullable=False, index=True)
     story_date: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     story_time: Mapped[str | None] = mapped_column(String(255), nullable=True)
     order_index: Mapped[int] = mapped_column(Integer, default=0, nullable=False, index=True)
+    position_index: Mapped[int] = mapped_column(Integer, default=0, nullable=False, index=True)
+    position_ratio: Mapped[float] = mapped_column(Float, default=50.0, nullable=False, index=True)
     importance: Mapped[str] = mapped_column(String(32), default="normal", nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(32), default="planned", nullable=False, index=True)
     chapter_id: Mapped[str | None] = mapped_column(

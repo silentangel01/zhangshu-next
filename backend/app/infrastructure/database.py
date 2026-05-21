@@ -1,7 +1,9 @@
 from collections.abc import Generator
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from uuid import uuid4
+
+from sqlalchemy import create_engine, inspect, select, text, update
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 
@@ -29,6 +31,230 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
+def _ensure_timeline_event_columns() -> bool:
+    inspector = inspect(engine)
+    if "timeline_events" not in inspector.get_table_names():
+        return False
+
+    existing_columns = {column["name"] for column in inspector.get_columns("timeline_events")}
+    added_position_ratio = False
+    with engine.begin() as connection:
+        if "track_id" not in existing_columns:
+            connection.execute(text("ALTER TABLE timeline_events ADD COLUMN track_id VARCHAR(36)"))
+        if "position_index" not in existing_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE timeline_events ADD COLUMN position_index INTEGER NOT NULL DEFAULT 0"
+                )
+            )
+        if "position_ratio" not in existing_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE timeline_events ADD COLUMN position_ratio FLOAT NOT NULL DEFAULT 50.0"
+                )
+            )
+            added_position_ratio = True
+
+    return added_position_ratio
+
+
+def _ensure_timeline_edge_columns() -> bool:
+    inspector = inspect(engine)
+    if "timeline_edges" not in inspector.get_table_names():
+        return False
+
+    existing_columns = {column["name"] for column in inspector.get_columns("timeline_edges")}
+    added_temporal_relation = False
+    with engine.begin() as connection:
+        if "temporal_relation" not in existing_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE timeline_edges ADD COLUMN temporal_relation VARCHAR(32) NOT NULL DEFAULT 'unordered'"
+                )
+            )
+            added_temporal_relation = True
+
+        connection.execute(
+            text(
+                "UPDATE timeline_edges SET temporal_relation='unordered' WHERE temporal_relation IS NULL OR temporal_relation=''"
+            )
+        )
+
+    return added_temporal_relation
+
+
+def _ensure_graph_node_size_columns() -> None:
+    inspector = inspect(engine)
+    if "graph_nodes" not in inspector.get_table_names():
+        return
+
+    existing_columns = {column["name"] for column in inspector.get_columns("graph_nodes")}
+    with engine.begin() as connection:
+        added_width = "width" not in existing_columns
+        added_height = "height" not in existing_columns
+        if "width" not in existing_columns:
+            connection.execute(
+                text("ALTER TABLE graph_nodes ADD COLUMN width FLOAT NOT NULL DEFAULT 160")
+            )
+        if "height" not in existing_columns:
+            connection.execute(
+                text("ALTER TABLE graph_nodes ADD COLUMN height FLOAT NOT NULL DEFAULT 72")
+            )
+        width_where = "1 = 1" if added_width else "width IS NULL OR width <= 0"
+        height_where = "1 = 1" if added_height else "height IS NULL OR height <= 0"
+        width_count = connection.scalar(text(f"SELECT COUNT(*) FROM graph_nodes WHERE {width_where}"))
+        if width_count:
+            connection.execute(
+                text(
+                    f"""
+                    UPDATE graph_nodes
+                    SET width = CASE
+                        WHEN size = 1 THEN 120
+                        WHEN size = 2 THEN 160
+                        WHEN size = 3 THEN 220
+                        ELSE 160
+                    END
+                    WHERE {width_where}
+                    """
+                )
+            )
+        height_count = connection.scalar(text(f"SELECT COUNT(*) FROM graph_nodes WHERE {height_where}"))
+        if height_count:
+            connection.execute(
+                text(
+                    f"""
+                    UPDATE graph_nodes
+                    SET height = CASE
+                        WHEN size = 1 THEN 56
+                        WHEN size = 2 THEN 72
+                        WHEN size = 3 THEN 96
+                        ELSE 72
+                    END
+                    WHERE {height_where}
+                    """
+                )
+            )
+
+
+def _backfill_timeline_tracks() -> None:
+    from app.models.timeline_event import TimelineEvent
+    from app.models.timeline_track import TimelineTrack
+
+    db = SessionLocal()
+    try:
+        project_ids = [
+            row[0]
+            for row in db.execute(
+                select(TimelineEvent.project_id)
+                .where(TimelineEvent.deleted_at.is_(None))
+                .distinct()
+            ).all()
+        ]
+
+        for project_id in project_ids:
+            main_track = db.scalar(
+                select(TimelineTrack).where(
+                    TimelineTrack.project_id == project_id,
+                    TimelineTrack.deleted_at.is_(None),
+                    TimelineTrack.is_main.is_(True),
+                )
+            )
+
+            if main_track is None:
+                main_track = TimelineTrack(
+                    id=str(uuid4()),
+                    project_id=project_id,
+                    title="全书主时间轴",
+                    track_type="main",
+                    is_main=True,
+                    order_index=0,
+                )
+                db.add(main_track)
+                db.flush()
+
+            db.execute(
+                update(TimelineEvent)
+                .where(
+                    TimelineEvent.project_id == project_id,
+                    TimelineEvent.deleted_at.is_(None),
+                    TimelineEvent.track_id.is_(None),
+                )
+                .values(track_id=main_track.id, position_index=TimelineEvent.order_index)
+            )
+
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+def _backfill_timeline_event_position_ratios() -> None:
+    from app.models.timeline_event import TimelineEvent
+    from app.models.timeline_track import TimelineTrack
+
+    db = SessionLocal()
+    try:
+        project_ids = [
+            row[0]
+            for row in db.execute(
+                select(TimelineEvent.project_id)
+                .where(TimelineEvent.deleted_at.is_(None))
+                .distinct()
+            ).all()
+        ]
+
+        for project_id in project_ids:
+            tracks = list(
+                db.scalars(
+                    select(TimelineTrack)
+                    .where(
+                        TimelineTrack.project_id == project_id,
+                        TimelineTrack.deleted_at.is_(None),
+                    )
+                    .order_by(
+                        TimelineTrack.is_main.desc(),
+                        TimelineTrack.order_index.asc(),
+                        TimelineTrack.created_at.asc(),
+                    )
+                ).all()
+            )
+
+            for track in tracks:
+                events = list(
+                    db.scalars(
+                        select(TimelineEvent)
+                        .where(
+                            TimelineEvent.project_id == project_id,
+                            TimelineEvent.deleted_at.is_(None),
+                            TimelineEvent.track_id == track.id,
+                        )
+                        .order_by(
+                            TimelineEvent.position_index.asc(),
+                            TimelineEvent.order_index.asc(),
+                            TimelineEvent.created_at.asc(),
+                        )
+                    ).all()
+                )
+                event_count = len(events)
+                if event_count == 0:
+                    continue
+
+                for index, event in enumerate(events):
+                    if event_count == 1:
+                        event.position_ratio = 50.0
+                    else:
+                        event.position_ratio = round(100.0 * (index + 1) / (event_count + 1), 2)
+
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
 def init_database() -> None:
     from app.models import project  # noqa: F401
     from app.models import volume  # noqa: F401
@@ -37,16 +263,29 @@ def init_database() -> None:
     from app.models import chapter_clue  # noqa: F401
     from app.models import chapter_setting  # noqa: F401
     from app.models import chapter_version  # noqa: F401
+    from app.models import check_result  # noqa: F401
     from app.models import character  # noqa: F401
     from app.models import clue  # noqa: F401
     from app.models import clue_character  # noqa: F401
     from app.models import clue_setting  # noqa: F401
+    from app.models import graph_edge  # noqa: F401
+    from app.models import graph_node  # noqa: F401
     from app.models import outline_item  # noqa: F401
+    from app.models import prohibited_term  # noqa: F401
+    from app.models import recovery_draft  # noqa: F401
     from app.models import timeline_event  # noqa: F401
+    from app.models import timeline_edge  # noqa: F401
+    from app.models import timeline_track  # noqa: F401
     from app.models import setting_item  # noqa: F401
 
     ensure_database_directory()
     Base.metadata.create_all(bind=engine)
+    _ensure_graph_node_size_columns()
+    added_position_ratio = _ensure_timeline_event_columns()
+    _ensure_timeline_edge_columns()
+    _backfill_timeline_tracks()
+    if added_position_ratio:
+        _backfill_timeline_event_position_ratios()
 
 
 def get_db() -> Generator[Session, None, None]:

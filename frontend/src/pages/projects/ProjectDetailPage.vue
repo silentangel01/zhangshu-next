@@ -7,6 +7,7 @@ import {
   deleteChapter,
   getChapter,
   listChapters,
+  reorderChapters,
   updateChapter,
 } from '@/entities/chapter/api'
 import {
@@ -22,6 +23,7 @@ import type {
 import type {
   Chapter,
   CreateChapterPayload,
+  ReorderChaptersPayload,
   UpdateChapterMetadataPayload,
 } from '@/entities/chapter/types'
 import { getProject } from '@/entities/project/api'
@@ -37,6 +39,7 @@ import { clearRecoveryDraft } from '@/features/chapters/recoveryDraft'
 import CreateVolumeDialog from '@/features/volumes/CreateVolumeDialog.vue'
 import EditVolumeDialog from '@/features/volumes/EditVolumeDialog.vue'
 import WritingAidPanel from '@/features/writing/WritingAidPanel.vue'
+import { safeReadJson, safeWriteJson } from '@/shared/storage/localWorkspaceState'
 
 const route = useRoute()
 
@@ -59,13 +62,25 @@ const isVersionBusy = ref(false)
 const errorMessage = ref('')
 const versionErrorMessage = ref('')
 const versionMessage = ref('')
+const treeMessage = ref('')
+const treeMessageTone = ref<'success' | 'warning'>('success')
 const showCreateVolumeDialog = ref(false)
 const showCreateChapterDialog = ref(false)
+const rightAidTab = ref<WritingAidTab | null>(null)
+
+type WritingAidTab = 'outline' | 'characters' | 'settings' | 'graph' | 'timeline' | 'foreshadowing' | 'versions'
+
+interface WorkspaceViewState {
+  selectedChapterId: string | null
+  rightAidTab: WritingAidTab | null
+}
 
 const projectId = computed<string>(() => {
   const value = route.params.projectId
   return (Array.isArray(value) ? value[0] : value) ?? ''
 })
+
+const workspaceStorageKey = computed(() => `zhangshu:workspace:${projectId.value}`)
 
 const sortedVolumes = computed(() =>
   [...volumes.value].sort((left, right) => left.order_index - right.order_index),
@@ -84,6 +99,7 @@ watch(projectId, () => {
   chapterVersions.value = []
   previewVersion.value = null
   isEditorDirty.value = false
+  treeMessage.value = ''
   createChapterVolumeId.value = null
   void loadProjectWorkspace()
 })
@@ -107,6 +123,7 @@ async function loadProjectWorkspace() {
     project.value = projectDetail
     volumes.value = projectVolumes
     chapters.value = projectChapters
+    await restoreWorkspaceViewState()
   } catch (error) {
     errorMessage.value = getErrorMessage(error, '加载项目详情失败。')
   } finally {
@@ -126,6 +143,71 @@ async function refreshVolumesAndChapters() {
 
   volumes.value = projectVolumes
   chapters.value = projectChapters
+  reconcileStoredSelectedChapter()
+}
+
+async function restoreWorkspaceViewState() {
+  const state = readValidWorkspaceViewState()
+  rightAidTab.value = state.rightAidTab
+
+  if (!state.selectedChapterId) {
+    return
+  }
+
+  const chapter = chapters.value.find((item) => item.id === state.selectedChapterId)
+  if (!chapter) {
+    saveWorkspaceViewState({ selectedChapterId: null })
+    return
+  }
+
+  await handleSelectChapter(chapter)
+}
+
+function reconcileStoredSelectedChapter() {
+  const state = readValidWorkspaceViewState()
+  if (!state.selectedChapterId) {
+    return
+  }
+  const stillExists = chapters.value.some((chapter) => chapter.id === state.selectedChapterId)
+  if (!stillExists) {
+    saveWorkspaceViewState({ selectedChapterId: null })
+  }
+}
+
+function saveWorkspaceViewState(patch: Partial<WorkspaceViewState>) {
+  const current = readValidWorkspaceViewState()
+  safeWriteJson(workspaceStorageKey.value, {
+    selectedChapterId: Object.prototype.hasOwnProperty.call(patch, 'selectedChapterId')
+      ? patch.selectedChapterId ?? null
+      : current.selectedChapterId,
+    rightAidTab: Object.prototype.hasOwnProperty.call(patch, 'rightAidTab')
+      ? patch.rightAidTab ?? null
+      : current.rightAidTab,
+  } satisfies WorkspaceViewState)
+}
+
+function readValidWorkspaceViewState(): WorkspaceViewState {
+  const state = safeReadJson<Partial<WorkspaceViewState> | null>(workspaceStorageKey.value, null)
+  const validTab = isWritingAidTab(state?.rightAidTab) ? state.rightAidTab : null
+  return {
+    selectedChapterId: typeof state?.selectedChapterId === 'string' ? state.selectedChapterId : null,
+    rightAidTab: validTab,
+  }
+}
+
+function isWritingAidTab(value: unknown): value is WritingAidTab {
+  return value === 'outline'
+    || value === 'characters'
+    || value === 'settings'
+    || value === 'graph'
+    || value === 'timeline'
+    || value === 'foreshadowing'
+    || value === 'versions'
+}
+
+function handleRightAidTabChanged(tab: WritingAidTab) {
+  rightAidTab.value = tab
+  saveWorkspaceViewState({ rightAidTab: tab })
 }
 
 async function handleCreateVolume(payload: CreateVolumePayload) {
@@ -228,9 +310,31 @@ async function handleDeleteChapter(chapter: Chapter) {
       versionMessage.value = ''
       versionErrorMessage.value = ''
       isEditorDirty.value = false
+      saveWorkspaceViewState({ selectedChapterId: null })
     }
     await refreshVolumesAndChapters()
   }, '删除章节失败。')
+}
+
+async function handleReorderChapters(payload: ReorderChaptersPayload) {
+  if (!projectId.value) {
+    return
+  }
+
+  treeMessage.value = ''
+
+  await saveChange(async () => {
+    const result = await reorderChapters(projectId.value, payload)
+    await refreshVolumesAndChapters()
+
+    if (result.warnings.length > 0) {
+      treeMessageTone.value = 'warning'
+      treeMessage.value = result.warnings.join(' ')
+    } else {
+      treeMessageTone.value = 'success'
+      treeMessage.value = '章节顺序已更新'
+    }
+  }, '章节移动失败，请重试')
 }
 
 async function handleSelectChapter(chapter: Chapter) {
@@ -259,6 +363,7 @@ async function handleSelectChapter(chapter: Chapter) {
     selectedChapter.value = await getChapter(chapter.id)
     await loadChapterVersions(chapter.id)
     isEditorDirty.value = false
+    saveWorkspaceViewState({ selectedChapterId: chapter.id })
   } catch (error) {
     errorMessage.value = getErrorMessage(error, '加载章节失败。')
   } finally {
@@ -397,6 +502,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
       </div>
       <div class="header-actions">
         <RouterLink class="outline-link" :to="`/projects/${projectId}/outlines`">打开完整大纲</RouterLink>
+        <RouterLink class="outline-link" :to="`/projects/${projectId}/graph`">打开关系图</RouterLink>
       </div>
     </header>
 
@@ -410,14 +516,18 @@ function getErrorMessage(error: unknown, fallback: string): string {
       <aside class="sidebar">
         <nav class="project-nav" aria-label="项目导航">
           <RouterLink class="nav-link" to="/projects">项目列表</RouterLink>
+          <RouterLink class="nav-link" :to="`/projects/${projectId}/search`">搜索</RouterLink>
+          <RouterLink class="nav-link" :to="`/projects/${projectId}/review`">检查</RouterLink>
           <RouterLink class="nav-link" :to="`/projects/${projectId}/outlines`">完整大纲</RouterLink>
           <RouterLink class="nav-link" :to="`/projects/${projectId}/characters`">人物库</RouterLink>
+          <RouterLink class="nav-link" :to="`/projects/${projectId}/backup`">备份恢复</RouterLink>
         </nav>
         <ChapterTree
           :project-title="project?.title || '作品标题'"
           :volumes="sortedVolumes"
           :chapters="sortedChapters"
           :selected-chapter-id="selectedChapter?.id ?? null"
+          :is-reordering="isSaving"
           @select-chapter="handleSelectChapter"
           @create-volume="handleCreateVolumeRequest"
           @create-chapter="handleCreateChapterRequest"
@@ -425,7 +535,9 @@ function getErrorMessage(error: unknown, fallback: string): string {
           @delete-volume="handleDeleteVolume"
           @edit-chapter="editingChapter = $event"
           @delete-chapter="handleDeleteChapter"
+          @reorder-chapters="handleReorderChapters"
         />
+        <p v-if="treeMessage" class="tree-message" :class="treeMessageTone">{{ treeMessage }}</p>
       </aside>
 
       <section class="detail-panel">
@@ -490,11 +602,13 @@ function getErrorMessage(error: unknown, fallback: string): string {
         <WritingAidPanel
           :project-id="projectId"
           :chapter-id="selectedChapter?.id ?? null"
+          :initial-active-tab="rightAidTab"
           :versions="chapterVersions"
           :version-error-message="versionErrorMessage"
           :version-message="versionMessage"
           :version-is-loading="isVersionLoading"
           :version-is-busy="isVersionBusy"
+          @active-tab-change="handleRightAidTabChanged"
           @create-snapshot="handleCreateVersionSnapshot"
           @view-version="handleViewVersion"
           @restore-version="handleRestoreVersion"
@@ -666,6 +780,20 @@ h2 {
 .sidebar {
   display: grid;
   gap: 14px;
+}
+
+.tree-message {
+  margin: -6px 2px 0;
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.tree-message.success {
+  color: #2563eb;
+}
+
+.tree-message.warning {
+  color: #b45309;
 }
 
 .detail-panel > article {

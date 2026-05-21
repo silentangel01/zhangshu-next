@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import ChapterCharacterPanel from '@/features/characters/ChapterCharacterPanel.vue'
 import ChapterCluePanel from '@/features/clues/ChapterCluePanel.vue'
+import ChapterGraphCard from '@/features/graph/ChapterGraphCard.vue'
 import ChapterOutlinePanel from '@/features/outlines/ChapterOutlinePanel.vue'
 import ChapterSettingPanel from '@/features/settings/ChapterSettingPanel.vue'
 import ChapterTimelinePanel from '@/features/timeline/ChapterTimelinePanel.vue'
@@ -13,6 +14,7 @@ import type { ChapterVersionListItem } from '@/entities/chapter-version/types'
 const props = defineProps<{
   projectId: string
   chapterId: string | null
+  initialActiveTab: AidTab | null
   versions: ChapterVersionListItem[]
   versionErrorMessage: string
   versionMessage: string
@@ -24,11 +26,12 @@ const emit = defineEmits<{
   createSnapshot: []
   viewVersion: [versionId: string]
   restoreVersion: [versionId: string]
+  activeTabChange: [tab: AidTab]
 }>()
 
 type AidTab = 'outline' | 'characters' | 'settings' | 'graph' | 'timeline' | 'foreshadowing' | 'versions'
 
-const activeTab = ref<AidTab>('outline')
+const activeTab = ref<AidTab>(isAidTab(props.initialActiveTab) ? props.initialActiveTab : 'outline')
 
 const tabs: Array<{ id: AidTab; label: string }> = [
   { id: 'outline', label: '大纲' },
@@ -55,12 +58,35 @@ const manageAllLink = computed(() => {
   return manageAllLinks[activeTab.value] ?? ''
 })
 
+const showManageAllLink = computed(() => manageAllLink.value !== '' && activeTab.value !== 'timeline')
+
 const versionsTabMessage = computed(() => {
   if (props.versionMessage) {
     return props.versionMessage
   }
   return ''
 })
+
+watch(() => props.initialActiveTab, (tab) => {
+  if (isAidTab(tab) && tab !== activeTab.value) {
+    activeTab.value = tab
+  }
+})
+
+function setActiveTab(tab: AidTab) {
+  activeTab.value = tab
+  emit('activeTabChange', tab)
+}
+
+function isAidTab(value: unknown): value is AidTab {
+  return value === 'outline'
+    || value === 'characters'
+    || value === 'settings'
+    || value === 'graph'
+    || value === 'timeline'
+    || value === 'foreshadowing'
+    || value === 'versions'
+}
 </script>
 
 <template>
@@ -78,7 +104,7 @@ const versionsTabMessage = computed(() => {
         :key="tab.id"
         type="button"
         :class="{ active: activeTab === tab.id }"
-        @click="activeTab = tab.id"
+        @click="setActiveTab(tab.id)"
       >
         {{ tab.label }}
       </button>
@@ -135,10 +161,14 @@ const versionsTabMessage = computed(() => {
         </template>
       </section>
 
-      <p v-else class="state-message">关系图模块将保留为后续功能。</p>
+      <ChapterGraphCard
+        v-else-if="activeTab === 'graph'"
+        :project-id="projectId"
+        :chapter-id="chapterId"
+      />
     </section>
 
-    <footer v-if="manageAllLink" class="panel-footer">
+    <footer v-if="showManageAllLink" class="panel-footer">
       <RouterLink class="manage-link" :to="manageAllLink">管理全部</RouterLink>
     </footer>
   </aside>
@@ -235,5 +265,9 @@ h2 {
   font-size: 0.82rem;
   font-weight: 800;
   text-decoration: none;
+}
+
+.graph-link {
+  justify-self: end;
 }
 </style>

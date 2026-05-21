@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import type { ImportPreview } from '@/entities/import/types'
 
-defineProps<{
+withDefaults(defineProps<{
   preview: ImportPreview
   projectTitle: string
   isConfirming: boolean
-}>()
+  showProjectTitle?: boolean
+}>(), {
+  showProjectTitle: true,
+})
 
 const emit = defineEmits<{
   'update:projectTitle': [value: string]
@@ -17,8 +20,8 @@ const emit = defineEmits<{
   <section class="preview-panel">
     <header class="panel-header">
       <div>
-        <p class="eyebrow">可以导入</p>
-        <h2>导入预览</h2>
+        <p class="eyebrow">导入报告</p>
+        <h2>预览导入</h2>
       </div>
       <button
         class="primary-button"
@@ -26,11 +29,11 @@ const emit = defineEmits<{
         :disabled="!preview.can_import || isConfirming"
         @click="emit('confirm')"
       >
-        {{ isConfirming ? '正在导入……' : '确认导入' }}
+        {{ isConfirming ? '正在导入…' : '确认导入' }}
       </button>
     </header>
 
-    <label class="title-field">
+    <label v-if="showProjectTitle" class="title-field">
       <span>项目名覆盖（可选）</span>
       <input
         :value="projectTitle"
@@ -46,35 +49,69 @@ const emit = defineEmits<{
         <dd>{{ preview.detected_project_title }}</dd>
       </div>
       <div>
-        <dt>分卷数量</dt>
+        <dt>文件数</dt>
+        <dd>{{ preview.report.files_detected.length }}</dd>
+      </div>
+      <div>
+        <dt>分卷数</dt>
         <dd>{{ preview.volume_count }}</dd>
       </div>
       <div>
-        <dt>章节数量</dt>
+        <dt>章节数</dt>
         <dd>{{ preview.chapter_count }}</dd>
       </div>
       <div>
         <dt>总字数</dt>
         <dd>{{ preview.total_word_count }}</dd>
       </div>
-      <div>
-        <dt>未分卷章节数量</dt>
-        <dd>{{ preview.unassigned_chapter_count }}</dd>
-      </div>
     </dl>
 
-    <section v-if="preview.summary" class="text-block">
-      <h3>简介</h3>
-      <p>{{ preview.summary }}</p>
-    </section>
-
-    <section v-if="preview.volumes.length" class="text-block">
-      <h3>分卷</h3>
+    <section class="text-block">
+      <h3>预览结构</h3>
       <ul>
         <li v-for="volume in preview.volumes" :key="volume.temp_id">
-          {{ volume.order_index }}. {{ volume.title }}（{{ volume.chapter_count }} 章）
+          {{ volume.order_index + 1 }}. {{ volume.title }}（{{ volume.chapter_count }} 章）
+          <ul>
+            <li v-for="chapter in volume.chapters" :key="chapter">{{ chapter }}</li>
+          </ul>
+        </li>
+        <li v-if="preview.unassigned_chapters.length">
+          未分卷章节（{{ preview.unassigned_chapters.length }} 章）
+          <ul>
+            <li v-for="chapter in preview.unassigned_chapters" :key="chapter">{{ chapter }}</li>
+          </ul>
         </li>
       </ul>
+    </section>
+
+    <section class="text-block">
+      <h3>导入报告</h3>
+      <dl class="report-grid">
+        <div>
+          <dt>检测文件</dt>
+          <dd>{{ preview.report.files_detected.length }}</dd>
+        </div>
+        <div>
+          <dt>跳过文件</dt>
+          <dd>{{ preview.report.files_skipped.length }}</dd>
+        </div>
+        <div>
+          <dt>编码问题</dt>
+          <dd>{{ preview.report.encoding_issues.length }}</dd>
+        </div>
+        <div>
+          <dt>空文件</dt>
+          <dd>{{ preview.report.empty_files.length }}</dd>
+        </div>
+        <div>
+          <dt>重复标题</dt>
+          <dd>{{ preview.report.duplicate_titles.length }}</dd>
+        </div>
+        <div>
+          <dt>不支持文件</dt>
+          <dd>{{ preview.report.unsupported_files.length }}</dd>
+        </div>
+      </dl>
     </section>
 
     <section v-if="preview.warnings.length" class="text-block warning">
@@ -84,10 +121,10 @@ const emit = defineEmits<{
       </ul>
     </section>
 
-    <section v-if="preview.unsupported_items.length" class="text-block">
-      <h3>暂不支持的内容</h3>
+    <section v-if="preview.report.unsupported_files.length" class="text-block">
+      <h3>不支持的文件</h3>
       <ul>
-        <li v-for="item in preview.unsupported_items" :key="item">{{ item }}</li>
+        <li v-for="item in preview.report.unsupported_files" :key="item">{{ item }}</li>
       </ul>
     </section>
 
@@ -156,14 +193,16 @@ input {
   font: inherit;
 }
 
-.stats-grid {
+.stats-grid,
+.report-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 12px;
   margin: 0;
 }
 
-.stats-grid div {
+.stats-grid div,
+.report-grid div {
   border: 1px solid #edf0f5;
   border-radius: 8px;
   padding: 12px;
@@ -188,7 +227,6 @@ dd {
   gap: 8px;
 }
 
-.text-block p,
 .text-block ul {
   margin: 0;
   color: #4b5563;

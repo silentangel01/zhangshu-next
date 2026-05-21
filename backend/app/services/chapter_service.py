@@ -7,9 +7,10 @@ from app.models.chapter import Chapter
 from app.models.chapter_version import ChapterVersion
 from app.repositories.chapter_repo import ChapterRepository
 from app.repositories.chapter_version_repo import ChapterVersionRepository
+from app.repositories.outline_repo import OutlineRepository
 from app.repositories.project_repo import ProjectRepository
 from app.repositories.volume_repo import VolumeRepository
-from app.schemas.chapter import ChapterCreate, ChapterUpdate
+from app.schemas.chapter import ChapterCreate, ChapterReorderRequest, ChapterUpdate
 
 
 AUTOSAVE_VERSION_INTERVAL_SECONDS = 5 * 60
@@ -32,11 +33,16 @@ def calculate_word_count(content: str) -> int:
     return sum(1 for character in content if not character.isspace())
 
 
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 class ChapterService:
     def __init__(self, db: Session):
         self.db = db
         self.chapter_repo = ChapterRepository(db)
         self.version_repo = ChapterVersionRepository(db)
+        self.outline_repo = OutlineRepository(db)
         self.project_repo = ProjectRepository(db)
         self.volume_repo = VolumeRepository(db)
 
@@ -99,6 +105,69 @@ class ChapterService:
     def delete_chapter(self, chapter_id: str) -> Chapter:
         chapter = self.get_chapter(chapter_id)
         return self.chapter_repo.soft_delete(chapter)
+
+    def reorder_chapters(
+        self,
+        project_id: str,
+        data: ChapterReorderRequest,
+    ) -> tuple[int, list[str]]:
+        self._ensure_project_exists(project_id)
+
+        if not data.items:
+            return 0, []
+
+        chapters_by_id = self.chapter_repo.list_active_by_project_map(project_id)
+        changed_count = 0
+        warnings: list[str] = []
+        cross_volume_changed = False
+        cross_volume_outline_warning = False
+
+        try:
+            for item in data.items:
+                chapter = chapters_by_id.get(item.chapter_id)
+                if chapter is None:
+                    raise ChapterNotFoundError
+
+                self._ensure_volume_belongs_to_project(project_id, item.volume_id)
+
+                original_volume_id = chapter.volume_id
+                original_order_index = chapter.order_index
+                next_volume_id = item.volume_id
+                next_order_index = item.order_index
+
+                if original_volume_id == next_volume_id and original_order_index == next_order_index:
+                    continue
+
+                if original_volume_id != next_volume_id:
+                    cross_volume_changed = True
+                    if original_volume_id is not None:
+                        outline_items = self.outline_repo.list_active_by_project(
+                            project_id,
+                            volume_id=original_volume_id,
+                            chapter_id=chapter.id,
+                        )
+                        if outline_items:
+                            cross_volume_outline_warning = True
+
+                chapter.volume_id = next_volume_id
+                chapter.order_index = next_order_index
+                chapter.updated_at = utc_now()
+                chapter.version += 1
+                changed_count += 1
+
+            if cross_volume_changed:
+                warnings.append(
+                    "章节已跨分卷移动，相关绑定已保留，请检查大纲和资料关联是否符合预期。"
+                )
+            if cross_volume_outline_warning:
+                warnings.append("章节已移动到新分卷，但部分大纲条目仍绑定旧分卷，请检查大纲。")
+
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
+
+        return changed_count, list(dict.fromkeys(warnings))
 
     def _ensure_project_exists(self, project_id: str) -> None:
         project = self.project_repo.get_active(project_id)

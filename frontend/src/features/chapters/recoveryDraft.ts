@@ -1,4 +1,5 @@
 export interface RecoveryDraft {
+  id?: string
   chapter_id: string
   content: string
   saved_content_snapshot: string

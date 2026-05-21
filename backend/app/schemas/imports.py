@@ -3,8 +3,8 @@ from typing import Literal
 from pydantic import BaseModel
 
 
-ImportType = Literal["legacy_json", "folder_zip"]
-ImportMode = Literal["create_project"]
+ImportType = Literal["legacy_json", "folder_zip", "external_files"]
+ImportMode = Literal["create_project", "append_project"]
 
 
 class ImportPreviewVolume(BaseModel):
@@ -12,6 +12,16 @@ class ImportPreviewVolume(BaseModel):
     title: str
     order_index: int
     chapter_count: int
+    chapters: list[str] = []
+
+
+class ImportPreviewReport(BaseModel):
+    files_detected: list[str]
+    files_skipped: list[str]
+    encoding_issues: list[str]
+    empty_files: list[str]
+    duplicate_titles: list[str]
+    unsupported_files: list[str]
 
 
 class ImportPreviewResponse(BaseModel):
@@ -24,14 +34,18 @@ class ImportPreviewResponse(BaseModel):
     total_word_count: int
     volumes: list[ImportPreviewVolume]
     unassigned_chapter_count: int
+    unassigned_chapters: list[str] = []
     warnings: list[str]
     unsupported_items: list[str]
     failed_files: list[str]
+    report: ImportPreviewReport
     can_import: bool
 
 
 class ConfirmImportRequest(BaseModel):
+    import_id: str | None = None
     mode: ImportMode = "create_project"
+    project_id: str | None = None
     project_title: str | None = None
 
 

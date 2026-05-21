@@ -4,6 +4,12 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { updateChapter } from '@/entities/chapter/api'
 import type { Chapter } from '@/entities/chapter/types'
 import {
+  createRecoveryDraft,
+  deleteRecoveryDraft,
+  listRecoveryDrafts,
+} from '@/entities/recovery/api'
+import type { RecoveryDraft as RemoteRecoveryDraft } from '@/entities/recovery/types'
+import {
   calculateContentWordCount,
   clearRecoveryDraft,
   getRecoveryDraft,
@@ -30,6 +36,15 @@ type SaveStatus =
   | 'manual-save-failed'
   | 'offline'
 
+interface DraftCandidate {
+  id?: string
+  chapter_id: string
+  content: string
+  saved_content_snapshot: string
+  updated_at: string
+  word_count: number
+}
+
 const localContent = ref(props.chapter.content)
 const originalContent = ref(props.chapter.content)
 const lastSavedAt = ref(props.chapter.updated_at)
@@ -37,6 +52,9 @@ const isManualSaving = ref(false)
 const isAutosaving = ref(false)
 const saveStatus = ref<SaveStatus>('loaded')
 const errorMessage = ref('')
+const recoveryMessage = ref('')
+const pendingDraft = ref<DraftCandidate | null>(null)
+const showDraftPreview = ref(false)
 let autosaveTimer: ReturnType<typeof window.setTimeout> | null = null
 let isApplyingLoadedContent = false
 
@@ -46,13 +64,11 @@ const isSaveInProgress = computed(() => isManualSaving.value || isAutosaving.val
 const formattedLastSavedAt = computed(() => formatDateTime(lastSavedAt.value))
 const saveStatusText = computed(() => {
   if (isManualSaving.value) {
-    return '正在保存……'
+    return '正在保存…'
   }
-
   if (isAutosaving.value) {
-    return '正在自动保存……'
+    return '正在自动保存…'
   }
-
   if (hasUnsavedChanges.value) {
     return '有未保存更改'
   }
@@ -60,22 +76,21 @@ const saveStatusText = computed(() => {
   const statusText: Record<SaveStatus, string> = {
     loaded: '已加载',
     dirty: '有未保存更改',
-    'manual-saving': '正在保存……',
+    'manual-saving': '正在保存…',
     'manual-saved': '已保存',
-    autosaving: '正在自动保存……',
+    autosaving: '正在自动保存…',
     autosaved: '已自动保存',
     'autosave-failed': '自动保存失败',
     'manual-save-failed': '保存失败',
     offline: '离线或后端不可用',
   }
-
   return statusText[saveStatus.value]
 })
 
 watch(
   () => props.chapter,
   (chapter) => {
-    applyLoadedChapter(chapter)
+    void applyLoadedChapter(chapter)
   },
   { immediate: true },
 )
@@ -101,20 +116,16 @@ watch(
     }
 
     saveStatus.value = 'dirty'
-    saveRecoveryDraft({
-      chapter_id: props.chapter.id,
-      content: localContent.value,
-      saved_content_snapshot: originalContent.value,
-      updated_at: new Date().toISOString(),
-      word_count: localWordCount.value,
-    })
-
+    saveLocalDraft()
     scheduleAutosave()
   },
 )
 
+window.addEventListener('beforeunload', handleBeforeUnload)
+
 onBeforeUnmount(() => {
   cancelPendingAutosave()
+  window.removeEventListener('beforeunload', handleBeforeUnload)
 })
 
 defineExpose({
@@ -130,8 +141,9 @@ async function handleSave() {
   try {
     await saveCurrentContent('manual')
   } catch (error) {
+    await preserveRecoveryDraft()
     saveStatus.value = isNetworkLikeError(error) ? 'offline' : 'manual-save-failed'
-    errorMessage.value = '保存失败，正文仍保留在本地编辑框中。'
+    errorMessage.value = '保存失败，已保留恢复稿'
   } finally {
     isManualSaving.value = false
     if (hasUnsavedChanges.value && !isAutosaving.value) {
@@ -152,8 +164,9 @@ async function runAutosave() {
   try {
     await saveCurrentContent('autosave')
   } catch (error) {
+    await preserveRecoveryDraft()
     saveStatus.value = isNetworkLikeError(error) ? 'offline' : 'autosave-failed'
-    errorMessage.value = '自动保存失败，正文仍保留在本地编辑框中。'
+    errorMessage.value = '自动保存失败，当前内容已保留在本地'
   } finally {
     isAutosaving.value = false
     if (
@@ -185,6 +198,7 @@ async function saveCurrentContent(source: 'manual' | 'autosave') {
     originalContent.value = savedChapter.content
     isApplyingLoadedContent = false
     clearRecoveryDraft(props.chapter.id)
+    pendingDraft.value = null
     emit('dirtyChange', false)
     emit('saved', savedChapter)
     saveStatus.value = source === 'autosave' ? 'autosaved' : 'manual-saved'
@@ -196,24 +210,27 @@ async function saveCurrentContent(source: 'manual' | 'autosave') {
   scheduleAutosave()
 }
 
-function applyLoadedChapter(chapter: Chapter) {
+async function applyLoadedChapter(chapter: Chapter) {
   cancelPendingAutosave()
   isApplyingLoadedContent = true
   errorMessage.value = ''
+  recoveryMessage.value = ''
+  pendingDraft.value = null
+  showDraftPreview.value = false
   lastSavedAt.value = chapter.updated_at
   originalContent.value = chapter.content
 
-  const draft = getRecoveryDraft(chapter.id)
-  if (draft && draft.content !== chapter.content) {
-    const shouldRestore = window.confirm('检测到本地恢复稿，是否恢复？')
-    if (shouldRestore) {
-      localContent.value = draft.content
-      saveStatus.value = 'dirty'
-    } else {
-      localContent.value = chapter.content
-      saveStatus.value = 'loaded'
-      clearRecoveryDraft(chapter.id)
-    }
+  const draft = await getLatestRecoveryDraft(chapter)
+  if (draft && draft.content !== chapter.content && isDraftNewerThanChapter(draft.updated_at, chapter.updated_at)) {
+    pendingDraft.value = draft
+    localContent.value = chapter.content
+    saveStatus.value = 'loaded'
+    window.setTimeout(() => {
+      const shouldRestore = window.confirm('检测到未恢复的草稿，是否恢复？')
+      if (shouldRestore) {
+        restorePendingDraftToEditor()
+      }
+    }, 0)
   } else {
     localContent.value = chapter.content
     saveStatus.value = 'loaded'
@@ -224,6 +241,78 @@ function applyLoadedChapter(chapter: Chapter) {
 
   isApplyingLoadedContent = false
   emit('dirtyChange', localContent.value !== originalContent.value)
+}
+
+async function getLatestRecoveryDraft(chapter: Chapter): Promise<DraftCandidate | null> {
+  const localDraft = getRecoveryDraft(chapter.id)
+  try {
+    const remoteDrafts = await listRecoveryDrafts(chapter.id)
+    const remoteDraft = remoteDrafts[0]
+    if (remoteDraft && (!localDraft || new Date(remoteDraft.updated_at) > new Date(localDraft.updated_at))) {
+      return toDraftCandidate(remoteDraft)
+    }
+  } catch {
+    // Backend may be unavailable; local draft still protects the user.
+  }
+  return localDraft
+}
+
+async function preserveRecoveryDraft() {
+  const draft = saveLocalDraft()
+  try {
+    const remoteDraft = await createRecoveryDraft(props.chapter.id, {
+      content: draft.content,
+      saved_content_snapshot: draft.saved_content_snapshot,
+    })
+    saveRecoveryDraft({ ...draft, id: remoteDraft.id, updated_at: remoteDraft.updated_at })
+  } catch {
+    // Local draft is enough when backend is down.
+  }
+}
+
+function saveLocalDraft(): DraftCandidate {
+  const draft = {
+    chapter_id: props.chapter.id,
+    content: localContent.value,
+    saved_content_snapshot: originalContent.value,
+    updated_at: new Date().toISOString(),
+    word_count: localWordCount.value,
+  }
+  saveRecoveryDraft(draft)
+  return draft
+}
+
+function restorePendingDraftToEditor() {
+  const draft = pendingDraft.value
+  if (!draft) {
+    return
+  }
+  const confirmed = window.confirm('恢复草稿会替换当前编辑框内容，但不会自动保存到章节正文。是否继续？')
+  if (!confirmed) {
+    return
+  }
+  localContent.value = draft.content
+  saveStatus.value = 'dirty'
+  recoveryMessage.value = '已恢复草稿，请确认内容后保存。'
+}
+
+async function ignorePendingDraft() {
+  const draft = pendingDraft.value
+  const confirmed = window.confirm('忽略草稿后将删除该恢复稿，是否继续？')
+  if (!confirmed) {
+    return
+  }
+  clearRecoveryDraft(props.chapter.id)
+  if (draft?.id) {
+    try {
+      await deleteRecoveryDraft(draft.id)
+    } catch {
+      // Ignore remote cleanup failure.
+    }
+  }
+  pendingDraft.value = null
+  showDraftPreview.value = false
+  recoveryMessage.value = '已忽略草稿。'
 }
 
 function scheduleAutosave() {
@@ -242,6 +331,30 @@ function cancelPendingAutosave() {
     window.clearTimeout(autosaveTimer)
     autosaveTimer = null
   }
+}
+
+function toDraftCandidate(draft: RemoteRecoveryDraft): DraftCandidate {
+  return {
+    id: draft.id,
+    chapter_id: draft.chapter_id,
+    content: draft.content,
+    saved_content_snapshot: draft.saved_content_snapshot,
+    updated_at: draft.updated_at,
+    word_count: draft.word_count,
+  }
+}
+
+function isDraftNewerThanChapter(draftUpdatedAt: string, chapterUpdatedAt: string): boolean {
+  return new Date(draftUpdatedAt).getTime() > new Date(chapterUpdatedAt).getTime()
+}
+
+function handleBeforeUnload(event: BeforeUnloadEvent) {
+  if (!hasUnsavedChanges.value) {
+    return
+  }
+  saveLocalDraft()
+  event.preventDefault()
+  event.returnValue = ''
 }
 
 function formatDateTime(value: string): string {
@@ -273,10 +386,27 @@ function isNetworkLikeError(error: unknown): boolean {
           :disabled="isSaveInProgress || !hasUnsavedChanges"
           @click="handleSave"
         >
-          {{ isManualSaving ? '正在保存……' : '保存' }}
+          {{ isManualSaving ? '正在保存…' : '保存' }}
         </button>
       </div>
     </header>
+
+    <section v-if="pendingDraft" class="recovery-banner">
+      <div>
+        <h3>检测到未恢复的草稿</h3>
+        <p>草稿更新时间：{{ formatDateTime(pendingDraft.updated_at) }}，字数：{{ pendingDraft.word_count }}</p>
+      </div>
+      <div class="recovery-actions">
+        <button class="secondary-button" type="button" @click="showDraftPreview = !showDraftPreview">
+          草稿预览
+        </button>
+        <button class="primary-outline-button" type="button" @click="restorePendingDraftToEditor">
+          恢复草稿
+        </button>
+        <button class="secondary-button" type="button" @click="ignorePendingDraft">忽略</button>
+      </div>
+      <pre v-if="showDraftPreview" class="draft-preview">{{ pendingDraft.content }}</pre>
+    </section>
 
     <textarea
       v-model="localContent"
@@ -288,6 +418,7 @@ function isNetworkLikeError(error: unknown): boolean {
 
     <footer class="editor-messages" aria-live="polite">
       <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
+      <p v-if="recoveryMessage" class="recovery-message">{{ recoveryMessage }}</p>
     </footer>
   </section>
 </template>
@@ -341,16 +472,74 @@ function isNetworkLikeError(error: unknown): boolean {
   color: #9a3412;
 }
 
-.save-button {
+.recovery-banner {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #facc15;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fffbeb;
+}
+
+.recovery-banner h3,
+.recovery-banner p {
+  margin: 0;
+}
+
+.recovery-banner h3 {
+  color: #92400e;
+  font-size: 1rem;
+}
+
+.recovery-banner p {
+  color: #64748b;
+  font-size: 0.88rem;
+}
+
+.recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.draft-preview {
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid #fde68a;
+  border-radius: 6px;
+  padding: 10px;
+  background: #ffffff;
+  color: #111827;
+  white-space: pre-wrap;
+}
+
+.save-button,
+.secondary-button,
+.primary-outline-button {
   min-height: 38px;
-  border: 1px solid transparent;
   border-radius: 6px;
   padding: 0 14px;
-  background: #2563eb;
-  color: #ffffff;
   font: inherit;
   font-weight: 800;
   cursor: pointer;
+}
+
+.save-button {
+  border: 1px solid transparent;
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.secondary-button {
+  border: 1px solid #cfd7e3;
+  background: #ffffff;
+  color: #374151;
+}
+
+.primary-outline-button {
+  border: 1px solid #2563eb;
+  background: #eff6ff;
+  color: #2563eb;
 }
 
 .save-button:disabled {
@@ -383,11 +572,19 @@ function isNetworkLikeError(error: unknown): boolean {
   min-height: 22px;
 }
 
-.error-message {
+.error-message,
+.recovery-message {
   margin: 0;
-  color: #b42318;
   font-size: 0.9rem;
   font-weight: 800;
+}
+
+.error-message {
+  color: #b42318;
+}
+
+.recovery-message {
+  color: #047857;
 }
 
 @media (max-width: 720px) {
@@ -397,7 +594,9 @@ function isNetworkLikeError(error: unknown): boolean {
     flex-direction: column;
   }
 
-  .save-button {
+  .save-button,
+  .secondary-button,
+  .primary-outline-button {
     width: 100%;
   }
 }

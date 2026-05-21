@@ -114,6 +114,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
       </div>
       <div class="header-actions">
         <RouterLink class="secondary-link" to="/imports">导入作品</RouterLink>
+        <RouterLink class="secondary-link" to="/backup">备份恢复</RouterLink>
         <button class="primary-button" type="button" :disabled="isSaving" @click="showCreateDialog = true">
           新建项目
         </button>

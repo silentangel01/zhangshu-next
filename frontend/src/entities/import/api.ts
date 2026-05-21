@@ -32,6 +32,33 @@ export async function previewImport(file: File, importType: ImportType): Promise
   return parseResponse<ImportPreview>(response)
 }
 
+export async function previewProjectImport(files: File[]): Promise<ImportPreview> {
+  const formData = new FormData()
+  files.forEach((file) => {
+    const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath
+    formData.append('files', file, relativePath || file.name)
+  })
+
+  const response = await fetch(`${API_BASE_URL}/api/projects/import/preview`, {
+    method: 'POST',
+    body: formData,
+  })
+
+  return parseResponse<ImportPreview>(response)
+}
+
+export async function commitProjectImport(payload: ConfirmImportPayload): Promise<ImportReport> {
+  const response = await fetch(`${API_BASE_URL}/api/projects/import/commit`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })
+
+  return parseResponse<ImportReport>(response)
+}
+
 export async function confirmImport(
   importId: string,
   payload: ConfirmImportPayload,

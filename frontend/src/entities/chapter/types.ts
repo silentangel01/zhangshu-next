@@ -39,3 +39,18 @@ export interface UpdateChapterMetadataPayload {
   order_index: number
   status: ChapterStatus
 }
+
+export interface ChapterReorderItem {
+  chapter_id: string
+  volume_id: string | null
+  order_index: number
+}
+
+export interface ReorderChaptersPayload {
+  items: ChapterReorderItem[]
+}
+
+export interface ReorderChaptersResponse {
+  updated_count: number
+  warnings: string[]
+}
