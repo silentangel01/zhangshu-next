@@ -116,6 +116,14 @@ export const graphNodeTypeLabels: Record<GraphNodeType, string> = {
   custom: '自定义',
 }
 
+export const graphNodeBoundTypeLabels: Record<GraphNodeBoundType, string> = {
+  character: '人物',
+  setting: '设定',
+  clue: '伏笔',
+  timeline_event: '时间轴事件',
+  custom: '自定义',
+}
+
 export const graphNodeVisibilityLabels: Record<GraphVisibility, string> = {
   normal: '正常',
   subtle: '弱化',
@@ -142,7 +150,7 @@ export const graphEdgeDirectionLabels: Record<GraphEdgeDirection, string> = {
 }
 
 export const graphEdgeLineStyleLabels: Record<GraphEdgeLineStyle, string> = {
-  solid: '直线',
+  solid: '实线',
   dashed: '虚线',
   dotted: '点线',
   arc: '弧线',
