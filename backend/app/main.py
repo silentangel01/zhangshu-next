@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.backups import router as backups_router
 from app.api.chapter_versions import router as chapter_versions_router
 from app.api.chapters import router as chapters_router
 from app.api.characters import router as characters_router
@@ -39,6 +40,7 @@ def health_check():
 
 
 app.include_router(projects_router)
+app.include_router(backups_router)
 app.include_router(volumes_router)
 app.include_router(chapters_router)
 app.include_router(chapter_versions_router)

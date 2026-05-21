@@ -518,6 +518,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
           <RouterLink class="nav-link" to="/projects">项目列表</RouterLink>
           <RouterLink class="nav-link" :to="`/projects/${projectId}/outlines`">完整大纲</RouterLink>
           <RouterLink class="nav-link" :to="`/projects/${projectId}/characters`">人物库</RouterLink>
+          <RouterLink class="nav-link" :to="`/projects/${projectId}/backup`">备份恢复</RouterLink>
         </nav>
         <ChapterTree
           :project-title="project?.title || '作品标题'"
