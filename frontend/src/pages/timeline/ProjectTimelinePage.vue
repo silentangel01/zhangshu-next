@@ -6,6 +6,7 @@ import { listChapters } from '@/entities/chapter/api'
 import type { Chapter } from '@/entities/chapter/types'
 import { getProject } from '@/entities/project/api'
 import type { Project } from '@/entities/project/types'
+import MaterialLinkPanel from '@/features/material-links/MaterialLinkPanel.vue'
 import { listProjectSettings } from '@/entities/setting/api'
 import type { SettingItem } from '@/entities/setting/types'
 import {
@@ -1758,6 +1759,15 @@ function clearDragState() {
               删除时间轴
             </button>
           </div>
+          <MaterialLinkPanel
+            v-if="panelMode === 'edit' && selectedEvent"
+            :project-id="projectId"
+            source-type="timeline_event"
+            :source-id="selectedEvent.id"
+            :source-title="selectedEvent.title"
+            :allowed-target-types="['character', 'setting', 'clue', 'graph_node']"
+            compact
+          />
         </template>
 
         <template v-else-if="panelKind === 'event'">

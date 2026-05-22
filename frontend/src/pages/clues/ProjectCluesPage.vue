@@ -10,6 +10,7 @@ import { clueImportanceLabels, clueStatusLabels, clueVisibilityLabels } from '@/
 import { getProject } from '@/entities/project/api'
 import type { Project } from '@/entities/project/types'
 import { ensureMaterialGraphNode, graphFocusRoute } from '@/features/graph/useMaterialGraphNode'
+import MaterialLinkPanel from '@/features/material-links/MaterialLinkPanel.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -417,6 +418,15 @@ function getErrorMessage(error: unknown, fallback: string): string {
           </button>
         </footer>
       </form>
+      <MaterialLinkPanel
+        v-if="selectedClue"
+        :project-id="projectId"
+        source-type="clue"
+        :source-id="selectedClue.id"
+        :source-title="selectedClue.title"
+        :allowed-target-types="['outline', 'character', 'setting', 'timeline_event', 'graph_node']"
+        compact
+      />
     </section>
   </main>
 </template>

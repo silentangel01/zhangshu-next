@@ -23,6 +23,7 @@ import {
 import { getProject } from '@/entities/project/api'
 import type { Project } from '@/entities/project/types'
 import { ensureMaterialGraphNode, graphFocusRoute } from '@/features/graph/useMaterialGraphNode'
+import MaterialLinkPanel from '@/features/material-links/MaterialLinkPanel.vue'
 
 interface SettingTreeItem {
   setting: SettingItem
@@ -492,6 +493,13 @@ function getErrorMessage(error: unknown, fallback: string): string {
           </button>
         </footer>
       </form>
+      <MaterialLinkPanel
+        v-if="selectedSetting"
+        :project-id="projectId"
+        source-type="setting"
+        :source-id="selectedSetting.id"
+        :source-title="selectedSetting.title"
+      />
     </section>
   </main>
 </template>

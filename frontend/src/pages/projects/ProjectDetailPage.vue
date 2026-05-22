@@ -71,7 +71,7 @@ const isLeftPanelCollapsed = ref(false)
 const isRightPanelCollapsed = ref(false)
 const isWorkspaceTransitionReady = ref(false)
 
-type WritingAidTab = 'outline' | 'characters' | 'settings' | 'graph' | 'timeline' | 'foreshadowing' | 'versions'
+type WritingAidTab = 'outline' | 'characters' | 'settings' | 'graph' | 'timeline' | 'foreshadowing' | 'reminders' | 'versions'
 
 interface WorkspaceViewState {
   selectedChapterId: string | null
@@ -222,6 +222,7 @@ function isWritingAidTab(value: unknown): value is WritingAidTab {
     || value === 'graph'
     || value === 'timeline'
     || value === 'foreshadowing'
+    || value === 'reminders'
     || value === 'versions'
 }
 
