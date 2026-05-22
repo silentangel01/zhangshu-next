@@ -32,6 +32,9 @@ class ReviewRepository:
     def get_term(self, term_id: str) -> ProhibitedTerm | None:
         return self.db.get(ProhibitedTerm, term_id)
 
+    def get_term_by_text(self, term: str) -> ProhibitedTerm | None:
+        return self.db.scalar(select(ProhibitedTerm).where(ProhibitedTerm.term == term))
+
     def delete_results_for_chapters(self, project_id: str, chapter_ids: list[str]) -> None:
         if not chapter_ids:
             return

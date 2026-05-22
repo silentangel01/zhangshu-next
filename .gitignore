@@ -44,3 +44,17 @@ frontend/src-tauri/target/
 
 # Agents-Rules
 AGENTS.md
+
+# build output
+build/
+
+# release artifacts
+releases/
+release/
+
+# scripts
+scripts/
+
+# Vite temporary cache
+frontend/.vite-cache-*/
+frontend/.vite-cache/

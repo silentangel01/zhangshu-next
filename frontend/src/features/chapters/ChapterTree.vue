@@ -469,14 +469,6 @@ function isVolumeDropTarget(volumeId: string | null) {
         <span class="tree-label">{{ projectTitle }}</span>
       </div>
 
-      <button
-        type="button"
-        class="tree-row create-row"
-        @click="emit('createVolume')"
-        @contextmenu.stop.prevent="openRootMenu"
-      >
-        + 新建分卷
-      </button>
     </div>
 
     <section v-for="volume in sortedVolumes" :key="volume.id" class="tree-group">
@@ -491,17 +483,6 @@ function isVolumeDropTarget(volumeId: string | null) {
       >
         <span class="disclosure">{{ isVolumeExpanded(volume.id) ? '▾' : '▸' }}</span>
         <span class="tree-label">{{ volume.title }}</span>
-      </button>
-
-      <button
-        type="button"
-        class="tree-row create-row child-row"
-        @click="emit('createChapter', volume.id)"
-        @contextmenu.stop.prevent="openVolumeMenu($event, volume)"
-        @dragover.prevent="handleVolumeDragOver($event, volume.id)"
-        @drop.prevent="handleVolumeDrop($event, volume.id)"
-      >
-        + 新建章节
       </button>
 
       <div v-if="isVolumeExpanded(volume.id)" class="tree-children">
@@ -537,6 +518,16 @@ function isVolumeDropTarget(volumeId: string | null) {
           </span>
           <span class="tree-label">{{ chapter.title }}</span>
         </div>
+        <button
+          type="button"
+          class="tree-row create-row child-row"
+          @click="emit('createChapter', volume.id)"
+          @contextmenu.stop.prevent="openVolumeMenu($event, volume)"
+          @dragover.prevent="handleVolumeDragOver($event, volume.id)"
+          @drop.prevent="handleVolumeDrop($event, volume.id)"
+        >
+          + 新建章节
+        </button>
       </div>
     </section>
 
@@ -552,17 +543,6 @@ function isVolumeDropTarget(volumeId: string | null) {
       >
         <span class="disclosure">{{ unassignedExpanded ? '▾' : '▸' }}</span>
         <span class="tree-label">未分卷章节</span>
-      </button>
-
-      <button
-        type="button"
-        class="tree-row create-row child-row"
-        @click="emit('createChapter', null)"
-        @contextmenu.stop.prevent="openUnassignedMenu"
-        @dragover.prevent="handleVolumeDragOver($event, null)"
-        @drop.prevent="handleVolumeDrop($event, null)"
-      >
-        + 新建章节
       </button>
 
       <div v-if="unassignedExpanded" class="tree-children">
@@ -598,8 +578,27 @@ function isVolumeDropTarget(volumeId: string | null) {
           </span>
           <span class="tree-label">{{ chapter.title }}</span>
         </div>
+        <button
+          type="button"
+          class="tree-row create-row child-row"
+          @click="emit('createChapter', null)"
+          @contextmenu.stop.prevent="openUnassignedMenu"
+          @dragover.prevent="handleVolumeDragOver($event, null)"
+          @drop.prevent="handleVolumeDrop($event, null)"
+        >
+          + 新建章节
+        </button>
       </div>
     </section>
+
+    <button
+      type="button"
+      class="tree-row create-row volume-create-row"
+      @click="emit('createVolume')"
+      @contextmenu.stop.prevent="openRootMenu"
+    >
+      + 新建分卷
+    </button>
 
     <ContextMenu
       :visible="Boolean(contextMenu?.visible)"
@@ -648,7 +647,7 @@ function isVolumeDropTarget(volumeId: string | null) {
 
 .tree-row:hover,
 .tree-row:focus-visible {
-  background: #f3f4f6;
+  background: #f8fafc;
   outline: none;
 }
 
@@ -660,9 +659,16 @@ function isVolumeDropTarget(volumeId: string | null) {
 
 .create-row {
   min-height: 28px;
+  border: 1px solid #dbeafe;
+  background: #f8fbff;
   color: #2563eb;
   font-size: 0.84rem;
   font-weight: 700;
+}
+
+.volume-create-row {
+  margin-top: 6px;
+  border-style: dashed;
 }
 
 .volume-row {
@@ -683,13 +689,14 @@ function isVolumeDropTarget(volumeId: string | null) {
 }
 
 .chapter-row.selected {
-  background: #eaf2ff;
+  background: #eff6ff;
   color: #1d4ed8;
+  font-weight: 800;
 }
 
 .chapter-row.selected:hover,
 .chapter-row.selected:focus-visible {
-  background: #dde9ff;
+  background: #eaf2ff;
 }
 
 .chapter-row.dragging {

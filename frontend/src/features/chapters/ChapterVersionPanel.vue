@@ -36,8 +36,8 @@ function formatDateTime(value: string): string {
   <section class="version-panel" aria-label="版本历史">
     <header class="version-panel-header">
       <div>
-        <p class="eyebrow">版本历史</p>
-        <h3>章节版本</h3>
+        <p class="eyebrow">历史</p>
+        <h3>版本</h3>
       </div>
       <button class="primary-button" type="button" :disabled="isBusy" @click="emit('createSnapshot')">
         创建版本快照
@@ -59,7 +59,7 @@ function formatDateTime(value: string): string {
         <div class="version-actions">
           <button type="button" @click="emit('viewVersion', version.id)">查看</button>
           <button type="button" :disabled="isBusy" @click="emit('restoreVersion', version.id)">
-            恢复此版本
+            恢复
           </button>
         </div>
       </li>

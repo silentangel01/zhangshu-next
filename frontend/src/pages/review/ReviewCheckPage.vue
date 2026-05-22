@@ -7,6 +7,8 @@ import type { Chapter } from '@/entities/chapter/types'
 import {
   createProhibitedTerm,
   deleteProhibitedTerm,
+  exportProhibitedTerms,
+  importProhibitedTerms,
   listProhibitedTerms,
   listReviewResults,
   runReviewCheck,
@@ -33,6 +35,8 @@ const newSuggestion = ref('')
 const isLoading = ref(false)
 const isChecking = ref(false)
 const isSavingTerm = ref(false)
+const isImportingTerms = ref(false)
+const termImportInputRef = ref<HTMLInputElement | null>(null)
 const errorMessage = ref('')
 const successMessage = ref('')
 
@@ -148,6 +152,55 @@ async function handleDeleteTerm(term: ProhibitedTerm) {
   }
 }
 
+async function handleExportTerms() {
+  errorMessage.value = ''
+  successMessage.value = ''
+
+  try {
+    const blob = await exportProhibitedTerms()
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `zhangshu_prohibited_terms_${formatDateForFilename(new Date())}.json`
+    document.body.append(link)
+    link.click()
+    link.remove()
+    window.URL.revokeObjectURL(url)
+  } catch (error) {
+    errorMessage.value = getErrorMessage(error, '词库导出失败，请稍后重试。')
+  }
+}
+
+function openImportTermsPicker() {
+  termImportInputRef.value?.click()
+}
+
+async function handleImportTerms(event: Event) {
+  const input = event.target
+  if (!(input instanceof HTMLInputElement) || !input.files?.[0]) {
+    return
+  }
+
+  const file = input.files[0]
+  input.value = ''
+  isImportingTerms.value = true
+  errorMessage.value = ''
+  successMessage.value = ''
+
+  try {
+    const report = await importProhibitedTerms(file)
+    terms.value = await listProhibitedTerms()
+    successMessage.value = `已导入 ${report.imported_count} 条，更新 ${report.updated_count} 条，跳过 ${report.skipped_count} 条。`
+    if (report.errors.length > 0) {
+      errorMessage.value = report.errors.slice(0, 3).join(' ')
+    }
+  } catch (error) {
+    errorMessage.value = getErrorMessage(error, '词库导入失败，请检查文件格式。')
+  } finally {
+    isImportingTerms.value = false
+  }
+}
+
 async function handleCheck() {
   if (scope.value === 'chapter' && !selectedChapterId.value) {
     errorMessage.value = '请先选择章节。'
@@ -202,17 +255,22 @@ function getErrorMessage(error: unknown, fallback: string): string {
   }
   return fallback
 }
+
+function formatDateForFilename(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}`
+}
 </script>
 
 <template>
   <main class="review-page">
     <header class="page-header">
       <div>
-        <RouterLink class="back-link" :to="`/projects/${projectId}`">返回项目</RouterLink>
+        <RouterLink class="back-link" to="/projects">返回项目列表</RouterLink>
         <p class="eyebrow">检查</p>
         <h1>违禁词 / 敏感词检查</h1>
       </div>
-      <RouterLink class="secondary-link" to="/projects">项目列表</RouterLink>
+      <RouterLink class="secondary-link" :to="`/projects/${projectId}`">返回写作页</RouterLink>
     </header>
 
     <section v-if="errorMessage" class="error-banner" role="alert">
@@ -272,9 +330,24 @@ function getErrorMessage(error: unknown, fallback: string): string {
       </article>
 
       <article class="panel">
-        <header>
-          <p class="eyebrow">词库</p>
-          <h2>违禁词 / 敏感词</h2>
+        <header class="term-panel-header">
+          <div>
+            <p class="eyebrow">词库</p>
+            <h2>违禁词 / 敏感词</h2>
+          </div>
+          <div class="term-toolbar">
+            <button class="secondary-button" type="button" :disabled="isImportingTerms" @click="openImportTermsPicker">
+              {{ isImportingTerms ? '导入中…' : '导入词库' }}
+            </button>
+            <button class="secondary-button" type="button" @click="handleExportTerms">导出词库</button>
+            <input
+              ref="termImportInputRef"
+              class="visually-hidden"
+              type="file"
+              accept="application/json,.json"
+              @change="handleImportTerms"
+            />
+          </div>
         </header>
 
         <form class="term-form" @submit.prevent="handleCreateTerm">
@@ -382,7 +455,9 @@ function getErrorMessage(error: unknown, fallback: string): string {
 .page-layout,
 .result-header,
 .term-actions,
-.result-footer {
+.result-footer,
+.term-panel-header,
+.term-toolbar {
   display: flex;
   gap: 16px;
 }
@@ -391,6 +466,17 @@ function getErrorMessage(error: unknown, fallback: string): string {
   align-items: flex-end;
   justify-content: space-between;
   margin-bottom: 24px;
+}
+
+.term-panel-header {
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.term-toolbar {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .page-layout {
@@ -487,6 +573,15 @@ h3 {
   color: #374151;
   font-weight: 800;
   text-decoration: none;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 .error-banner,

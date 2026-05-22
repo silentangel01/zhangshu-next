@@ -1,4 +1,5 @@
 from collections.abc import Generator
+import os
 from pathlib import Path
 
 from uuid import uuid4
@@ -8,8 +9,8 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
-DATABASE_DIR = BACKEND_DIR.parent / "data"
-DATABASE_PATH = DATABASE_DIR / "zhangshu_dev.sqlite3"
+DATABASE_DIR = Path(os.environ.get("ZHANGSHU_DATA_DIR", BACKEND_DIR.parent / "data")).resolve()
+DATABASE_PATH = DATABASE_DIR / os.environ.get("ZHANGSHU_DB_FILENAME", "zhangshu_dev.sqlite3")
 DATABASE_URL = f"sqlite:///{DATABASE_PATH.as_posix()}"
 
 
@@ -74,11 +75,17 @@ def _ensure_timeline_edge_columns() -> bool:
             )
             added_temporal_relation = True
 
-        connection.execute(
+        missing_temporal_relation_count = connection.scalar(
             text(
-                "UPDATE timeline_edges SET temporal_relation='unordered' WHERE temporal_relation IS NULL OR temporal_relation=''"
+                "SELECT COUNT(*) FROM timeline_edges WHERE temporal_relation IS NULL OR temporal_relation=''"
             )
         )
+        if missing_temporal_relation_count:
+            connection.execute(
+                text(
+                    "UPDATE timeline_edges SET temporal_relation='unordered' WHERE temporal_relation IS NULL OR temporal_relation=''"
+                )
+            )
 
     return added_temporal_relation
 
@@ -271,9 +278,16 @@ def init_database() -> None:
     from app.models import graph_edge  # noqa: F401
     from app.models import graph_node  # noqa: F401
     from app.models import outline_item  # noqa: F401
+    from app.models import outline_item_character  # noqa: F401
+    from app.models import outline_item_clue  # noqa: F401
+    from app.models import outline_item_setting  # noqa: F401
+    from app.models import outline_item_timeline_event  # noqa: F401
     from app.models import prohibited_term  # noqa: F401
     from app.models import recovery_draft  # noqa: F401
     from app.models import timeline_event  # noqa: F401
+    from app.models import timeline_event_character  # noqa: F401
+    from app.models import timeline_event_clue  # noqa: F401
+    from app.models import timeline_event_setting  # noqa: F401
     from app.models import timeline_edge  # noqa: F401
     from app.models import timeline_track  # noqa: F401
     from app.models import setting_item  # noqa: F401

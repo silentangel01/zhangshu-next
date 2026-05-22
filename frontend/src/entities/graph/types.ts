@@ -101,6 +101,7 @@ export type GraphEdgeUpdatePayload = Partial<GraphEdgePayload>
 export interface GraphNodeFilters {
   node_type?: GraphNodeType
   bound_type?: GraphNodeBoundType
+  bound_id?: string
   visibility?: GraphVisibility
   keyword?: string
 }

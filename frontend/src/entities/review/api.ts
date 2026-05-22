@@ -1,7 +1,8 @@
-import { apiRequest } from '@/shared/api/client'
+import { API_BASE_URL, ApiError, apiRequest } from '@/shared/api/client'
 
 import type {
   ProhibitedTerm,
+  ProhibitedTermImportReport,
   ProhibitedTermPayload,
   ProhibitedTermUpdatePayload,
   ReviewCheckPayload,
@@ -33,6 +34,38 @@ export function deleteProhibitedTerm(termId: string): Promise<void> {
   return apiRequest<void>(`/api/review/prohibited-terms/${termId}`, {
     method: 'DELETE',
   })
+}
+
+export async function exportProhibitedTerms(): Promise<Blob> {
+  const response = await fetch(`${API_BASE_URL}/api/review/prohibited-terms/export`)
+  if (!response.ok) {
+    throw new ApiError(`API request failed: ${response.status}`, response.status)
+  }
+  return response.blob()
+}
+
+export async function importProhibitedTerms(file: File): Promise<ProhibitedTermImportReport> {
+  const formData = new FormData()
+  formData.set('file', file)
+  const response = await fetch(`${API_BASE_URL}/api/review/prohibited-terms/import`, {
+    method: 'POST',
+    body: formData,
+  })
+
+  if (!response.ok) {
+    let message = `API request failed: ${response.status}`
+    try {
+      const payload = (await response.json()) as { detail?: unknown }
+      if (typeof payload.detail === 'string') {
+        message = payload.detail
+      }
+    } catch {
+      // Keep the status-based message when the API does not return JSON.
+    }
+    throw new ApiError(message, response.status)
+  }
+
+  return response.json() as Promise<ProhibitedTermImportReport>
 }
 
 export function runReviewCheck(

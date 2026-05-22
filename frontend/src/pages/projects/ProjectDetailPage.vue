@@ -67,12 +67,17 @@ const treeMessageTone = ref<'success' | 'warning'>('success')
 const showCreateVolumeDialog = ref(false)
 const showCreateChapterDialog = ref(false)
 const rightAidTab = ref<WritingAidTab | null>(null)
+const isLeftPanelCollapsed = ref(false)
+const isRightPanelCollapsed = ref(false)
+const isWorkspaceTransitionReady = ref(false)
 
 type WritingAidTab = 'outline' | 'characters' | 'settings' | 'graph' | 'timeline' | 'foreshadowing' | 'versions'
 
 interface WorkspaceViewState {
   selectedChapterId: string | null
   rightAidTab: WritingAidTab | null
+  leftPanelCollapsed: boolean
+  rightPanelCollapsed: boolean
 }
 
 const projectId = computed<string>(() => {
@@ -101,6 +106,7 @@ watch(projectId, () => {
   isEditorDirty.value = false
   treeMessage.value = ''
   createChapterVolumeId.value = null
+  isWorkspaceTransitionReady.value = false
   void loadProjectWorkspace()
 })
 
@@ -111,6 +117,7 @@ async function loadProjectWorkspace() {
   }
 
   isLoading.value = true
+  isWorkspaceTransitionReady.value = false
   errorMessage.value = ''
 
   try {
@@ -128,6 +135,9 @@ async function loadProjectWorkspace() {
     errorMessage.value = getErrorMessage(error, '加载项目详情失败。')
   } finally {
     isLoading.value = false
+    window.requestAnimationFrame(() => {
+      isWorkspaceTransitionReady.value = true
+    })
   }
 }
 
@@ -149,6 +159,8 @@ async function refreshVolumesAndChapters() {
 async function restoreWorkspaceViewState() {
   const state = readValidWorkspaceViewState()
   rightAidTab.value = state.rightAidTab
+  isLeftPanelCollapsed.value = state.leftPanelCollapsed
+  isRightPanelCollapsed.value = state.rightPanelCollapsed
 
   if (!state.selectedChapterId) {
     return
@@ -183,6 +195,12 @@ function saveWorkspaceViewState(patch: Partial<WorkspaceViewState>) {
     rightAidTab: Object.prototype.hasOwnProperty.call(patch, 'rightAidTab')
       ? patch.rightAidTab ?? null
       : current.rightAidTab,
+    leftPanelCollapsed: Object.prototype.hasOwnProperty.call(patch, 'leftPanelCollapsed')
+      ? Boolean(patch.leftPanelCollapsed)
+      : current.leftPanelCollapsed,
+    rightPanelCollapsed: Object.prototype.hasOwnProperty.call(patch, 'rightPanelCollapsed')
+      ? Boolean(patch.rightPanelCollapsed)
+      : current.rightPanelCollapsed,
   } satisfies WorkspaceViewState)
 }
 
@@ -192,6 +210,8 @@ function readValidWorkspaceViewState(): WorkspaceViewState {
   return {
     selectedChapterId: typeof state?.selectedChapterId === 'string' ? state.selectedChapterId : null,
     rightAidTab: validTab,
+    leftPanelCollapsed: typeof state?.leftPanelCollapsed === 'boolean' ? state.leftPanelCollapsed : false,
+    rightPanelCollapsed: typeof state?.rightPanelCollapsed === 'boolean' ? state.rightPanelCollapsed : false,
   }
 }
 
@@ -208,6 +228,16 @@ function isWritingAidTab(value: unknown): value is WritingAidTab {
 function handleRightAidTabChanged(tab: WritingAidTab) {
   rightAidTab.value = tab
   saveWorkspaceViewState({ rightAidTab: tab })
+}
+
+function toggleLeftPanel() {
+  isLeftPanelCollapsed.value = !isLeftPanelCollapsed.value
+  saveWorkspaceViewState({ leftPanelCollapsed: isLeftPanelCollapsed.value })
+}
+
+function toggleRightPanel() {
+  isRightPanelCollapsed.value = !isRightPanelCollapsed.value
+  saveWorkspaceViewState({ rightPanelCollapsed: isRightPanelCollapsed.value })
 }
 
 async function handleCreateVolume(payload: CreateVolumePayload) {
@@ -496,13 +526,23 @@ function getErrorMessage(error: unknown, fallback: string): string {
   <main class="project-detail-page">
     <header class="page-header">
       <div>
-        <RouterLink class="back-link" to="/projects">返回项目列表</RouterLink>
-        <p class="eyebrow">项目详情</p>
+        <p class="eyebrow">写作工作区</p>
         <h1>{{ project?.title || '正在加载项目……' }}</h1>
       </div>
       <div class="header-actions">
-        <RouterLink class="outline-link" :to="`/projects/${projectId}/outlines`">打开完整大纲</RouterLink>
-        <RouterLink class="outline-link" :to="`/projects/${projectId}/graph`">打开关系图</RouterLink>
+        <RouterLink class="toolbar-link" to="/projects">项目列表</RouterLink>
+        <RouterLink class="toolbar-link" :to="`/projects/${projectId}/search`">搜索</RouterLink>
+        <RouterLink class="toolbar-link" :to="`/projects/${projectId}/review`">检查</RouterLink>
+        <details class="more-menu">
+          <summary>更多</summary>
+          <div class="more-menu-list">
+            <RouterLink :to="`/projects/${projectId}/outlines`">完整大纲</RouterLink>
+            <RouterLink :to="`/projects/${projectId}/graph`">关系图</RouterLink>
+            <RouterLink :to="`/projects/${projectId}/timeline`">时间轴</RouterLink>
+            <RouterLink to="/imports">导入导出</RouterLink>
+            <RouterLink :to="`/projects/${projectId}/backup`">备份恢复</RouterLink>
+          </div>
+        </details>
       </div>
     </header>
 
@@ -512,45 +552,46 @@ function getErrorMessage(error: unknown, fallback: string): string {
 
     <section v-if="isLoading" class="state-message">正在加载项目工作区……</section>
 
-    <section v-else class="workspace-layout">
-      <aside class="sidebar">
-        <nav class="project-nav" aria-label="项目导航">
-          <RouterLink class="nav-link" to="/projects">项目列表</RouterLink>
-          <RouterLink class="nav-link" :to="`/projects/${projectId}/search`">搜索</RouterLink>
-          <RouterLink class="nav-link" :to="`/projects/${projectId}/review`">检查</RouterLink>
-          <RouterLink class="nav-link" :to="`/projects/${projectId}/outlines`">完整大纲</RouterLink>
-          <RouterLink class="nav-link" :to="`/projects/${projectId}/characters`">人物库</RouterLink>
-          <RouterLink class="nav-link" :to="`/projects/${projectId}/backup`">备份恢复</RouterLink>
-        </nav>
-        <ChapterTree
-          :project-title="project?.title || '作品标题'"
-          :volumes="sortedVolumes"
-          :chapters="sortedChapters"
-          :selected-chapter-id="selectedChapter?.id ?? null"
-          :is-reordering="isSaving"
-          @select-chapter="handleSelectChapter"
-          @create-volume="handleCreateVolumeRequest"
-          @create-chapter="handleCreateChapterRequest"
-          @edit-volume="editingVolume = $event"
-          @delete-volume="handleDeleteVolume"
-          @edit-chapter="editingChapter = $event"
-          @delete-chapter="handleDeleteChapter"
-          @reorder-chapters="handleReorderChapters"
-        />
-        <p v-if="treeMessage" class="tree-message" :class="treeMessageTone">{{ treeMessage }}</p>
+    <section
+      v-else
+      class="workspace-layout"
+      :class="{
+        'left-collapsed': isLeftPanelCollapsed,
+        'right-collapsed': isRightPanelCollapsed,
+        'transition-ready': isWorkspaceTransitionReady,
+      }"
+    >
+      <aside class="sidebar" :class="{ collapsed: isLeftPanelCollapsed }">
+        <button
+          type="button"
+          class="collapse-tab"
+          :aria-label="isLeftPanelCollapsed ? '展开章节栏' : '收起章节栏'"
+          @click="toggleLeftPanel"
+        >
+          {{ isLeftPanelCollapsed ? '展开章节' : '收起' }}
+        </button>
+        <div class="panel-content sidebar-content" :class="{ hidden: isLeftPanelCollapsed }" :aria-hidden="isLeftPanelCollapsed">
+          <ChapterTree
+            :project-title="project?.title || '作品标题'"
+            :volumes="sortedVolumes"
+            :chapters="sortedChapters"
+            :selected-chapter-id="selectedChapter?.id ?? null"
+            :is-reordering="isSaving"
+            @select-chapter="handleSelectChapter"
+            @create-volume="handleCreateVolumeRequest"
+            @create-chapter="handleCreateChapterRequest"
+            @edit-volume="editingVolume = $event"
+            @delete-volume="handleDeleteVolume"
+            @edit-chapter="editingChapter = $event"
+            @delete-chapter="handleDeleteChapter"
+            @reorder-chapters="handleReorderChapters"
+          />
+          <p v-if="treeMessage" class="tree-message" :class="treeMessageTone">{{ treeMessage }}</p>
+        </div>
       </aside>
 
       <section class="detail-panel">
         <article v-if="selectedChapter" class="chapter-preview">
-          <header class="panel-header">
-            <div>
-              <p class="eyebrow">当前章节</p>
-              <h2>{{ selectedChapter.title }}</h2>
-            </div>
-          </header>
-
-          <p class="chapter-hint">在右侧查看大纲、人物、设定、伏笔、时间轴和版本。</p>
-
           <div v-if="isChapterLoading" class="chapter-loading">正在加载章节……</div>
 
           <ChapterEditor
@@ -598,21 +639,31 @@ function getErrorMessage(error: unknown, fallback: string): string {
         </article>
       </section>
 
-      <aside class="aid-sidebar">
-        <WritingAidPanel
-          :project-id="projectId"
-          :chapter-id="selectedChapter?.id ?? null"
-          :initial-active-tab="rightAidTab"
-          :versions="chapterVersions"
-          :version-error-message="versionErrorMessage"
-          :version-message="versionMessage"
-          :version-is-loading="isVersionLoading"
-          :version-is-busy="isVersionBusy"
-          @active-tab-change="handleRightAidTabChanged"
-          @create-snapshot="handleCreateVersionSnapshot"
-          @view-version="handleViewVersion"
-          @restore-version="handleRestoreVersion"
-        />
+      <aside class="aid-sidebar" :class="{ collapsed: isRightPanelCollapsed }">
+        <button
+          type="button"
+          class="collapse-tab right"
+          :aria-label="isRightPanelCollapsed ? '展开资料栏' : '收起资料栏'"
+          @click="toggleRightPanel"
+        >
+          {{ isRightPanelCollapsed ? '展开资料' : '收起' }}
+        </button>
+        <div class="panel-content aid-content" :class="{ hidden: isRightPanelCollapsed }" :aria-hidden="isRightPanelCollapsed">
+          <WritingAidPanel
+            :project-id="projectId"
+            :chapter-id="selectedChapter?.id ?? null"
+            :initial-active-tab="rightAidTab"
+            :versions="chapterVersions"
+            :version-error-message="versionErrorMessage"
+            :version-message="versionMessage"
+            :version-is-loading="isVersionLoading"
+            :version-is-busy="isVersionBusy"
+            @active-tab-change="handleRightAidTabChanged"
+            @create-snapshot="handleCreateVersionSnapshot"
+            @view-version="handleViewVersion"
+            @restore-version="handleRestoreVersion"
+          />
+        </div>
       </aside>
     </section>
 
@@ -672,14 +723,6 @@ function getErrorMessage(error: unknown, fallback: string): string {
   margin: 0 auto 22px;
 }
 
-.back-link {
-  display: inline-flex;
-  margin-bottom: 14px;
-  color: #2563eb;
-  font-weight: 800;
-  text-decoration: none;
-}
-
 .eyebrow {
   margin: 0 0 6px;
   color: #64748b;
@@ -711,7 +754,8 @@ h2 {
   gap: 12px;
 }
 
-.outline-link {
+.toolbar-link,
+.more-menu > summary {
   display: inline-flex;
   align-items: center;
   min-height: 38px;
@@ -723,6 +767,48 @@ h2 {
   color: #2563eb;
   font-weight: 800;
   text-decoration: none;
+}
+
+.more-menu {
+  position: relative;
+}
+
+.more-menu > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.more-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.more-menu-list {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  display: grid;
+  min-width: 150px;
+  border: 1px solid #d8dee9;
+  border-radius: 8px;
+  padding: 6px;
+  background: #ffffff;
+  box-shadow: 0 16px 36px rgb(20 24 31 / 14%);
+}
+
+.more-menu-list a {
+  border-radius: 6px;
+  padding: 9px 10px;
+  color: #374151;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.more-menu-list a:hover,
+.more-menu-list a:focus-visible {
+  background: #f3f4f6;
+  color: #1d4ed8;
+  outline: none;
 }
 
 .panel-badges {
@@ -761,12 +847,34 @@ h2 {
 }
 
 .workspace-layout {
+  --left-panel-width: minmax(260px, 320px);
+  --left-panel-collapsed-width: 44px;
+  --right-panel-width: minmax(300px, 380px);
+  --right-panel-collapsed-width: 44px;
+  --workspace-transition-duration: 220ms;
+  --workspace-transition-easing: cubic-bezier(0.22, 1, 0.36, 1);
   display: grid;
-  grid-template-columns: minmax(260px, 320px) minmax(520px, 1fr) minmax(300px, 380px);
+  grid-template-columns: var(--left-panel-width) minmax(520px, 1fr) var(--right-panel-width);
   gap: 18px;
   align-items: start;
   height: calc(100vh - 150px);
   min-height: 560px;
+}
+
+.workspace-layout.transition-ready {
+  transition: grid-template-columns var(--workspace-transition-duration) var(--workspace-transition-easing);
+}
+
+.workspace-layout.left-collapsed {
+  grid-template-columns: var(--left-panel-collapsed-width) minmax(520px, 1fr) var(--right-panel-width);
+}
+
+.workspace-layout.right-collapsed {
+  grid-template-columns: var(--left-panel-width) minmax(520px, 1fr) var(--right-panel-collapsed-width);
+}
+
+.workspace-layout.left-collapsed.right-collapsed {
+  grid-template-columns: var(--left-panel-collapsed-width) minmax(520px, 1fr) var(--right-panel-collapsed-width);
 }
 
 .sidebar,
@@ -780,6 +888,88 @@ h2 {
 .sidebar {
   display: grid;
   gap: 14px;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.aid-sidebar {
+  display: grid;
+  gap: 10px;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.sidebar,
+.aid-sidebar {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  transition:
+    opacity var(--workspace-transition-duration) var(--workspace-transition-easing),
+    transform var(--workspace-transition-duration) var(--workspace-transition-easing);
+}
+
+.sidebar.collapsed,
+.aid-sidebar.collapsed {
+  place-items: start center;
+  overflow: hidden;
+}
+
+.collapse-tab {
+  justify-self: start;
+  min-height: 30px;
+  border-color: #d8dee9;
+  border-radius: 999px;
+  padding: 0 10px;
+  background: rgb(255 255 255 / 78%);
+  color: #64748b;
+  box-shadow: none;
+  transition:
+    min-height var(--workspace-transition-duration) var(--workspace-transition-easing),
+    padding var(--workspace-transition-duration) var(--workspace-transition-easing),
+    background-color 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease;
+  white-space: nowrap;
+}
+
+.sidebar.collapsed .collapse-tab,
+.aid-sidebar.collapsed .collapse-tab {
+  justify-self: center;
+  min-height: 112px;
+  padding: 10px 3px;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
+
+.panel-content {
+  min-width: 0;
+  overflow: hidden;
+  opacity: 1;
+  transform: translateX(0);
+  transition:
+    opacity 160ms ease,
+    transform var(--workspace-transition-duration) var(--workspace-transition-easing),
+    visibility 0s linear 0s;
+}
+
+.workspace-layout.transition-ready .panel-content.hidden {
+  transition:
+    opacity 120ms ease,
+    transform 160ms ease,
+    visibility 0s linear 160ms;
+}
+
+.panel-content.hidden {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sidebar .panel-content.hidden {
+  transform: translateX(-8px);
+}
+
+.aid-sidebar .panel-content.hidden {
+  transform: translateX(8px);
 }
 
 .tree-message {
@@ -799,35 +989,11 @@ h2 {
 .detail-panel > article {
   min-height: 100%;
   box-sizing: border-box;
-  border: 1px solid #d8dee9;
+  border: 1px solid #e5e7eb;
   border-radius: 8px;
-  padding: 24px;
+  padding: 22px;
   background: #ffffff;
-  box-shadow: 0 10px 28px rgb(20 24 31 / 6%);
-}
-
-.project-nav,
-.sidebar-actions {
-  display: grid;
-  gap: 8px;
-  border: 1px solid #d8dee9;
-  border-radius: 8px;
-  padding: 12px;
-  background: #ffffff;
-  box-shadow: 0 10px 28px rgb(20 24 31 / 6%);
-}
-
-.nav-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 36px;
-  border: 1px solid #cfd7e3;
-  border-radius: 6px;
-  background: #fbfcfe;
-  color: #2563eb;
-  font-weight: 800;
-  text-decoration: none;
+  box-shadow: 0 8px 22px rgb(20 24 31 / 4%);
 }
 
 .metadata-grid {
@@ -874,13 +1040,6 @@ dd {
   padding: 16px;
   background: #fbfcfe;
   color: #64748b;
-}
-
-.chapter-hint {
-  margin: 8px 0 0;
-  color: #64748b;
-  font-size: 0.88rem;
-  line-height: 1.6;
 }
 
 .version {
@@ -947,8 +1106,20 @@ button:disabled {
   }
 
   .workspace-layout {
-    grid-template-columns: minmax(260px, 320px) minmax(520px, 1fr) minmax(300px, 380px);
+    --left-panel-width: minmax(260px, 320px);
+    --right-panel-width: minmax(300px, 380px);
     overflow-x: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace-layout.transition-ready,
+  .sidebar,
+  .aid-sidebar,
+  .collapse-tab,
+  .panel-content,
+  .workspace-layout.transition-ready .panel-content.hidden {
+    transition: none;
   }
 }
 </style>

@@ -59,6 +59,7 @@ class GraphService:
         *,
         node_type: str | None = None,
         bound_type: str | None = None,
+        bound_id: str | None = None,
         visibility: str | None = None,
         keyword: str | None = None,
     ) -> list[GraphNode]:
@@ -67,6 +68,7 @@ class GraphService:
             project_id,
             node_type=node_type,
             bound_type=bound_type,
+            bound_id=bound_id,
             visibility=visibility,
             keyword=keyword,
         )

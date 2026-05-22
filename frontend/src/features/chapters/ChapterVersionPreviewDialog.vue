@@ -61,7 +61,7 @@ function formatDateTime(value: string): string {
       <footer class="dialog-actions">
         <button class="secondary-button" type="button" @click="emit('close')">关闭</button>
         <button class="primary-button" type="button" @click="emit('restore', version.id)">
-          恢复此版本
+          恢复
         </button>
       </footer>
     </section>

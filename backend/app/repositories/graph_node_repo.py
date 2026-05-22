@@ -20,6 +20,7 @@ class GraphNodeRepository:
         *,
         node_type: str | None = None,
         bound_type: str | None = None,
+        bound_id: str | None = None,
         visibility: str | None = None,
         keyword: str | None = None,
     ) -> list[GraphNode]:
@@ -32,6 +33,8 @@ class GraphNodeRepository:
             statement = statement.where(GraphNode.node_type == node_type)
         if bound_type is not None:
             statement = statement.where(GraphNode.bound_type == bound_type)
+        if bound_id is not None:
+            statement = statement.where(GraphNode.bound_id == bound_id)
         if visibility is not None:
             statement = statement.where(GraphNode.visibility == visibility)
         if keyword:

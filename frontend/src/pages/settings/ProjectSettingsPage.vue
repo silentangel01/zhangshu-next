@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 import {
   createSetting,
@@ -22,6 +22,7 @@ import {
 } from '@/entities/setting/types'
 import { getProject } from '@/entities/project/api'
 import type { Project } from '@/entities/project/types'
+import { ensureMaterialGraphNode, graphFocusRoute } from '@/features/graph/useMaterialGraphNode'
 
 interface SettingTreeItem {
   setting: SettingItem
@@ -29,6 +30,7 @@ interface SettingTreeItem {
 }
 
 const route = useRoute()
+const router = useRouter()
 
 const project = ref<Project | null>(null)
 const settings = ref<SettingItem[]>([])
@@ -222,6 +224,23 @@ async function handleDeleteSetting() {
     await refreshSettings()
     successMessage.value = '设定已删除。'
   }, '删除设定失败。')
+}
+
+async function handleOpenGraphNode() {
+  if (!selectedSetting.value || !projectId.value) {
+    return
+  }
+  await saveSafe(async () => {
+    const node = await ensureMaterialGraphNode({
+      projectId: projectId.value,
+      boundType: 'setting',
+      boundId: selectedSetting.value!.id,
+      nodeType: 'setting',
+      title: selectedSetting.value!.title,
+      summary: selectedSetting.value!.summary || selectedSetting.value!.detail,
+    })
+    await router.push(graphFocusRoute(projectId.value, node.id))
+  }, '打开关系图节点失败。')
 }
 
 async function saveSafe(action: () => Promise<void>, fallback: string) {
@@ -452,6 +471,14 @@ function getErrorMessage(error: unknown, fallback: string): string {
         </label>
 
         <footer class="editor-actions">
+          <button
+            class="secondary-button"
+            type="button"
+            :disabled="isSaving || isCreating || !selectedSetting"
+            @click="handleOpenGraphNode"
+          >
+            在关系图中查看
+          </button>
           <button
             class="danger-button"
             type="button"

@@ -38,6 +38,7 @@ def list_project_graph_nodes(
     project_id: str,
     node_type: GraphNodeType | None = Query(default=None),
     bound_type: GraphNodeBoundType | None = Query(default=None),
+    bound_id: str | None = Query(default=None),
     visibility: GraphVisibility | None = Query(default=None),
     keyword: str | None = Query(default=None),
     service: GraphService = Depends(get_graph_service),
@@ -47,6 +48,7 @@ def list_project_graph_nodes(
             project_id,
             node_type=node_type,
             bound_type=bound_type,
+            bound_id=bound_id,
             visibility=visibility,
             keyword=keyword,
         )
