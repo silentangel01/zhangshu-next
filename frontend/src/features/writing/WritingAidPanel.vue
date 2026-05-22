@@ -1,15 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { RouterLink } from 'vue-router'
 
-import ChapterCharacterPanel from '@/features/characters/ChapterCharacterPanel.vue'
-import ChapterCluePanel from '@/features/clues/ChapterCluePanel.vue'
-import ChapterGraphCard from '@/features/graph/ChapterGraphCard.vue'
-import ChapterOutlinePanel from '@/features/outlines/ChapterOutlinePanel.vue'
-import ChapterSettingPanel from '@/features/settings/ChapterSettingPanel.vue'
-import ChapterTimelinePanel from '@/features/timeline/ChapterTimelinePanel.vue'
-import ChapterVersionPanel from '@/features/chapters/ChapterVersionPanel.vue'
 import type { ChapterVersionListItem } from '@/entities/chapter-version/types'
+import ChapterVersionPanel from '@/features/chapters/ChapterVersionPanel.vue'
+import ChapterContextSummary from '@/features/writing/ChapterContextSummary.vue'
 
 const props = defineProps<{
   projectId: string
@@ -30,6 +24,7 @@ const emit = defineEmits<{
 }>()
 
 type AidTab = 'outline' | 'characters' | 'settings' | 'graph' | 'timeline' | 'foreshadowing' | 'versions'
+type ContextKind = 'outline' | 'characters' | 'settings' | 'graph' | 'timeline' | 'clues'
 
 const activeTab = ref<AidTab>(isAidTab(props.initialActiveTab) ? props.initialActiveTab : 'outline')
 
@@ -43,29 +38,7 @@ const tabs: Array<{ id: AidTab; label: string }> = [
   { id: 'versions', label: '版本' },
 ]
 
-const manageAllLinks: Partial<Record<Exclude<AidTab, 'graph' | 'versions'>, string>> = {
-  outline: `/projects/${props.projectId}/outlines`,
-  characters: `/projects/${props.projectId}/characters`,
-  settings: `/projects/${props.projectId}/settings`,
-  timeline: `/projects/${props.projectId}/timeline`,
-  foreshadowing: `/projects/${props.projectId}/clues`,
-}
-
-const manageAllLink = computed(() => {
-  if (activeTab.value === 'graph' || activeTab.value === 'versions') {
-    return ''
-  }
-  return manageAllLinks[activeTab.value] ?? ''
-})
-
-const showManageAllLink = computed(() => manageAllLink.value !== '' && activeTab.value !== 'timeline')
-
-const versionsTabMessage = computed(() => {
-  if (props.versionMessage) {
-    return props.versionMessage
-  }
-  return ''
-})
+const versionsTabMessage = computed(() => props.versionMessage || '')
 
 watch(() => props.initialActiveTab, (tab) => {
   if (isAidTab(tab) && tab !== activeTab.value) {
@@ -76,6 +49,16 @@ watch(() => props.initialActiveTab, (tab) => {
 function setActiveTab(tab: AidTab) {
   activeTab.value = tab
   emit('activeTabChange', tab)
+}
+
+function getContextKind(tab: AidTab): ContextKind | null {
+  if (tab === 'versions') {
+    return null
+  }
+  if (tab === 'foreshadowing') {
+    return 'clues'
+  }
+  return tab
 }
 
 function isAidTab(value: unknown): value is AidTab {
@@ -104,41 +87,7 @@ function isAidTab(value: unknown): value is AidTab {
     </nav>
 
     <section class="tab-content">
-      <template v-if="activeTab === 'outline'">
-        <p v-if="!chapterId" class="state-message">请选择章节后查看写作资料。</p>
-        <ChapterOutlinePanel
-          v-else
-          :project-id="projectId"
-          :chapter-id="chapterId"
-          compact
-        />
-      </template>
-
-      <ChapterCharacterPanel
-        v-else-if="activeTab === 'characters'"
-        :project-id="projectId"
-        :chapter-id="chapterId"
-      />
-
-      <ChapterSettingPanel
-        v-else-if="activeTab === 'settings'"
-        :project-id="projectId"
-        :chapter-id="chapterId"
-      />
-
-      <ChapterTimelinePanel
-        v-else-if="activeTab === 'timeline'"
-        :project-id="projectId"
-        :chapter-id="chapterId"
-      />
-
-      <ChapterCluePanel
-        v-else-if="activeTab === 'foreshadowing'"
-        :project-id="projectId"
-        :chapter-id="chapterId"
-      />
-
-      <section v-else-if="activeTab === 'versions'" class="versions-tab">
+      <section v-if="activeTab === 'versions'" class="versions-tab">
         <p v-if="!chapterId" class="state-message">请选择章节后查看版本历史。</p>
         <template v-else>
           <p v-if="versionsTabMessage" class="status-message">{{ versionsTabMessage }}</p>
@@ -154,16 +103,13 @@ function isAidTab(value: unknown): value is AidTab {
         </template>
       </section>
 
-      <ChapterGraphCard
-        v-else-if="activeTab === 'graph'"
+      <ChapterContextSummary
+        v-else
         :project-id="projectId"
         :chapter-id="chapterId"
+        :kind="getContextKind(activeTab)!"
       />
     </section>
-
-    <footer v-if="showManageAllLink" class="panel-footer">
-      <RouterLink class="manage-link" :to="manageAllLink">管理全部</RouterLink>
-    </footer>
   </aside>
 </template>
 
@@ -179,8 +125,6 @@ function isAidTab(value: unknown): value is AidTab {
   box-shadow: 0 10px 28px rgb(20 24 31 / 6%);
 }
 
-.eyebrow,
-h2,
 .state-message,
 .status-message {
   margin: 0;
@@ -230,21 +174,5 @@ h2,
   color: #0f172a;
   font-size: 0.9rem;
   font-weight: 700;
-}
-
-.panel-footer {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.manage-link {
-  color: #2563eb;
-  font-size: 0.82rem;
-  font-weight: 800;
-  text-decoration: none;
-}
-
-.graph-link {
-  justify-self: end;
 }
 </style>
