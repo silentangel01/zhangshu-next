@@ -51,6 +51,33 @@ export type OutlineTimelineEventRelationType =
   | 'parallel'
   | 'related'
 
+export type MaterialLinkTargetType =
+  | 'chapter'
+  | 'outline'
+  | 'character'
+  | 'setting'
+  | 'clue'
+  | 'timeline_event'
+  | 'graph_node'
+
+export type MaterialLinkRelation = {
+  id?: string
+  project_id: string
+  source_type: MaterialLinkTargetType
+  source_id: string
+  target_type: MaterialLinkTargetType
+  target_id: string
+  relation_type: string
+  note?: string
+  created_at?: string
+  updated_at?: string
+}
+
+export type MaterialLinkPayload = {
+  relation_type?: string
+  note?: string
+}
+
 export type BaseMaterialLink = {
   id: string
   project_id: string

@@ -245,6 +245,8 @@ function getErrorMessage(error: unknown, fallback: string): string {
           source-type="outline"
           :source-id="selectedOutline.id"
           :source-title="selectedOutline.title"
+          :allowed-target-types="['character', 'setting', 'clue', 'timeline_event']"
+          compact
         />
 
         <article v-else class="empty-detail">

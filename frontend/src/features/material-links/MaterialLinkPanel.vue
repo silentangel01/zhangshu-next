@@ -6,43 +6,16 @@ import { listProjectCharacters } from '@/entities/character/api'
 import type { Character } from '@/entities/character/types'
 import { listProjectClues } from '@/entities/clue/api'
 import type { Clue } from '@/entities/clue/types'
-import { addClueCharacter, deleteClueCharacter, listClueCharacters } from '@/entities/clue-character/api'
-import type { ClueCharacterLink } from '@/entities/clue-character/types'
-import { addClueSetting, deleteClueSetting, listClueSettings } from '@/entities/clue-setting/api'
-import type { ClueSettingLink } from '@/entities/clue-setting/types'
 import { listGraphNodes } from '@/entities/graph/api'
 import type { GraphNode } from '@/entities/graph/types'
 import {
-  addOutlineCharacter,
-  addOutlineClue,
-  addOutlineSetting,
-  addOutlineTimelineEvent,
-  addTimelineEventCharacter,
-  addTimelineEventClue,
-  addTimelineEventSetting,
-  listOutlineCharacters,
-  listOutlineClues,
-  listOutlineSettings,
-  listOutlineTimelineEvents,
-  listTimelineEventCharacters,
-  listTimelineEventClues,
-  listTimelineEventSettings,
-  removeOutlineCharacter,
-  removeOutlineClue,
-  removeOutlineSetting,
-  removeOutlineTimelineEvent,
-  removeTimelineEventCharacter,
-  removeTimelineEventClue,
-  removeTimelineEventSetting,
+  addLink,
+  listLinks,
+  removeLink,
 } from '@/entities/material-links/api'
 import type {
-  OutlineCharacterLink,
-  OutlineClueLink,
-  OutlineSettingLink,
-  OutlineTimelineEventLink,
-  TimelineEventCharacterLink,
-  TimelineEventClueLink,
-  TimelineEventSettingLink,
+  MaterialLinkRelation,
+  MaterialLinkTargetType,
 } from '@/entities/material-links/types'
 import { listProjectOutlines } from '@/entities/outline/api'
 import type { OutlineItem } from '@/entities/outline/types'
@@ -52,35 +25,83 @@ import { listProjectTimelineEvents } from '@/entities/timeline/api'
 import type { TimelineEvent } from '@/entities/timeline/types'
 import { ensureMaterialGraphNode, graphFocusRoute } from '@/features/graph/useMaterialGraphNode'
 
-type SourceType = 'outline' | 'character' | 'setting' | 'clue' | 'timeline_event'
-type GroupKey = 'characters' | 'settings' | 'clues' | 'outlines' | 'timeline_events' | 'graph_nodes'
+type SourceType = Extract<
+  MaterialLinkTargetType,
+  'outline' | 'character' | 'setting' | 'clue' | 'timeline_event'
+>
+
+type DisplayTargetType = Exclude<MaterialLinkTargetType, 'chapter'>
+
 type LinkItem = {
   id: string
   targetId: string
   label: string
   relationType: string
   note: string
+  targetType: DisplayTargetType
   to: string
   removable: boolean
 }
+
 type LinkGroup = {
-  key: GroupKey
+  key: DisplayTargetType
   title: string
   addLabel: string
   items: LinkItem[]
 }
 
-const props = defineProps<{
-  projectId: string
-  sourceType: SourceType
-  sourceId: string | null
-  sourceTitle: string
-}>()
+type AddFormState = {
+  targetId: string
+  relationType: string
+  note: string
+}
+
+const DEFAULT_RELATION_TYPE: Record<DisplayTargetType, string> = {
+  outline: 'related',
+  character: 'related',
+  setting: 'related',
+  clue: 'related',
+  timeline_event: 'related',
+  graph_node: 'bound',
+}
+
+const TARGET_TITLES: Record<DisplayTargetType, string> = {
+  outline: '大纲',
+  character: '人物',
+  setting: '设定',
+  clue: '伏笔',
+  timeline_event: '时间轴事件',
+  graph_node: '关系图节点',
+}
+
+const DEFAULT_TARGET_TYPES: Record<SourceType, DisplayTargetType[]> = {
+  outline: ['character', 'setting', 'clue', 'timeline_event'],
+  timeline_event: ['character', 'setting', 'clue', 'graph_node'],
+  clue: ['outline', 'character', 'setting', 'timeline_event', 'graph_node'],
+  character: ['outline', 'clue', 'timeline_event', 'graph_node'],
+  setting: ['outline', 'clue', 'timeline_event', 'graph_node'],
+}
+
+const props = withDefaults(
+  defineProps<{
+    projectId: string
+    sourceType: SourceType
+    sourceId: string | null
+    sourceTitle: string
+    allowedTargetTypes?: DisplayTargetType[]
+    compact?: boolean
+  }>(),
+  {
+    allowedTargetTypes: undefined,
+    compact: false,
+  },
+)
 
 const isLoading = ref(false)
 const isSaving = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
+
 const characters = ref<Character[]>([])
 const settings = ref<SettingItem[]>([])
 const clues = ref<Clue[]>([])
@@ -88,23 +109,22 @@ const outlines = ref<OutlineItem[]>([])
 const events = ref<TimelineEvent[]>([])
 const graphNodes = ref<GraphNode[]>([])
 
-const outlineCharacterLinks = ref<OutlineCharacterLink[]>([])
-const outlineSettingLinks = ref<OutlineSettingLink[]>([])
-const outlineClueLinks = ref<OutlineClueLink[]>([])
-const outlineEventLinks = ref<OutlineTimelineEventLink[]>([])
-const eventCharacterLinks = ref<TimelineEventCharacterLink[]>([])
-const eventSettingLinks = ref<TimelineEventSettingLink[]>([])
-const eventClueLinks = ref<TimelineEventClueLink[]>([])
-const clueCharacterLinks = ref<ClueCharacterLink[]>([])
-const clueSettingLinks = ref<ClueSettingLink[]>([])
+const linkState = ref<Partial<Record<DisplayTargetType, MaterialLinkRelation[]>>>({})
 
-const addForm = ref<Record<GroupKey, { targetId: string; relationType: string; note: string }>>({
-  characters: { targetId: '', relationType: 'related', note: '' },
-  settings: { targetId: '', relationType: 'related', note: '' },
-  clues: { targetId: '', relationType: 'related', note: '' },
-  outlines: { targetId: '', relationType: 'related', note: '' },
-  timeline_events: { targetId: '', relationType: 'related', note: '' },
-  graph_nodes: { targetId: '', relationType: 'related', note: '' },
+const addForm = ref<Record<DisplayTargetType, AddFormState>>({
+  outline: createFormState('outline'),
+  character: createFormState('character'),
+  setting: createFormState('setting'),
+  clue: createFormState('clue'),
+  timeline_event: createFormState('timeline_event'),
+  graph_node: createFormState('graph_node'),
+})
+
+const supportedTargetTypes = computed<DisplayTargetType[]>(() => {
+  const types = props.allowedTargetTypes?.length
+    ? props.allowedTargetTypes
+    : DEFAULT_TARGET_TYPES[props.sourceType]
+  return types.filter((type) => type !== 'graph_node' || props.sourceType !== 'outline')
 })
 
 const characterMap = computed(() => mapById(characters.value))
@@ -113,48 +133,16 @@ const clueMap = computed(() => mapById(clues.value))
 const outlineMap = computed(() => mapById(outlines.value))
 const eventMap = computed(() => mapById(events.value))
 
-const groups = computed<LinkGroup[]>(() => {
-  if (!props.sourceId) return []
-  if (props.sourceType === 'outline') {
-    return [
-      group('characters', '人物', outlineCharacterLinks.value.map((link) => item(link.id, link.character_id, nameOf(characterMap.value[link.character_id]), link.relation_type, link.note, materialUrl('character')))),
-      group('settings', '设定', outlineSettingLinks.value.map((link) => item(link.id, link.setting_id, titleOf(settingMap.value[link.setting_id]), link.relation_type, link.note, materialUrl('setting')))),
-      group('clues', '伏笔', outlineClueLinks.value.map((link) => item(link.id, link.clue_id, titleOf(clueMap.value[link.clue_id]), link.relation_type, link.note, materialUrl('clue')))),
-      group('timeline_events', '时间轴事件', outlineEventLinks.value.map((link) => item(link.id, link.timeline_event_id, titleOf(eventMap.value[link.timeline_event_id]), link.relation_type, link.note, materialUrl('timeline_event')))),
-    ]
-  }
-  if (props.sourceType === 'timeline_event') {
-    return [
-      group('characters', '人物', eventCharacterLinks.value.map((link) => item(link.id, link.character_id, nameOf(characterMap.value[link.character_id]), link.relation_type, link.note, materialUrl('character')))),
-      group('settings', '设定', eventSettingLinks.value.map((link) => item(link.id, link.setting_id, titleOf(settingMap.value[link.setting_id]), link.relation_type, link.note, materialUrl('setting')))),
-      group('clues', '伏笔', eventClueLinks.value.map((link) => item(link.id, link.clue_id, titleOf(clueMap.value[link.clue_id]), link.relation_type, link.note, materialUrl('clue')))),
-      group('graph_nodes', '关系图节点', graphNodeItems('timeline_event')),
-    ]
-  }
-  if (props.sourceType === 'character') {
-    return [
-      group('outlines', '大纲', outlineCharacterLinks.value.map((link) => item(link.id, link.outline_item_id, titleOf(outlineMap.value[link.outline_item_id]), link.relation_type, link.note, materialUrl('outline')))),
-      group('clues', '伏笔', clueCharacterLinks.value.map((link) => item(link.id, link.clue_id, titleOf(clueMap.value[link.clue_id]), link.relation_type, link.note, materialUrl('clue')))),
-      group('timeline_events', '时间轴事件', eventCharacterLinks.value.map((link) => item(link.id, link.timeline_event_id, titleOf(eventMap.value[link.timeline_event_id]), link.relation_type, link.note, materialUrl('timeline_event')))),
-      group('graph_nodes', '关系图节点', graphNodeItems('character')),
-    ]
-  }
-  if (props.sourceType === 'setting') {
-    return [
-      group('outlines', '大纲', outlineSettingLinks.value.map((link) => item(link.id, link.outline_item_id, titleOf(outlineMap.value[link.outline_item_id]), link.relation_type, link.note, materialUrl('outline')))),
-      group('clues', '伏笔', clueSettingLinks.value.map((link) => item(link.id, link.clue_id, titleOf(clueMap.value[link.clue_id]), link.relation_type, link.note, materialUrl('clue')))),
-      group('timeline_events', '时间轴事件', eventSettingLinks.value.map((link) => item(link.id, link.timeline_event_id, titleOf(eventMap.value[link.timeline_event_id]), link.relation_type, link.note, materialUrl('timeline_event')))),
-      group('graph_nodes', '关系图节点', graphNodeItems('setting')),
-    ]
-  }
-  return [
-    group('outlines', '大纲', outlineClueLinks.value.map((link) => item(link.id, link.outline_item_id, titleOf(outlineMap.value[link.outline_item_id]), link.relation_type, link.note, materialUrl('outline')))),
-    group('characters', '人物', clueCharacterLinks.value.map((link) => item(link.id, link.character_id, nameOf(characterMap.value[link.character_id]), link.relation_type, link.note, materialUrl('character')))),
-    group('settings', '设定', clueSettingLinks.value.map((link) => item(link.id, link.setting_item_id, titleOf(settingMap.value[link.setting_item_id]), link.relation_type, link.note, materialUrl('setting')))),
-    group('timeline_events', '时间轴事件', eventClueLinks.value.map((link) => item(link.id, link.timeline_event_id, titleOf(eventMap.value[link.timeline_event_id]), link.relation_type, link.note, materialUrl('timeline_event')))),
-    group('graph_nodes', '关系图节点', graphNodeItems('clue')),
-  ]
-})
+const groups = computed<LinkGroup[]>(() =>
+  supportedTargetTypes.value.map((targetType) => ({
+    key: targetType,
+    title: TARGET_TITLES[targetType],
+    addLabel: `添加${TARGET_TITLES[targetType]}`,
+    items: targetType === 'graph_node'
+      ? graphNodeItems()
+      : (linkState.value[targetType] ?? []).map((link) => toLinkItem(targetType, link)),
+  })),
+)
 
 watch(
   () => [props.projectId, props.sourceType, props.sourceId],
@@ -165,12 +153,21 @@ watch(
 )
 
 async function refresh() {
-  if (!props.projectId || !props.sourceId) return
+  if (!props.projectId || !props.sourceId) {
+    return
+  }
   isLoading.value = true
   errorMessage.value = ''
   successMessage.value = ''
   try {
-    const [projectCharacters, projectSettings, projectClues, projectOutlines, projectEvents, projectGraphNodes] = await Promise.all([
+    const [
+      projectCharacters,
+      projectSettings,
+      projectClues,
+      projectOutlines,
+      projectEvents,
+      projectGraphNodes,
+    ] = await Promise.all([
       listProjectCharacters(props.projectId),
       listProjectSettings(props.projectId),
       listProjectClues(props.projectId),
@@ -178,12 +175,14 @@ async function refresh() {
       listProjectTimelineEvents(props.projectId),
       listGraphNodes(props.projectId),
     ])
+
     characters.value = projectCharacters
     settings.value = projectSettings
     clues.value = projectClues
     outlines.value = projectOutlines
     events.value = projectEvents
     graphNodes.value = projectGraphNodes
+
     await refreshLinks()
   } catch (error) {
     void error
@@ -194,81 +193,105 @@ async function refresh() {
 }
 
 async function refreshLinks() {
-  if (!props.sourceId) return
-  clearLinks()
-  if (props.sourceType === 'outline') {
-    const [a, b, c, d] = await Promise.all([
-      listOutlineCharacters(props.sourceId),
-      listOutlineSettings(props.sourceId),
-      listOutlineClues(props.sourceId),
-      listOutlineTimelineEvents(props.sourceId),
-    ])
-    outlineCharacterLinks.value = a
-    outlineSettingLinks.value = b
-    outlineClueLinks.value = c
-    outlineEventLinks.value = d
+  if (!props.sourceId) {
     return
   }
-  if (props.sourceType === 'timeline_event') {
-    const [a, b, c] = await Promise.all([
-      listTimelineEventCharacters(props.sourceId),
-      listTimelineEventSettings(props.sourceId),
-      listTimelineEventClues(props.sourceId),
-    ])
-    eventCharacterLinks.value = a
-    eventSettingLinks.value = b
-    eventClueLinks.value = c
+
+  linkState.value = {}
+
+  if (props.sourceType === 'outline' || props.sourceType === 'timeline_event') {
+    const entries = await Promise.all(
+      supportedTargetTypes.value
+        .filter((targetType) => targetType !== 'graph_node')
+        .map(async (targetType) => {
+          const links = await listLinks(props.sourceType, props.sourceId!, targetType)
+          return [targetType, links] as const
+        }),
+    )
+
+    linkState.value = Object.fromEntries(entries)
     return
   }
+
+  if (props.sourceType === 'clue') {
+    const [charactersLinks, settingLinks, outlineLinks, eventLinks] = await Promise.all([
+      listLinks('clue', props.sourceId, 'character'),
+      listLinks('clue', props.sourceId, 'setting'),
+      collectReverseLinks('outline', outlines.value, 'clue'),
+      collectReverseLinks('timeline_event', events.value, 'clue'),
+    ])
+
+    linkState.value = {
+      character: charactersLinks,
+      setting: settingLinks,
+      outline: outlineLinks,
+      timeline_event: eventLinks,
+    }
+    return
+  }
+
   await refreshReverseLinks()
 }
 
 async function refreshReverseLinks() {
-  const [outlineLinks, eventLinks, clueCharacterGroups, clueSettingGroups] = await Promise.all([
-    Promise.all(outlines.value.map(async (outline) => ({
-      outlineId: outline.id,
-      characters: await listOutlineCharacters(outline.id),
-      settings: await listOutlineSettings(outline.id),
-      clues: await listOutlineClues(outline.id),
-    }))),
-    Promise.all(events.value.map(async (event) => ({
-      eventId: event.id,
-      characters: await listTimelineEventCharacters(event.id),
-      settings: await listTimelineEventSettings(event.id),
-      clues: await listTimelineEventClues(event.id),
-    }))),
-    Promise.all(clues.value.map((clue) => listClueCharacters(clue.id))),
-    Promise.all(clues.value.map((clue) => listClueSettings(clue.id))),
-  ])
+  if (!props.sourceId) {
+    return
+  }
+
+  const nextState: Partial<Record<DisplayTargetType, MaterialLinkRelation[]>> = {}
+
   if (props.sourceType === 'character') {
-    outlineCharacterLinks.value = outlineLinks.flatMap((entry) => entry.characters).filter((link) => link.character_id === props.sourceId)
-    eventCharacterLinks.value = eventLinks.flatMap((entry) => entry.characters).filter((link) => link.character_id === props.sourceId)
-    clueCharacterLinks.value = clueCharacterGroups.flat().filter((link) => link.character_id === props.sourceId)
+    const [outlineLinks, eventLinks, clueLinks] = await Promise.all([
+      collectReverseLinks('outline', outlines.value, 'character'),
+      collectReverseLinks('timeline_event', events.value, 'character'),
+      collectReverseLinks('clue', clues.value, 'character'),
+    ])
+    nextState.outline = outlineLinks
+    nextState.timeline_event = eventLinks
+    nextState.clue = clueLinks
   }
+
   if (props.sourceType === 'setting') {
-    outlineSettingLinks.value = outlineLinks.flatMap((entry) => entry.settings).filter((link) => link.setting_id === props.sourceId)
-    eventSettingLinks.value = eventLinks.flatMap((entry) => entry.settings).filter((link) => link.setting_id === props.sourceId)
-    clueSettingLinks.value = clueSettingGroups.flat().filter((link) => link.setting_item_id === props.sourceId)
+    const [outlineLinks, eventLinks, clueLinks] = await Promise.all([
+      collectReverseLinks('outline', outlines.value, 'setting'),
+      collectReverseLinks('timeline_event', events.value, 'setting'),
+      collectReverseLinks('clue', clues.value, 'setting'),
+    ])
+    nextState.outline = outlineLinks
+    nextState.timeline_event = eventLinks
+    nextState.clue = clueLinks
   }
-  if (props.sourceType === 'clue') {
-    outlineClueLinks.value = outlineLinks.flatMap((entry) => entry.clues).filter((link) => link.clue_id === props.sourceId)
-    eventClueLinks.value = eventLinks.flatMap((entry) => entry.clues).filter((link) => link.clue_id === props.sourceId)
-    clueCharacterLinks.value = clueCharacterGroups.flat().filter((link) => link.clue_id === props.sourceId)
-    clueSettingLinks.value = clueSettingGroups.flat().filter((link) => link.clue_id === props.sourceId)
-  }
+
+  linkState.value = nextState
 }
 
-async function handleAdd(groupKey: GroupKey) {
-  if (!props.sourceId) return
-  const form = addForm.value[groupKey]
-  if (!form.targetId) return
+async function collectReverseLinks(
+  sourceType: Extract<MaterialLinkTargetType, 'outline' | 'timeline_event' | 'clue'>,
+  items: Array<{ id: string }>,
+  targetType: Extract<DisplayTargetType, 'character' | 'setting' | 'clue'>,
+) {
+  const linkGroups = await Promise.all(items.map((item) => listLinks(sourceType, item.id, targetType)))
+  return linkGroups
+    .flat()
+    .filter((link) => link.target_id === props.sourceId)
+}
+
+async function handleAdd(targetType: DisplayTargetType) {
+  if (!props.sourceId || targetType === 'graph_node') {
+    return
+  }
+
+  const form = addForm.value[targetType]
+  if (!form.targetId) {
+    return
+  }
+
   isSaving.value = true
   errorMessage.value = ''
+
   try {
-    await addLink(groupKey, form.targetId, form.relationType || 'related', form.note)
-    form.targetId = ''
-    form.note = ''
-    form.relationType = 'related'
+    await persistAddLink(targetType, form)
+    resetForm(targetType)
     await refreshLinks()
     successMessage.value = '关联已添加。'
   } catch (error) {
@@ -279,43 +302,63 @@ async function handleAdd(groupKey: GroupKey) {
   }
 }
 
-async function addLink(groupKey: GroupKey, targetId: string, relationType: string, note: string) {
-  if (!props.sourceId) return
-  if (props.sourceType === 'outline') {
-    if (groupKey === 'characters') return addOutlineCharacter(props.sourceId, { character_id: targetId, relation_type: relationType as never, note })
-    if (groupKey === 'settings') return addOutlineSetting(props.sourceId, { setting_id: targetId, relation_type: relationType as never, note })
-    if (groupKey === 'clues') return addOutlineClue(props.sourceId, { clue_id: targetId, relation_type: relationType as never, note })
-    if (groupKey === 'timeline_events') return addOutlineTimelineEvent(props.sourceId, { timeline_event_id: targetId, relation_type: relationType as never, note })
+async function persistAddLink(targetType: DisplayTargetType, form: AddFormState) {
+  if (!props.sourceId) {
+    return
   }
-  if (props.sourceType === 'timeline_event') {
-    if (groupKey === 'characters') return addTimelineEventCharacter(props.sourceId, { character_id: targetId, relation_type: relationType as never, note })
-    if (groupKey === 'settings') return addTimelineEventSetting(props.sourceId, { setting_id: targetId, relation_type: relationType as never, note })
-    if (groupKey === 'clues') return addTimelineEventClue(props.sourceId, { clue_id: targetId, relation_type: relationType as never, note })
+
+  if (props.sourceType === 'outline' || props.sourceType === 'timeline_event' || props.sourceType === 'clue') {
+    if (
+      props.sourceType === 'clue' &&
+      (targetType === 'outline' || targetType === 'timeline_event')
+    ) {
+      await addLink(targetType, form.targetId, 'clue', {
+        target_id: props.sourceId,
+        relation_type: form.relationType || DEFAULT_RELATION_TYPE[targetType],
+        note: form.note,
+      })
+    } else {
+      await addLink(props.sourceType, props.sourceId, targetType, {
+        target_id: form.targetId,
+        relation_type: form.relationType || DEFAULT_RELATION_TYPE[targetType],
+        note: form.note,
+      })
+    }
+    return
   }
+
   if (props.sourceType === 'character') {
-    if (groupKey === 'outlines') return addOutlineCharacter(targetId, { character_id: props.sourceId, relation_type: relationType as never, note })
-    if (groupKey === 'timeline_events') return addTimelineEventCharacter(targetId, { character_id: props.sourceId, relation_type: relationType as never, note })
-    if (groupKey === 'clues') return addClueCharacter(targetId, { character_id: props.sourceId, relation_type: relationType as never, note })
+    if (targetType === 'outline' || targetType === 'timeline_event' || targetType === 'clue') {
+      await addLink(targetType, form.targetId, 'character', {
+        target_id: props.sourceId,
+        relation_type: form.relationType || 'related',
+        note: form.note,
+      })
+    }
+    return
   }
+
   if (props.sourceType === 'setting') {
-    if (groupKey === 'outlines') return addOutlineSetting(targetId, { setting_id: props.sourceId, relation_type: relationType as never, note })
-    if (groupKey === 'timeline_events') return addTimelineEventSetting(targetId, { setting_id: props.sourceId, relation_type: relationType as never, note })
-    if (groupKey === 'clues') return addClueSetting(targetId, { setting_item_id: props.sourceId, relation_type: relationType as never, note })
-  }
-  if (props.sourceType === 'clue') {
-    if (groupKey === 'outlines') return addOutlineClue(targetId, { clue_id: props.sourceId, relation_type: relationType as never, note })
-    if (groupKey === 'timeline_events') return addTimelineEventClue(targetId, { clue_id: props.sourceId, relation_type: relationType as never, note })
-    if (groupKey === 'characters') return addClueCharacter(props.sourceId, { character_id: targetId, relation_type: relationType as never, note })
-    if (groupKey === 'settings') return addClueSetting(props.sourceId, { setting_item_id: targetId, relation_type: relationType as never, note })
+    if (targetType === 'outline' || targetType === 'timeline_event' || targetType === 'clue') {
+      await addLink(targetType, form.targetId, 'setting', {
+        target_id: props.sourceId,
+        relation_type: form.relationType || 'related',
+        note: form.note,
+      })
+    }
   }
 }
 
-async function handleRemove(groupKey: GroupKey, item: LinkItem) {
-  if (!props.sourceId || !window.confirm('确认移除这条关联吗？')) return
+async function handleRemove(targetType: DisplayTargetType, item: LinkItem) {
+  if (!props.sourceId || !window.confirm('确认移除这条关联吗？')) {
+    return
+  }
+
   isSaving.value = true
   errorMessage.value = ''
+
   try {
-    await removeLink(groupKey, item)
+    await persistRemoveLink(targetType, item)
     await refreshLinks()
     successMessage.value = '关联已移除。'
   } catch (error) {
@@ -326,105 +369,159 @@ async function handleRemove(groupKey: GroupKey, item: LinkItem) {
   }
 }
 
-async function removeLink(groupKey: GroupKey, item: LinkItem) {
-  if (!props.sourceId) return
-  if (props.sourceType === 'outline') {
-    if (groupKey === 'characters') return removeOutlineCharacter(props.sourceId, item.targetId)
-    if (groupKey === 'settings') return removeOutlineSetting(props.sourceId, item.targetId)
-    if (groupKey === 'clues') return removeOutlineClue(props.sourceId, item.targetId)
-    if (groupKey === 'timeline_events') return removeOutlineTimelineEvent(props.sourceId, item.targetId)
+async function persistRemoveLink(targetType: DisplayTargetType, item: LinkItem) {
+  if (!props.sourceId || targetType === 'graph_node') {
+    return
   }
-  if (props.sourceType === 'timeline_event') {
-    if (groupKey === 'characters') return removeTimelineEventCharacter(props.sourceId, item.targetId)
-    if (groupKey === 'settings') return removeTimelineEventSetting(props.sourceId, item.targetId)
-    if (groupKey === 'clues') return removeTimelineEventClue(props.sourceId, item.targetId)
+
+  if (props.sourceType === 'outline' || props.sourceType === 'timeline_event' || props.sourceType === 'clue') {
+    if (
+      props.sourceType === 'clue' &&
+      (targetType === 'outline' || targetType === 'timeline_event')
+    ) {
+      await removeLink(targetType, item.targetId, 'clue', props.sourceId, { linkId: item.id })
+    } else {
+      await removeLink(props.sourceType, props.sourceId, targetType, item.targetId, { linkId: item.id })
+    }
+    return
   }
+
   if (props.sourceType === 'character') {
-    if (groupKey === 'outlines') return removeOutlineCharacter(item.targetId, props.sourceId)
-    if (groupKey === 'timeline_events') return removeTimelineEventCharacter(item.targetId, props.sourceId)
-    if (groupKey === 'clues') return deleteClueCharacter(item.id)
+    if (targetType === 'outline' || targetType === 'timeline_event' || targetType === 'clue') {
+      await removeLink(targetType, item.targetId, 'character', props.sourceId, { linkId: item.id })
+    }
+    return
   }
+
   if (props.sourceType === 'setting') {
-    if (groupKey === 'outlines') return removeOutlineSetting(item.targetId, props.sourceId)
-    if (groupKey === 'timeline_events') return removeTimelineEventSetting(item.targetId, props.sourceId)
-    if (groupKey === 'clues') return deleteClueSetting(item.id)
-  }
-  if (props.sourceType === 'clue') {
-    if (groupKey === 'outlines') return removeOutlineClue(item.targetId, props.sourceId)
-    if (groupKey === 'timeline_events') return removeTimelineEventClue(item.targetId, props.sourceId)
-    if (groupKey === 'characters') return deleteClueCharacter(item.id)
-    if (groupKey === 'settings') return deleteClueSetting(item.id)
+    if (targetType === 'outline' || targetType === 'timeline_event' || targetType === 'clue') {
+      await removeLink(targetType, item.targetId, 'setting', props.sourceId, { linkId: item.id })
+    }
   }
 }
 
 async function openOrCreateGraphNode() {
-  if (!props.sourceId || props.sourceType === 'outline') return
-  if (!['character', 'setting', 'clue', 'timeline_event'].includes(props.sourceType)) return
-  const nodeType = props.sourceType
+  if (!props.sourceId) {
+    return
+  }
+  if (
+    props.sourceType !== 'character' &&
+    props.sourceType !== 'setting' &&
+    props.sourceType !== 'clue' &&
+    props.sourceType !== 'timeline_event'
+  ) {
+    return
+  }
+
   const node = await ensureMaterialGraphNode({
     projectId: props.projectId,
-    boundType: nodeType,
+    boundType: props.sourceType,
     boundId: props.sourceId,
-    nodeType,
+    nodeType: props.sourceType,
     title: props.sourceTitle,
     summary: '',
   })
+
   window.location.href = graphFocusRoute(props.projectId, node.id)
 }
 
-function clearLinks() {
-  outlineCharacterLinks.value = []
-  outlineSettingLinks.value = []
-  outlineClueLinks.value = []
-  outlineEventLinks.value = []
-  eventCharacterLinks.value = []
-  eventSettingLinks.value = []
-  eventClueLinks.value = []
-  clueCharacterLinks.value = []
-  clueSettingLinks.value = []
-}
+function graphNodeItems(): LinkItem[] {
+  if (!props.sourceId || props.sourceType === 'outline') {
+    return []
+  }
 
-function targetOptions(groupKey: GroupKey) {
-  if (groupKey === 'characters') return characters.value.map((item) => ({ id: item.id, label: item.name }))
-  if (groupKey === 'settings') return settings.value.map((item) => ({ id: item.id, label: item.title }))
-  if (groupKey === 'clues') return clues.value.map((item) => ({ id: item.id, label: item.title }))
-  if (groupKey === 'outlines') return outlines.value.map((item) => ({ id: item.id, label: item.title }))
-  if (groupKey === 'timeline_events') return events.value.map((item) => ({ id: item.id, label: item.title }))
-  return []
-}
-
-function group(key: GroupKey, title: string, items: LinkItem[]): LinkGroup {
-  return { key, title, addLabel: `添加${title}`, items }
-}
-
-function item(id: string, targetId: string, label: string, relationType: string, note: string, to: string): LinkItem {
-  return { id, targetId, label, relationType, note, to, removable: true }
-}
-
-function graphNodeItems(boundType: 'character' | 'setting' | 'clue' | 'timeline_event') {
-  if (!props.sourceId) return []
   return graphNodes.value
-    .filter((node) => node.bound_type === boundType && node.bound_id === props.sourceId && node.visibility !== 'hidden')
+    .filter(
+      (node) =>
+        node.bound_type === props.sourceType &&
+        node.bound_id === props.sourceId &&
+        node.visibility !== 'hidden',
+    )
     .map((node) => ({
       id: node.id,
       targetId: node.id,
-      label: node.title,
+      label: node.title || '未命名节点',
       relationType: 'bound',
       note: '',
+      targetType: 'graph_node',
       to: graphFocusRoute(props.projectId, node.id),
       removable: false,
     }))
 }
 
-function materialUrl(type: 'character' | 'setting' | 'clue' | 'outline' | 'timeline_event') {
-  const map = {
+function toLinkItem(targetType: DisplayTargetType, link: MaterialLinkRelation): LinkItem {
+  return {
+    id: link.id ?? `${targetType}:${link.target_id}`,
+    targetId: link.target_id,
+    label: resolveTargetLabel(targetType, link.target_id),
+    relationType: link.relation_type,
+    note: link.note ?? '',
+    targetType,
+    to: materialRoute(targetType),
+    removable: true,
+  }
+}
+
+function targetOptions(targetType: DisplayTargetType) {
+  if (targetType === 'character') {
+    return characters.value.map((item) => ({ id: item.id, label: item.name }))
+  }
+  if (targetType === 'setting') {
+    return settings.value.map((item) => ({ id: item.id, label: item.title }))
+  }
+  if (targetType === 'clue') {
+    return clues.value.map((item) => ({ id: item.id, label: item.title }))
+  }
+  if (targetType === 'outline') {
+    return outlines.value.map((item) => ({ id: item.id, label: item.title }))
+  }
+  if (targetType === 'timeline_event') {
+    return events.value.map((item) => ({ id: item.id, label: item.title }))
+  }
+  return []
+}
+
+function resolveTargetLabel(targetType: DisplayTargetType, targetId: string) {
+  if (targetType === 'character') {
+    return characterMap.value[targetId]?.name ?? '未知人物'
+  }
+  if (targetType === 'setting') {
+    return settingMap.value[targetId]?.title ?? '未知设定'
+  }
+  if (targetType === 'clue') {
+    return clueMap.value[targetId]?.title ?? '未知伏笔'
+  }
+  if (targetType === 'outline') {
+    return outlineMap.value[targetId]?.title ?? '未知大纲'
+  }
+  if (targetType === 'timeline_event') {
+    return eventMap.value[targetId]?.title ?? '未知时间轴事件'
+  }
+  return '未知关系图节点'
+}
+
+function materialRoute(targetType: DisplayTargetType) {
+  const routeMap: Record<DisplayTargetType, string> = {
     character: 'characters',
     setting: 'settings',
     clue: 'clues',
     outline: 'outlines',
     timeline_event: 'timeline',
+    graph_node: 'graph',
   }
-  return `/projects/${props.projectId}/${map[type]}`
+  return `/projects/${props.projectId}/${routeMap[targetType]}`
+}
+
+function createFormState(targetType: DisplayTargetType): AddFormState {
+  return {
+    targetId: '',
+    relationType: DEFAULT_RELATION_TYPE[targetType],
+    note: '',
+  }
+}
+
+function resetForm(targetType: DisplayTargetType) {
+  addForm.value[targetType] = createFormState(targetType)
 }
 
 function mapById<T extends { id: string }>(items: T[]) {
@@ -433,18 +530,10 @@ function mapById<T extends { id: string }>(items: T[]) {
     return acc
   }, {})
 }
-
-function titleOf(item: { title: string } | undefined) {
-  return item?.title ?? '未知资料'
-}
-
-function nameOf(item: { name: string } | undefined) {
-  return item?.name ?? '未知人物'
-}
 </script>
 
 <template>
-  <section v-if="sourceId" class="material-link-panel">
+  <section v-if="sourceId" class="material-link-panel" :class="{ compact }">
     <header class="panel-header">
       <div>
         <p class="eyebrow">关联资料</p>
@@ -474,25 +563,54 @@ function nameOf(item: { name: string } | undefined) {
         <p v-if="groupItem.items.length === 0" class="empty-message">暂无关联资料</p>
         <ul v-else>
           <li v-for="link in groupItem.items" :key="link.id">
-            <div>
+            <div class="item-content">
               <strong>{{ link.label }}</strong>
-              <small>{{ link.relationType }}<template v-if="link.note">｜{{ link.note }}</template></small>
+              <small>
+                {{ link.relationType }}
+                <template v-if="link.note">｜{{ link.note }}</template>
+              </small>
             </div>
-            <RouterLink :to="link.to">打开资料</RouterLink>
-            <button v-if="link.removable" type="button" :disabled="isSaving" @click="handleRemove(groupItem.key, link)">移除</button>
+            <div class="item-actions">
+              <RouterLink :to="link.to">打开资料</RouterLink>
+              <button
+                v-if="link.removable"
+                type="button"
+                :disabled="isSaving"
+                @click="handleRemove(groupItem.key, link)"
+              >
+                移除
+              </button>
+            </div>
           </li>
         </ul>
 
-        <form v-if="groupItem.key !== 'graph_nodes'" class="add-form" @submit.prevent="handleAdd(groupItem.key)">
+        <form
+          v-if="groupItem.key !== 'graph_node'"
+          class="add-form"
+          @submit.prevent="handleAdd(groupItem.key)"
+        >
           <select v-model="addForm[groupItem.key].targetId" required>
             <option value="">请选择资料</option>
-            <option v-for="option in targetOptions(groupItem.key)" :key="option.id" :value="option.id">
+            <option
+              v-for="option in targetOptions(groupItem.key)"
+              :key="option.id"
+              :value="option.id"
+            >
               {{ option.label }}
             </option>
           </select>
-          <input v-model.trim="addForm[groupItem.key].relationType" placeholder="关系类型" />
-          <input v-model.trim="addForm[groupItem.key].note" placeholder="备注" />
-          <button type="submit" :disabled="isSaving || !addForm[groupItem.key].targetId">添加关联</button>
+          <input
+            v-model.trim="addForm[groupItem.key].relationType"
+            type="text"
+            placeholder="关系类型"
+          />
+          <input v-model.trim="addForm[groupItem.key].note" type="text" placeholder="备注" />
+          <button
+            type="submit"
+            :disabled="isSaving || !addForm[groupItem.key].targetId"
+          >
+            {{ groupItem.addLabel }}
+          </button>
         </form>
       </article>
     </div>
@@ -509,9 +627,15 @@ function nameOf(item: { name: string } | undefined) {
   background: #ffffff;
 }
 
+.material-link-panel.compact {
+  gap: 10px;
+  padding: 12px;
+}
+
 .panel-header,
 .link-group header,
-.link-group li {
+.link-group li,
+.item-actions {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -595,7 +719,7 @@ li {
   background: #fbfcfe;
 }
 
-li div {
+.item-content {
   display: grid;
   gap: 3px;
 }
@@ -617,6 +741,10 @@ a {
   font-weight: 800;
   text-decoration: none;
   white-space: nowrap;
+}
+
+.item-actions {
+  flex: 0 0 auto;
 }
 
 .add-form {
@@ -644,5 +772,11 @@ a {
 .success-message {
   border-color: #bbf7d0;
   color: #166534;
+}
+
+@media (max-width: 960px) {
+  .add-form {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

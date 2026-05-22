@@ -1765,6 +1765,8 @@ function clearDragState() {
             source-type="timeline_event"
             :source-id="selectedEvent.id"
             :source-title="selectedEvent.title"
+            :allowed-target-types="['character', 'setting', 'clue', 'graph_node']"
+            compact
           />
         </template>
 

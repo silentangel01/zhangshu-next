@@ -424,6 +424,8 @@ function getErrorMessage(error: unknown, fallback: string): string {
         source-type="clue"
         :source-id="selectedClue.id"
         :source-title="selectedClue.title"
+        :allowed-target-types="['outline', 'character', 'setting', 'timeline_event', 'graph_node']"
+        compact
       />
     </section>
   </main>
