@@ -14,6 +14,7 @@ from app.api.clues import router as clues_router
 from app.api.exports import router as exports_router
 from app.api.graphs import router as graphs_router
 from app.api.imports import projects_import_router, router as imports_router
+from app.api.material_links import router as material_links_router
 from app.api.outlines import router as outlines_router
 from app.api.projects import router as projects_router
 from app.api.recovery import router as recovery_router
@@ -63,6 +64,7 @@ app.include_router(outlines_router)
 app.include_router(characters_router)
 app.include_router(settings_router)
 app.include_router(clues_router)
+app.include_router(material_links_router)
 app.include_router(graphs_router)
 app.include_router(timeline_router)
 
