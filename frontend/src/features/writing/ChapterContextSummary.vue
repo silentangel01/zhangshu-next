@@ -12,14 +12,18 @@ import { listGraphEdges, listGraphNodes } from '@/entities/graph/api'
 import type { GraphEdge, GraphNode } from '@/entities/graph/types'
 import { listChapterOutlines } from '@/entities/outline/api'
 import type { OutlineItem } from '@/entities/outline/types'
-import { listChapterTimelineEvents, listProjectTimelineEvents, listTimelineEdges, listTimelineTracks } from '@/entities/timeline/api'
+import {
+  listChapterTimelineEvents,
+  listTimelineEdges,
+  listTimelineTracks,
+} from '@/entities/timeline/api'
 import type { TimelineEdge, TimelineEvent, TimelineTrack } from '@/entities/timeline/types'
 
 import ChapterContextSection from './ChapterContextSection.vue'
 
 type ContextKind = 'outline' | 'characters' | 'settings' | 'clues' | 'timeline' | 'graph'
-type CardItem = { id: string; title: string; meta: string; body: string }
-type HintItem = { id: string; text: string }
+type SummaryItem = { id: string; title: string; meta: string; body: string }
+type BriefItem = { id: string; text: string }
 
 const props = defineProps<{
   projectId: string
@@ -34,7 +38,6 @@ const characters = ref<ChapterCharacterLink[]>([])
 const settings = ref<ChapterSettingLink[]>([])
 const clues = ref<ChapterClueLink[]>([])
 const chapterEvents = ref<TimelineEvent[]>([])
-const projectEvents = ref<TimelineEvent[]>([])
 const tracks = ref<TimelineTrack[]>([])
 const timelineEdges = ref<TimelineEdge[]>([])
 const graphNodes = ref<GraphNode[]>([])
@@ -60,9 +63,16 @@ const actionMap = computed<Record<ContextKind, { label: string; to: string }>>((
   graph: { label: '完整关系图', to: `/projects/${props.projectId}/graph` },
 }))
 
+const emptyStateMap: Record<ContextKind, string> = {
+  outline: '本章暂无细纲',
+  characters: '本章暂无人物',
+  settings: '本章暂无设定',
+  clues: '本章暂无伏笔',
+  timeline: '本章暂无时间轴事件',
+  graph: '本章暂无关系图摘要',
+}
+
 const trackMap = computed(() => mapById(tracks.value))
-const eventMap = computed(() => mapById(projectEvents.value))
-const nodeMap = computed(() => mapById(graphNodes.value))
 
 const chapterTargetKeys = computed(() => {
   const keys = new Set<string>()
@@ -74,90 +84,108 @@ const chapterTargetKeys = computed(() => {
 })
 
 const matchedGraphNodes = computed(() =>
-  graphNodes.value.filter((node) =>
-    node.visibility !== 'hidden'
-    && node.bound_type
-    && node.bound_id
-    && chapterTargetKeys.value.has(`${node.bound_type}:${node.bound_id}`),
-  ),
+  graphNodes.value.filter((node) => {
+    if (node.visibility === 'hidden' || !node.bound_type || !node.bound_id) {
+      return false
+    }
+    return chapterTargetKeys.value.has(`${node.bound_type}:${node.bound_id}`)
+  }),
 )
 
 const matchedNodeIds = computed(() => new Set(matchedGraphNodes.value.map((node) => node.id)))
 
-const directItems = computed<CardItem[]>(() => {
+const directItems = computed<SummaryItem[]>(() => {
   if (props.kind === 'outline') {
     return outlines.value.map((outline) => ({
       id: outline.id,
       title: outline.title,
-      meta: `${outlineTypeLabel(outline.item_type)}｜${outlineStatusLabel(outline.status)}｜${outlineImportanceLabel(outline.importance)}`,
+      meta: `${outlineStatusLabel(outline.status)}｜${outlineImportanceLabel(outline.importance)}`,
       body: preview(outline.content),
     }))
   }
+
   if (props.kind === 'characters') {
     return characters.value.map((link) => ({
       id: link.id,
       title: link.character.name,
-      meta: `${chapterCharacterRelationLabel(link.relation_type)}｜${characterRoleLabel(link.character.role)}｜${importanceLabel(link.character.importance)}｜${characterStatusLabel(link.character.status)}`,
-      body: preview(link.character.summary || link.note),
+      meta: `${chapterCharacterRelationLabel(link.relation_type)}｜${characterRoleLabel(link.character.role)}`,
+      body: preview(link.note || link.character.summary),
     }))
   }
+
   if (props.kind === 'settings') {
     return settings.value.map((link) => ({
       id: link.id,
       title: link.setting_item.title,
-      meta: `${settingTypeLabel(link.setting_item.item_type)}｜${settingStatusLabel(link.setting_item.canon_status)}｜${importanceLabel(link.setting_item.importance)}`,
-      body: preview(link.setting_item.summary || link.note),
+      meta: `${settingTypeLabel(link.setting_item.item_type)}｜${settingStatusLabel(link.setting_item.canon_status)}`,
+      body: preview(link.note || link.setting_item.summary),
     }))
   }
+
   if (props.kind === 'clues') {
     return clues.value.map((link) => ({
       id: link.id,
       title: link.clue.title,
-      meta: `${chapterClueRelationLabel(link.relation_type)}｜${clueStatusLabel(link.clue.status)}｜${clueVisibilityLabel(link.clue.visibility)}｜${importanceLabel(link.clue.importance)}`,
-      body: preview(link.clue.description || link.clue.payoff_plan || link.note),
+      meta: `${chapterClueRelationLabel(link.relation_type)}｜${clueStatusLabel(link.clue.status)}`,
+      body: preview(link.clue.payoff_plan || link.clue.description || link.note),
     }))
   }
+
   if (props.kind === 'timeline') {
     return chapterEvents.value.map((event) => ({
       id: event.id,
       title: event.title,
-      meta: `${trackTitle(event.track_id)}｜${timeLabel(event)}｜${importanceLabel(event.importance)}`,
-      body: preview(event.description || event.note),
+      meta: `${trackTitle(event.track_id)}｜${timeLabel(event)}`,
+      body: preview(event.note || event.description),
     }))
   }
-  return matchedGraphNodes.value.slice(0, 8).map((node) => ({
+
+  return matchedGraphNodes.value.slice(0, 6).map((node) => ({
     id: node.id,
-    title: node.title,
-    meta: `${graphNodeTypeLabel(node.node_type)}｜${boundTypeLabel(node.bound_type)}`,
+    title: node.title || '未命名节点',
+    meta: graphNodeTypeLabel(node.node_type),
     body: preview(node.summary),
   }))
 })
 
-const secondaryItems = computed<HintItem[]>(() => {
-  if (props.kind === 'outline') {
-    return outlines.value.map((outline) => ({
-      id: outline.id,
-      text: `${outline.title}：${outlineStatusLabel(outline.status)}`,
-    }))
-  }
+const secondaryItems = computed<BriefItem[]>(() => {
   if (props.kind === 'timeline') {
-    return timelineConnectionItems.value
+    const eventIds = new Set(chapterEvents.value.map((event) => event.id))
+    return timelineEdges.value
+      .filter(
+        (edge) =>
+          edge.visibility !== 'hidden' &&
+          (eventIds.has(edge.from_event_id) || eventIds.has(edge.to_event_id)),
+      )
+      .slice(0, 6)
+      .map((edge) => ({
+        id: edge.id,
+        text: `${eventTitle(edge.from_event_id)} → ${eventTitle(edge.to_event_id)}｜${temporalRelationLabel(edge.temporal_relation)}`,
+      }))
   }
+
   if (props.kind === 'graph') {
-    return graphEdgeItems.value.slice(0, 8)
+    return graphEdges.value
+      .filter(
+        (edge) =>
+          edge.visibility !== 'hidden' &&
+          (matchedNodeIds.value.has(edge.from_node_id) || matchedNodeIds.value.has(edge.to_node_id)),
+      )
+      .slice(0, 6)
+      .map((edge) => ({
+        id: edge.id,
+        text: `${nodeTitle(edge.from_node_id)} → ${nodeTitle(edge.to_node_id)}｜${graphEdgeRelationLabel(edge.relation_type)}`,
+      }))
   }
+
   return []
 })
 
-const compactHint = computed(() => {
-  if (props.kind === 'outline') {
-    return `已关联资料：人物 ${characters.value.length}、设定 ${settings.value.length}、伏笔 ${clues.value.length}`
+const graphSummaryText = computed(() => {
+  if (props.kind !== 'graph') {
+    return ''
   }
-  if (props.kind === 'characters') return '关联资料可在人物库中维护。'
-  if (props.kind === 'settings') return '关联资料可在设定集中维护。'
-  if (props.kind === 'clues') return '关联资料可在伏笔库中维护。'
-  if (props.kind === 'timeline') return '人物、设定和伏笔关联可在完整时间轴中维护。'
-  return `本章相关节点 ${matchedGraphNodes.value.length} 个，直接关系 ${graphEdgeItems.value.length} 条。`
+  return `本章相关节点 ${matchedGraphNodes.value.length} 个，直接关系 ${secondaryItems.value.length} 条`
 })
 
 watch(
@@ -185,36 +213,35 @@ async function refresh() {
       chapterSettings,
       chapterClues,
       events,
-      allEvents,
       timelineTracks,
       edges,
       nodes,
-      graphRelations,
+      relations,
     ] = await Promise.all([
       listChapterOutlines(props.chapterId),
       listChapterCharacters(props.chapterId),
       listChapterSettings(props.chapterId),
       listChapterClues(props.chapterId),
       listChapterTimelineEvents(props.chapterId),
-      listProjectTimelineEvents(props.projectId),
       listTimelineTracks(props.projectId),
       listTimelineEdges(props.projectId),
       listGraphNodes(props.projectId),
       listGraphEdges(props.projectId),
     ])
 
-    if (token !== loadToken) return
+    if (token !== loadToken) {
+      return
+    }
 
     outlines.value = chapterOutlines
     characters.value = chapterCharacters
     settings.value = chapterSettings
     clues.value = chapterClues
     chapterEvents.value = events
-    projectEvents.value = allEvents
     tracks.value = timelineTracks
     timelineEdges.value = edges
     graphNodes.value = nodes
-    graphEdges.value = graphRelations
+    graphEdges.value = relations
   } catch (error) {
     void error
     if (token === loadToken) {
@@ -235,29 +262,11 @@ function clearState() {
   settings.value = []
   clues.value = []
   chapterEvents.value = []
+  tracks.value = []
+  timelineEdges.value = []
   graphNodes.value = []
   graphEdges.value = []
 }
-
-const timelineConnectionItems = computed<HintItem[]>(() => {
-  const ids = new Set(chapterEvents.value.map((event) => event.id))
-  return timelineEdges.value
-    .filter((edge) => edge.visibility !== 'hidden' && (ids.has(edge.from_event_id) || ids.has(edge.to_event_id)))
-    .slice(0, 8)
-    .map((edge) => ({
-      id: edge.id,
-      text: `${titleOf(eventMap.value[edge.from_event_id])} → ${titleOf(eventMap.value[edge.to_event_id])}｜${temporalRelationLabel(edge.temporal_relation)}`,
-    }))
-})
-
-const graphEdgeItems = computed<HintItem[]>(() =>
-  graphEdges.value
-    .filter((edge) => edge.visibility !== 'hidden' && (matchedNodeIds.value.has(edge.from_node_id) || matchedNodeIds.value.has(edge.to_node_id)))
-    .map((edge) => ({
-      id: edge.id,
-      text: `${titleOf(nodeMap.value[edge.from_node_id])} → ${titleOf(nodeMap.value[edge.to_node_id])}｜${graphEdgeRelationLabel(edge.relation_type)}`,
-    })),
-)
 
 function mapById<T extends { id: string }>(items: T[]) {
   return items.reduce<Record<string, T>>((acc, item) => {
@@ -266,26 +275,26 @@ function mapById<T extends { id: string }>(items: T[]) {
   }, {})
 }
 
-function titleOf(item: { title: string } | undefined) {
-  return item?.title ?? '未知'
-}
-
 function preview(text: string | null | undefined) {
   const source = (text ?? '').trim()
   if (!source) return '暂无摘要'
-  return source.length > 72 ? `${source.slice(0, 72)}...` : source
+  return source.length > 60 ? `${source.slice(0, 60)}...` : source
 }
 
 function timeLabel(event: TimelineEvent) {
-  return [event.story_date, event.story_time].filter(Boolean).join('｜') || '未填写时间'
+  return [event.story_date, event.story_time].filter(Boolean).join(' ') || '未填写时间'
 }
 
 function trackTitle(trackId: string | null) {
   return trackId ? trackMap.value[trackId]?.title ?? '未分配轨道' : '未分配轨道'
 }
 
-function outlineTypeLabel(value: string) {
-  return ({ book_outline: '全书大纲', volume_outline: '分卷大纲', chapter_outline: '章节细纲', scene: '场景', plot_point: '关键剧情点', note: '备注' } as Record<string, string>)[value] ?? value
+function eventTitle(eventId: string) {
+  return chapterEvents.value.find((event) => event.id === eventId)?.title ?? '未知事件'
+}
+
+function nodeTitle(nodeId: string) {
+  return graphNodes.value.find((node) => node.id === nodeId)?.title ?? '未知节点'
 }
 
 function outlineStatusLabel(value: string) {
@@ -301,15 +310,11 @@ function chapterCharacterRelationLabel(value: string) {
 }
 
 function characterRoleLabel(value: string) {
-  return ({ protagonist: '主角', deuteragonist: '副主角', antagonist: '反派', supporting: '配角', minor: '小角色', unknown: '未知' } as Record<string, string>)[value] ?? value
-}
-
-function characterStatusLabel(value: string) {
-  return ({ active: '活跃', inactive: '暂不活跃', dead: '死亡', missing: '失踪', unknown: '未知' } as Record<string, string>)[value] ?? value
+  return ({ protagonist: '主角', deuteragonist: '副主角', antagonist: '反派', supporting: '配角', minor: '次要角色', unknown: '未知' } as Record<string, string>)[value] ?? value
 }
 
 function settingTypeLabel(value: string) {
-  return ({ world: '世界', location: '地点', organization: '组织', power_system: '力量体系', history: '历史', technology: '技术', rule: '规则', race: '种族', object: '物品', custom: '自定义' } as Record<string, string>)[value] ?? value
+  return ({ world: '世界', location: '地点', organization: '组织', power_system: '体系', history: '历史', technology: '技术', rule: '规则', race: '种族', object: '物品', custom: '自定义' } as Record<string, string>)[value] ?? value
 }
 
 function settingStatusLabel(value: string) {
@@ -324,24 +329,12 @@ function clueStatusLabel(value: string) {
   return ({ planned: '计划中', planted: '已埋设', developing: '推进中', resolved: '已回收', abandoned: '已废弃' } as Record<string, string>)[value] ?? value
 }
 
-function clueVisibilityLabel(value: string) {
-  return ({ hidden: '隐藏', hinted: '暗示', revealed: '已揭示' } as Record<string, string>)[value] ?? value
-}
-
-function importanceLabel(value: string) {
-  return ({ low: '低', normal: '普通', high: '重要', critical: '核心' } as Record<string, string>)[value] ?? value
-}
-
 function temporalRelationLabel(value: string) {
-  return ({ previous: '过去 / 前置', parallel: '并行', delayed: '滞后', future: '后续', unordered: '无明确时序' } as Record<string, string>)[value] ?? value
+  return ({ previous: '前置', parallel: '并行', delayed: '滞后', future: '后续', unordered: '无明确时序' } as Record<string, string>)[value] ?? value
 }
 
 function graphNodeTypeLabel(value: string) {
   return ({ character: '人物', setting: '设定', clue: '伏笔', timeline_event: '时间轴事件', organization: '组织', location: '地点', custom: '自定义' } as Record<string, string>)[value] ?? value
-}
-
-function boundTypeLabel(value: string | null) {
-  return value ? graphNodeTypeLabel(value) : '未绑定'
 }
 
 function graphEdgeRelationLabel(value: string) {
@@ -369,10 +362,12 @@ function graphEdgeRelationLabel(value: string) {
       <p class="subtle-note">当前写作辅助基于手动绑定资料生成。</p>
 
       <ChapterContextSection
-        :title="kind === 'outline' ? '本章细纲' : kind === 'timeline' ? '本章时间轴事件' : kind === 'graph' ? '本章相关节点' : `本章${titleMap[kind]}`"
+        :title="kind === 'outline' ? '本章细纲' : kind === 'timeline' ? '本章时间轴事件' : kind === 'graph' ? '本章核心关系摘要' : `本章${titleMap[kind]}`"
         :count="directItems.length"
       >
-        <p v-if="directItems.length === 0" class="state-message compact">本章暂无相关资料。</p>
+        <p v-if="directItems.length === 0" class="state-message compact">
+          {{ emptyStateMap[kind] }}
+        </p>
         <div v-else class="card-list">
           <article v-for="item in directItems" :key="item.id" class="context-card">
             <h4>{{ item.title }}</h4>
@@ -383,21 +378,27 @@ function graphEdgeRelationLabel(value: string) {
       </ChapterContextSection>
 
       <ChapterContextSection
-        v-if="kind === 'outline' || kind === 'timeline' || kind === 'graph'"
-        :title="kind === 'outline' ? '大纲条目状态' : kind === 'timeline' ? '前后 / 并行事件' : '直接关系'"
+        v-if="kind === 'timeline' && secondaryItems.length > 0"
+        title="时序关系"
         :count="secondaryItems.length"
       >
-        <p v-if="secondaryItems.length === 0" class="state-message compact">暂无可显示内容。</p>
-        <ul v-else class="compact-list">
+        <ul class="compact-list">
           <li v-for="item in secondaryItems" :key="item.id">{{ item.text }}</li>
         </ul>
       </ChapterContextSection>
 
-      <p class="compact-hint">{{ compactHint }}</p>
-
-      <ChapterContextSection title="完整资料库">
-        <RouterLink class="full-link" :to="actionMap[kind].to">{{ actionMap[kind].label }}</RouterLink>
+      <ChapterContextSection
+        v-if="kind === 'graph'"
+        title="直接关系"
+        :count="secondaryItems.length"
+      >
+        <p class="compact-hint">{{ graphSummaryText || '本章暂无关系图摘要' }}</p>
+        <ul v-if="secondaryItems.length > 0" class="compact-list">
+          <li v-for="item in secondaryItems" :key="item.id">{{ item.text }}</li>
+        </ul>
       </ChapterContextSection>
+
+      <p class="maintenance-hint">可在完整资料库中维护。</p>
     </template>
   </section>
 </template>
@@ -433,8 +434,7 @@ h2 {
   font-size: 1rem;
 }
 
-.context-link,
-.full-link {
+.context-link {
   color: #2563eb;
   font-size: 0.8rem;
   font-weight: 800;
@@ -443,17 +443,10 @@ h2 {
 }
 
 .subtle-note,
-.compact-hint {
+.maintenance-hint {
   color: #64748b;
   font-size: 0.78rem;
   line-height: 1.6;
-}
-
-.compact-hint {
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 9px 10px;
-  background: #f8fafc;
 }
 
 .card-list {
@@ -496,11 +489,12 @@ h2 {
   line-height: 1.55;
 }
 
+.compact-hint,
 .state-message,
 .error-message {
   border: 1px dashed #cbd5e1;
   border-radius: 8px;
-  padding: 14px;
+  padding: 12px;
   color: #64748b;
   line-height: 1.6;
   text-align: center;
@@ -513,9 +507,5 @@ h2 {
 .error-message {
   border-color: #fecaca;
   color: #b42318;
-}
-
-.full-link {
-  justify-self: start;
 }
 </style>
