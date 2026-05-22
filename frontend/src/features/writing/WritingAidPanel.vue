@@ -4,6 +4,7 @@ import { computed, ref, watch } from 'vue'
 import type { ChapterVersionListItem } from '@/entities/chapter-version/types'
 import ChapterVersionPanel from '@/features/chapters/ChapterVersionPanel.vue'
 import ChapterContextSummary from '@/features/writing/ChapterContextSummary.vue'
+import CreativeReminderPanel from '@/features/writing/CreativeReminderPanel.vue'
 
 const props = defineProps<{
   projectId: string
@@ -23,7 +24,7 @@ const emit = defineEmits<{
   activeTabChange: [tab: AidTab]
 }>()
 
-type AidTab = 'outline' | 'characters' | 'settings' | 'graph' | 'timeline' | 'foreshadowing' | 'versions'
+type AidTab = 'outline' | 'characters' | 'settings' | 'graph' | 'timeline' | 'foreshadowing' | 'reminders' | 'versions'
 type ContextKind = 'outline' | 'characters' | 'settings' | 'graph' | 'timeline' | 'clues'
 
 const activeTab = ref<AidTab>(isAidTab(props.initialActiveTab) ? props.initialActiveTab : 'outline')
@@ -35,6 +36,7 @@ const tabs: Array<{ id: AidTab; label: string }> = [
   { id: 'graph', label: '关系图' },
   { id: 'timeline', label: '时间轴' },
   { id: 'foreshadowing', label: '伏笔' },
+  { id: 'reminders', label: '创作提醒' },
   { id: 'versions', label: '版本' },
 ]
 
@@ -52,7 +54,7 @@ function setActiveTab(tab: AidTab) {
 }
 
 function getContextKind(tab: AidTab): ContextKind | null {
-  if (tab === 'versions') {
+  if (tab === 'versions' || tab === 'reminders') {
     return null
   }
   if (tab === 'foreshadowing') {
@@ -68,6 +70,7 @@ function isAidTab(value: unknown): value is AidTab {
     || value === 'graph'
     || value === 'timeline'
     || value === 'foreshadowing'
+    || value === 'reminders'
     || value === 'versions'
 }
 </script>
@@ -87,7 +90,13 @@ function isAidTab(value: unknown): value is AidTab {
     </nav>
 
     <section class="tab-content">
-      <section v-if="activeTab === 'versions'" class="versions-tab">
+      <CreativeReminderPanel
+        v-if="activeTab === 'reminders'"
+        :project-id="projectId"
+        :chapter-id="chapterId"
+      />
+
+      <section v-else-if="activeTab === 'versions'" class="versions-tab">
         <p v-if="!chapterId" class="state-message">请选择章节后查看版本历史。</p>
         <template v-else>
           <p v-if="versionsTabMessage" class="status-message">{{ versionsTabMessage }}</p>

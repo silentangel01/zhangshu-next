@@ -11,6 +11,7 @@ from app.api.chapter_versions import router as chapter_versions_router
 from app.api.chapters import router as chapters_router
 from app.api.characters import router as characters_router
 from app.api.clues import router as clues_router
+from app.api.creative_reminders import router as creative_reminders_router
 from app.api.exports import router as exports_router
 from app.api.graphs import router as graphs_router
 from app.api.imports import projects_import_router, router as imports_router
@@ -64,6 +65,7 @@ app.include_router(outlines_router)
 app.include_router(characters_router)
 app.include_router(settings_router)
 app.include_router(clues_router)
+app.include_router(creative_reminders_router)
 app.include_router(material_links_router)
 app.include_router(graphs_router)
 app.include_router(timeline_router)
