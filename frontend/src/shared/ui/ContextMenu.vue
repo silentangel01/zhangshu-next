@@ -105,19 +105,19 @@ onBeforeUnmount(() => {
   display: grid;
   min-width: 180px;
   gap: 4px;
-  border: 1px solid #d8dee9;
-  border-radius: 8px;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-md);
   padding: 6px;
-  background: #ffffff;
-  box-shadow: 0 18px 44px rgb(20 24 31 / 16%);
+  background: var(--zs-color-surface);
+  box-shadow: var(--zs-shadow-md);
 }
 
 button {
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--zs-radius-sm);
   padding: 9px 12px;
   background: transparent;
-  color: #111827;
+  color: var(--zs-color-text);
   font: inherit;
   font-size: 0.86rem;
   font-weight: 700;
@@ -127,16 +127,17 @@ button {
 
 button:hover,
 button:focus-visible {
-  background: #eff6ff;
+  background: var(--zs-color-primary-soft);
+  color: var(--zs-color-primary);
   outline: none;
 }
 
 button.danger {
-  color: #b42318;
+  color: var(--zs-color-danger);
 }
 
 button:disabled {
-  color: #94a3b8;
+  color: var(--zs-color-text-faint);
   cursor: not-allowed;
 }
 </style>

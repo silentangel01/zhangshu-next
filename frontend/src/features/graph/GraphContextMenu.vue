@@ -58,20 +58,20 @@ function selectItem(item: GraphContextMenuItem) {
   z-index: 1000;
   display: grid;
   min-width: 168px;
-  border: 1px solid #d8dee9;
-  border-radius: 8px;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-md);
   padding: 6px;
-  background: #ffffff;
-  box-shadow: 0 18px 36px rgb(15 23 42 / 18%);
+  background: var(--zs-color-surface);
+  box-shadow: var(--zs-shadow-md);
   pointer-events: auto;
 }
 
 button {
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--zs-radius-sm);
   padding: 8px 10px;
   background: transparent;
-  color: #111827;
+  color: var(--zs-color-text);
   font: inherit;
   font-size: 0.86rem;
   text-align: left;
@@ -79,16 +79,16 @@ button {
 }
 
 button:hover {
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: var(--zs-color-primary-soft);
+  color: var(--zs-color-primary);
 }
 
 button.danger {
-  color: #b42318;
+  color: var(--zs-color-danger);
 }
 
 button:disabled {
-  color: #94a3b8;
+  color: var(--zs-color-text-faint);
   cursor: not-allowed;
 }
 </style>

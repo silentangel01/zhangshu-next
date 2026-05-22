@@ -33,10 +33,10 @@ const tabs: Array<{ id: AidTab; label: string }> = [
   { id: 'outline', label: '大纲' },
   { id: 'characters', label: '人物' },
   { id: 'settings', label: '设定' },
-  { id: 'graph', label: '关系图' },
-  { id: 'timeline', label: '时间轴' },
+  { id: 'graph', label: '关系' },
+  { id: 'timeline', label: '时间' },
   { id: 'foreshadowing', label: '伏笔' },
-  { id: 'reminders', label: '创作提醒' },
+  { id: 'reminders', label: '提醒' },
   { id: 'versions', label: '版本' },
 ]
 
@@ -125,13 +125,13 @@ function isAidTab(value: unknown): value is AidTab {
 <style scoped>
 .writing-aid-panel {
   display: grid;
-  gap: 14px;
+  gap: var(--zs-space-3);
   min-height: 0;
-  border: 1px solid #d8dee9;
-  border-radius: 8px;
-  padding: 16px;
-  background: #ffffff;
-  box-shadow: 0 10px 28px rgb(20 24 31 / 6%);
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-md);
+  padding: var(--zs-space-3);
+  background: var(--zs-color-surface);
+  box-shadow: var(--zs-shadow-sm);
 }
 
 .state-message,
@@ -142,16 +142,16 @@ function isAidTab(value: unknown): value is AidTab {
 .tab-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--zs-space-2);
 }
 
 .tab-list button {
   min-height: 32px;
-  border: 1px solid #d8dee9;
-  border-radius: 999px;
-  padding: 0 10px;
-  background: #fbfcfe;
-  color: #374151;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-pill);
+  padding: 0 var(--zs-space-2);
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
   font: inherit;
   font-size: 0.85rem;
   font-weight: 800;
@@ -159,9 +159,9 @@ function isAidTab(value: unknown): value is AidTab {
 }
 
 .tab-list button.active {
-  border-color: #2563eb;
-  background: #eff6ff;
-  color: #1d4ed8;
+  border-color: var(--zs-color-primary);
+  background: var(--zs-color-primary-soft);
+  color: var(--zs-color-primary);
 }
 
 .tab-content {
@@ -170,17 +170,17 @@ function isAidTab(value: unknown): value is AidTab {
 }
 
 .state-message {
-  border: 1px dashed #cbd5e1;
-  border-radius: 8px;
-  padding: 14px;
-  color: #64748b;
+  border: 1px dashed var(--zs-color-border);
+  border-radius: var(--zs-radius-md);
+  padding: var(--zs-space-3);
+  color: var(--zs-color-text-muted);
   line-height: 1.6;
   text-align: center;
 }
 
 .status-message {
   margin-bottom: 10px;
-  color: #0f172a;
+  color: var(--zs-color-text);
   font-size: 0.9rem;
   font-weight: 700;
 }

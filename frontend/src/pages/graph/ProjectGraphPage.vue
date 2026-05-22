@@ -1075,24 +1075,25 @@ function clamp(value: number, min: number, max: number) {
 <style scoped>
 .graph-page {
   display: grid;
-  gap: 12px;
+  gap: var(--zs-space-3);
   min-height: 100vh;
   box-sizing: border-box;
-  padding: 18px;
-  background: #f5f7fb;
-  color: #111827;
+  overflow-x: hidden;
+  padding: var(--zs-space-5);
+  background: var(--zs-color-bg);
+  color: var(--zs-color-text);
 }
 
 .page-header {
   display: flex;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--zs-space-4);
 }
 
 .back-link {
   display: inline-flex;
-  margin-bottom: 8px;
-  color: #2563eb;
+  margin-bottom: var(--zs-space-2);
+  color: var(--zs-color-primary);
   font-size: 0.86rem;
   font-weight: 800;
   text-decoration: none;
@@ -1106,54 +1107,55 @@ p {
 
 h1 {
   font-size: 1.7rem;
+  letter-spacing: 0;
 }
 
 .page-header p {
   margin-top: 6px;
-  color: #475569;
+  color: var(--zs-color-text-muted);
   line-height: 1.6;
 }
 
 .page-header span {
   display: inline-block;
   margin-top: 4px;
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.86rem;
   font-weight: 700;
 }
 
 .status {
-  border-radius: 8px;
+  border-radius: var(--zs-radius-md);
   padding: 9px 12px;
   font-size: 0.86rem;
 }
 
 .status.error {
-  background: #fef2f2;
-  color: #b42318;
+  background: var(--zs-color-danger-soft);
+  color: var(--zs-color-danger);
 }
 
 .status.success {
-  background: #ecfdf5;
-  color: #047857;
+  background: var(--zs-color-success-soft);
+  color: var(--zs-color-success);
 }
 
 .workspace {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr) 340px;
-  gap: 12px;
+  gap: var(--zs-space-3);
   min-height: calc(100vh - 184px);
 }
 
 .left-panel {
   display: grid;
   align-content: start;
-  gap: 12px;
+  gap: var(--zs-space-3);
   min-width: 0;
-  border: 1px solid #d8dee9;
-  border-radius: 8px;
-  padding: 12px;
-  background: #ffffff;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-md);
+  padding: var(--zs-space-3);
+  background: var(--zs-color-surface);
   overflow: auto;
 }
 
@@ -1161,7 +1163,7 @@ h1 {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--zs-space-2);
 }
 
 .left-panel h2 {
@@ -1171,8 +1173,8 @@ h1 {
 .left-panel header span {
   border-radius: 999px;
   padding: 3px 8px;
-  background: #eef2ff;
-  color: #3730a3;
+  background: var(--zs-color-primary-soft);
+  color: var(--zs-color-primary);
   font-size: 0.76rem;
   font-weight: 800;
 }
@@ -1183,7 +1185,7 @@ h1 {
 }
 
 .left-panel label span {
-  color: #475569;
+  color: var(--zs-color-text-muted);
   font-size: 0.78rem;
   font-weight: 800;
 }
@@ -1192,11 +1194,11 @@ input,
 select {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid #cbd5e1;
-  border-radius: 7px;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-sm);
   padding: 8px 10px;
-  background: #ffffff;
-  color: #111827;
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
   font: inherit;
   font-size: 0.84rem;
 }
@@ -1209,19 +1211,19 @@ select {
 .node-list button {
   display: grid;
   gap: 6px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
+  border: 1px solid var(--zs-color-border-soft);
+  border-radius: var(--zs-radius-md);
   padding: 9px 10px;
-  background: #ffffff;
-  color: #111827;
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
   text-align: left;
   cursor: pointer;
 }
 
 .node-list button:hover,
 .node-list button.active {
-  border-color: #2563eb;
-  background: #eff6ff;
+  border-color: var(--zs-color-primary);
+  background: var(--zs-color-primary-soft);
 }
 
 .node-list button.hidden {
@@ -1240,26 +1242,27 @@ select {
   flex-wrap: wrap;
   gap: 5px;
   align-items: center;
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.74rem;
 }
 
 .type-badge {
   border-radius: 999px;
   padding: 1px 6px;
-  background: #f1f5f9;
-  color: #334155;
+  background: var(--zs-color-surface-soft);
+  color: var(--zs-color-text);
   font-weight: 800;
 }
 
 .empty-list {
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.76rem;
 }
 
 @media (max-width: 1240px) {
   .workspace {
-    grid-template-columns: 240px minmax(0, 1fr);
+    grid-template-columns: 240px minmax(560px, 1fr);
+    overflow-x: auto;
   }
 
   .workspace > :last-child {
@@ -1269,11 +1272,12 @@ select {
 
 @media (max-width: 860px) {
   .graph-page {
-    padding: 12px;
+    padding: var(--zs-space-3);
   }
 
   .workspace {
     grid-template-columns: 1fr;
+    overflow-x: visible;
   }
 }
 </style>

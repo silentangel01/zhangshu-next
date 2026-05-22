@@ -58,23 +58,23 @@ defineProps<{
 <style scoped>
 .report-panel {
   display: grid;
-  gap: 18px;
-  border: 1px solid #bbf7d0;
-  border-radius: 8px;
-  padding: 22px;
-  background: #f0fdf4;
+  gap: var(--zs-space-4);
+  border: 1px solid var(--zs-color-success);
+  border-radius: var(--zs-radius-md);
+  padding: var(--zs-space-5);
+  background: var(--zs-color-success-soft);
 }
 
 .panel-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--zs-space-4);
 }
 
 .eyebrow {
   margin: 0 0 6px;
-  color: #047857;
+  color: var(--zs-color-success);
   font-size: 0.78rem;
   font-weight: 800;
 }
@@ -82,17 +82,17 @@ defineProps<{
 h2,
 h3 {
   margin: 0;
-  color: #111827;
+  color: var(--zs-color-text);
 }
 
 .open-link {
   display: inline-flex;
   align-items: center;
   min-height: 38px;
-  border-radius: 6px;
+  border-radius: var(--zs-radius-sm);
   padding: 0 14px;
-  background: #2563eb;
-  color: #ffffff;
+  background: var(--zs-color-primary);
+  color: var(--zs-color-on-primary);
   font-weight: 800;
   text-decoration: none;
 }
@@ -100,27 +100,27 @@ h3 {
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 12px;
+  gap: var(--zs-space-3);
   margin: 0;
 }
 
 .stats-grid div {
-  border: 1px solid #bbf7d0;
-  border-radius: 8px;
+  border: 1px solid var(--zs-color-success);
+  border-radius: var(--zs-radius-md);
   padding: 12px;
-  background: #ffffff;
+  background: var(--zs-color-surface);
 }
 
 dt {
   margin: 0 0 4px;
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.78rem;
   font-weight: 800;
 }
 
 dd {
   margin: 0;
-  color: #111827;
+  color: var(--zs-color-text);
   font-weight: 800;
   overflow-wrap: anywhere;
 }
@@ -132,10 +132,10 @@ dd {
 
 .text-block ul {
   margin: 0;
-  color: #4b5563;
+  color: var(--zs-color-text-muted);
 }
 
 .error h3 {
-  color: #b42318;
+  color: var(--zs-color-danger);
 }
 </style>

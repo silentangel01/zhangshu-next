@@ -290,7 +290,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
 </script>
 
 <template>
-  <main class="characters-page">
+  <main class="characters-page material-page">
     <header class="page-header">
       <div>
         <RouterLink class="back-link" :to="`/projects/${projectId}`">返回写作页</RouterLink>
@@ -307,8 +307,8 @@ function getErrorMessage(error: unknown, fallback: string): string {
     <section v-if="successMessage" class="success-banner" role="status">{{ successMessage }}</section>
     <section v-if="isLoading" class="state-message">正在加载人物库……</section>
 
-    <section v-else class="characters-layout">
-      <aside class="list-panel">
+    <section v-else class="characters-layout material-layout">
+      <aside class="list-panel material-list-panel">
         <div class="filters">
           <input v-model="filters.keyword" type="search" placeholder="搜索姓名、简介、小传、势力" />
           <select v-model="filters.role">
@@ -355,7 +355,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
         </ul>
       </aside>
 
-      <form class="editor-panel" @submit.prevent="handleSaveCharacter">
+      <form class="editor-panel material-editor-panel" @submit.prevent="handleSaveCharacter">
         <header class="editor-header">
           <div>
             <p class="eyebrow">{{ isCreating ? '新建人物' : '人物卡' }}</p>
@@ -439,13 +439,16 @@ function getErrorMessage(error: unknown, fallback: string): string {
           </button>
         </footer>
       </form>
-      <MaterialLinkPanel
-        v-if="selectedCharacter"
-        :project-id="projectId"
-        source-type="character"
-        :source-id="selectedCharacter.id"
-        :source-title="selectedCharacter.name"
-      />
+      <aside class="material-related-panel">
+        <MaterialLinkPanel
+          v-if="selectedCharacter"
+          :project-id="projectId"
+          source-type="character"
+          :source-id="selectedCharacter.id"
+          :source-title="selectedCharacter.name"
+        />
+        <article v-else class="empty-state related-empty">暂无关联资料</article>
+      </aside>
     </section>
   </main>
 </template>
@@ -547,7 +550,7 @@ h2 {
 
 .characters-layout {
   display: grid;
-  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr) minmax(280px, 320px);
   gap: 18px;
   align-items: start;
 }
@@ -711,6 +714,141 @@ button:disabled {
 
   .page-header {
     flex-direction: column;
+  }
+}
+
+.material-page {
+  overflow-x: hidden;
+  padding: var(--zs-space-6);
+  background: var(--zs-color-bg);
+  color: var(--zs-color-text);
+}
+
+.material-page .page-header,
+.material-page .error-banner,
+.material-page .success-banner,
+.material-page .state-message,
+.material-layout {
+  max-width: 1480px;
+}
+
+.material-page .page-header {
+  gap: var(--zs-space-4);
+  margin-bottom: var(--zs-space-4);
+}
+
+.material-page .back-link {
+  margin-bottom: var(--zs-space-2);
+  color: var(--zs-color-primary);
+}
+
+.material-page .eyebrow,
+.material-page .project-title,
+.material-page .meta,
+.material-page .faction {
+  color: var(--zs-color-text-muted);
+}
+
+.material-page h1 {
+  font-size: 1.6rem;
+}
+
+.material-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr) minmax(280px, 320px);
+  gap: var(--zs-space-4);
+  align-items: start;
+}
+
+.material-list-panel,
+.material-editor-panel,
+.material-related-panel {
+  min-width: 0;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-md);
+  padding: var(--zs-space-4);
+  background: var(--zs-color-surface);
+  box-shadow: var(--zs-shadow-sm);
+}
+
+.material-page input,
+.material-page select,
+.material-page textarea {
+  border-color: var(--zs-color-border);
+  border-radius: var(--zs-radius-sm);
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
+}
+
+.material-page .character-card {
+  border-color: var(--zs-color-border);
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
+}
+
+.material-page .character-card.active {
+  border-color: var(--zs-color-primary);
+  background: var(--zs-color-primary-soft);
+}
+
+.material-page .empty-state,
+.material-page .state-message {
+  border-color: var(--zs-color-border);
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text-muted);
+}
+
+.material-page .error-banner {
+  border-color: var(--zs-color-danger);
+  background: var(--zs-color-danger-soft);
+  color: var(--zs-color-danger);
+}
+
+.material-page .success-banner {
+  border-color: var(--zs-color-success);
+  background: var(--zs-color-success-soft);
+  color: var(--zs-color-success);
+}
+
+.material-page .primary-button {
+  background: var(--zs-color-primary);
+  color: var(--zs-color-on-primary);
+}
+
+.material-page .secondary-button {
+  border-color: var(--zs-color-border);
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
+}
+
+.material-page .danger-button {
+  border-color: var(--zs-color-danger);
+  background: var(--zs-color-danger-soft);
+  color: var(--zs-color-danger);
+}
+
+.material-page .version {
+  background: var(--zs-color-info-soft);
+  color: var(--zs-color-info);
+}
+
+@media (max-width: 1366px) {
+  .material-page {
+    padding: var(--zs-space-4);
+  }
+
+  .material-layout {
+    grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  }
+
+  .material-related-panel {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 900px) {
+  .material-layout {
+    grid-template-columns: 1fr;
   }
 }
 </style>

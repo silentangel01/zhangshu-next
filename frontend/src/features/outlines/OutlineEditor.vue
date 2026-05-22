@@ -205,7 +205,7 @@ function formatDate(value: string): string {
 <style scoped>
 .outline-editor {
   display: grid;
-  gap: 16px;
+  gap: var(--zs-space-4);
 }
 
 .editor-header,
@@ -213,12 +213,12 @@ function formatDate(value: string): string {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--zs-space-3);
 }
 
 .eyebrow {
-  margin: 0 0 6px;
-  color: #64748b;
+  margin: 0 0 var(--zs-space-1);
+  color: var(--zs-color-text-muted);
   font-size: 0.78rem;
   font-weight: 800;
 }
@@ -231,7 +231,7 @@ h2 {
 label {
   display: grid;
   gap: 7px;
-  color: #4b5563;
+  color: var(--zs-color-text-muted);
   font-weight: 800;
 }
 
@@ -240,10 +240,11 @@ select,
 textarea {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid #cfd7e3;
-  border-radius: 6px;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-sm);
   padding: 10px 12px;
-  color: #111827;
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
   font: inherit;
 }
 
@@ -256,7 +257,7 @@ textarea {
 .metadata-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  gap: 12px;
+  gap: var(--zs-space-3);
 }
 
 .metadata-grid {
@@ -264,38 +265,38 @@ textarea {
 }
 
 .metadata-grid div {
-  border: 1px solid #edf0f5;
-  border-radius: 8px;
-  padding: 12px;
-  background: #fbfcfe;
+  border: 1px solid var(--zs-color-border-soft);
+  border-radius: var(--zs-radius-md);
+  padding: var(--zs-space-3);
+  background: var(--zs-color-surface-soft);
 }
 
 dt {
   margin: 0 0 4px;
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.78rem;
   font-weight: 800;
 }
 
 dd {
   margin: 0;
-  color: #111827;
+  color: var(--zs-color-text);
   font-weight: 800;
 }
 
 .version {
   flex: 0 0 auto;
-  border-radius: 999px;
+  border-radius: var(--zs-radius-pill);
   padding: 4px 9px;
-  background: #eef2ff;
-  color: #3730a3;
+  background: var(--zs-color-info-soft);
+  color: var(--zs-color-info);
   font-size: 0.78rem;
   font-weight: 800;
 }
 
 button {
   min-height: 38px;
-  border-radius: 6px;
+  border-radius: var(--zs-radius-sm);
   border: 1px solid transparent;
   padding: 0 14px;
   font: inherit;
@@ -309,13 +310,13 @@ button:disabled {
 }
 
 .primary-button {
-  background: #2563eb;
-  color: #ffffff;
+  background: var(--zs-color-primary);
+  color: var(--zs-color-on-primary);
 }
 
 .danger-button {
-  border-color: #fecaca;
-  background: #fff7f7;
-  color: #b42318;
+  border-color: var(--zs-color-danger);
+  background: var(--zs-color-danger-soft);
+  color: var(--zs-color-danger);
 }
 </style>

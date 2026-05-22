@@ -196,7 +196,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
 </script>
 
 <template>
-  <main class="outline-page">
+  <main class="outline-page material-page">
     <header class="page-header">
       <div>
         <RouterLink class="back-link" :to="`/projects/${projectId}`">返回写作页</RouterLink>
@@ -219,8 +219,8 @@ function getErrorMessage(error: unknown, fallback: string): string {
 
     <section v-if="isLoading" class="state-message">正在加载大纲……</section>
 
-    <section v-else class="outline-layout">
-      <aside class="tree-panel">
+    <section v-else class="outline-layout material-layout">
+      <aside class="tree-panel material-list-panel">
         <OutlineTree
           :items="outlines"
           :selected-outline-id="selectedOutline?.id ?? null"
@@ -228,7 +228,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
         />
       </aside>
 
-      <section class="editor-panel">
+      <section class="editor-panel material-editor-panel">
         <OutlineEditor
           v-if="selectedOutline"
           :outline="selectedOutline"
@@ -239,6 +239,14 @@ function getErrorMessage(error: unknown, fallback: string): string {
           @save="handleSaveOutline"
           @delete="handleDeleteOutline"
         />
+
+        <article v-else class="empty-detail">
+          <h2>请选择一个大纲条目，或新建大纲。</h2>
+          <p>可以先创建全书大纲，再逐步添加分卷大纲、章节细纲和剧情节点。</p>
+        </article>
+      </section>
+
+      <aside class="material-related-panel">
         <MaterialLinkPanel
           v-if="selectedOutline"
           :project-id="projectId"
@@ -248,12 +256,11 @@ function getErrorMessage(error: unknown, fallback: string): string {
           :allowed-target-types="['character', 'setting', 'clue', 'timeline_event']"
           compact
         />
-
-        <article v-else class="empty-detail">
-          <h2>请选择一个大纲条目，或新建大纲。</h2>
-          <p>可以先创建全书大纲，再逐步添加分卷大纲、章节细纲、场景和剧情节点。</p>
+        <article v-else class="empty-detail related-empty">
+          <h2>关联资料</h2>
+          <p>暂无关联资料</p>
         </article>
-      </section>
+      </aside>
     </section>
 
     <CreateOutlineDialog
@@ -354,7 +361,7 @@ h1 {
 
 .outline-layout {
   display: grid;
-  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr) minmax(280px, 320px);
   gap: 18px;
   align-items: start;
 }
@@ -420,6 +427,112 @@ button:disabled {
   }
 
   .outline-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.material-page {
+  overflow-x: hidden;
+  padding: var(--zs-space-6);
+  background: var(--zs-color-bg);
+  color: var(--zs-color-text);
+}
+
+.material-page .page-header,
+.material-page .error-banner,
+.material-page .success-banner,
+.material-page .state-message,
+.material-layout {
+  max-width: 1480px;
+}
+
+.material-page .page-header {
+  gap: var(--zs-space-4);
+  margin-bottom: var(--zs-space-4);
+}
+
+.material-page .back-link {
+  margin-bottom: var(--zs-space-2);
+  color: var(--zs-color-primary);
+}
+
+.material-page .eyebrow,
+.material-page .project-title {
+  color: var(--zs-color-text-muted);
+}
+
+.material-page h1 {
+  font-size: 1.6rem;
+}
+
+.material-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr) minmax(280px, 320px);
+  gap: var(--zs-space-4);
+  align-items: start;
+}
+
+.material-list-panel,
+.material-editor-panel,
+.material-related-panel {
+  min-width: 0;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-md);
+  padding: var(--zs-space-4);
+  background: var(--zs-color-surface);
+  box-shadow: var(--zs-shadow-sm);
+}
+
+.material-editor-panel {
+  display: grid;
+  gap: var(--zs-space-4);
+}
+
+.material-page .empty-detail,
+.material-page .state-message {
+  border: 1px dashed var(--zs-color-border);
+  border-radius: var(--zs-radius-md);
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text-muted);
+}
+
+.material-page .empty-detail h2 {
+  color: var(--zs-color-text);
+}
+
+.material-page .error-banner {
+  border-color: var(--zs-color-danger);
+  background: var(--zs-color-danger-soft);
+  color: var(--zs-color-danger);
+}
+
+.material-page .success-banner {
+  border-color: var(--zs-color-success);
+  background: var(--zs-color-success-soft);
+  color: var(--zs-color-success);
+}
+
+.material-page .primary-button {
+  background: var(--zs-color-primary);
+  color: var(--zs-color-on-primary);
+}
+
+@media (max-width: 1366px) {
+  .material-page {
+    padding: var(--zs-space-4);
+  }
+
+  .material-layout {
+    grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  }
+
+  .material-related-panel {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 900px) {
+  .material-layout {
     grid-template-columns: 1fr;
   }
 }

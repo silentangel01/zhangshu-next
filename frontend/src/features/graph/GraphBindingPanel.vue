@@ -69,7 +69,7 @@ function submit() {
 .binding-panel {
   display: grid;
   gap: 10px;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--zs-color-border-soft);
   padding-top: 12px;
 }
 
@@ -84,13 +84,13 @@ p {
 }
 
 p {
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.76rem;
   font-weight: 900;
 }
 
 h2 {
-  color: #111827;
+  color: var(--zs-color-text);
   font-size: 0.96rem;
 }
 
@@ -100,7 +100,7 @@ label {
 }
 
 span {
-  color: #475569;
+  color: var(--zs-color-text-muted);
   font-size: 0.78rem;
   font-weight: 800;
 }
@@ -109,18 +109,18 @@ select,
 button {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid #cbd5e1;
-  border-radius: 7px;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-sm);
   padding: 8px 10px;
-  background: #ffffff;
-  color: #111827;
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
   font: inherit;
   font-size: 0.84rem;
 }
 
 button {
-  background: #2563eb;
-  color: #ffffff;
+  background: var(--zs-color-primary);
+  color: var(--zs-color-on-primary);
   font-weight: 800;
   cursor: pointer;
 }

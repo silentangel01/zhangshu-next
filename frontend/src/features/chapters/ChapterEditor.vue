@@ -94,7 +94,7 @@ const defaultAppearanceSettings: EditorAppearanceSettings = {
   selectedFontPreset: 'system',
   customFontFamily: '',
   fontSize: 16,
-  editorWidth: 'full',
+  editorWidth: 'wide',
   paragraphSpacing: 'normal',
   theme: 'plain',
 }
@@ -680,7 +680,7 @@ function getEditorMaxWidth(width: EditorWidth) {
   const widths: Record<EditorWidth, string> = {
     standard: '760px',
     wide: '920px',
-    full: '100%',
+    full: 'min(100%, 920px)',
   }
   return widths[width]
 }
@@ -688,19 +688,19 @@ function getEditorMaxWidth(width: EditorWidth) {
 function getEditorThemeStyle(theme: EditorTheme) {
   const themes: Record<EditorTheme, Record<string, string>> = {
     plain: {
-      background: '#fbfcfe',
-      borderColor: '#cfd7e3',
-      color: '#111827',
+      background: 'var(--zs-color-surface)',
+      borderColor: 'var(--zs-color-border)',
+      color: 'var(--zs-color-text)',
     },
     eye: {
-      background: '#fbfaf0',
-      borderColor: '#d7d3b8',
-      color: '#263025',
+      background: '#fff9ef',
+      borderColor: '#e0d2bc',
+      color: '#2d261f',
     },
     dark: {
-      background: '#1f2937',
-      borderColor: '#374151',
-      color: '#f8fafc',
+      background: '#182225',
+      borderColor: '#2b3a3f',
+      color: '#e7ecea',
     },
   }
   return themes[theme]
@@ -713,13 +713,17 @@ function getEditorThemeStyle(theme: EditorTheme) {
       <div class="editor-title">
         <h2>{{ chapter.title }}</h2>
         <div class="writing-status-line" aria-label="写作状态">
-          <span>当前字数：{{ localWordCount }}</span>
+          <span>当前字数 {{ localWordCount }}</span>
           <span aria-hidden="true">｜</span>
-          <span>本次写作：{{ sessionWritingMinutes }} 分钟</span>
+          <span>今日字数 --</span>
           <span aria-hidden="true">｜</span>
-          <span>速度：{{ sessionSpeedText }}<template v-if="sessionSpeedText !== '--'"> 字/小时</template></span>
+          <span>本小时 --</span>
           <span aria-hidden="true">｜</span>
-          <span>上次保存：{{ formattedLastSavedAt }}</span>
+          <span>本次写作 {{ sessionWritingMinutes }} 分钟</span>
+          <span aria-hidden="true">｜</span>
+          <span>速度 {{ sessionSpeedText }}<template v-if="sessionSpeedText !== '--'"> 字/小时</template></span>
+          <span aria-hidden="true">｜</span>
+          <span>上次保存 {{ formattedLastSavedAt }}</span>
           <span aria-hidden="true">｜</span>
           <span :class="{ warning: hasUnsavedChanges || errorMessage }">{{ saveStatusText }}</span>
         </div>
@@ -764,7 +768,7 @@ function getEditorThemeStyle(theme: EditorTheme) {
           </select>
         </label>
         <label>
-          <span>缩进</span>
+          <span>首行缩进</span>
           <select v-model="appearanceSettings.firstLineIndent">
             <option value="none">无</option>
             <option value="2em">2em</option>
@@ -775,15 +779,7 @@ function getEditorThemeStyle(theme: EditorTheme) {
           <select v-model="appearanceSettings.editorWidth">
             <option value="standard">标准</option>
             <option value="wide">宽</option>
-            <option value="full">撑满</option>
-          </select>
-        </label>
-        <label>
-          <span>模式</span>
-          <select v-model="appearanceSettings.theme">
-            <option value="plain">默认</option>
-            <option value="eye">护眼</option>
-            <option value="dark">深色</option>
+            <option value="full">舒展</option>
           </select>
         </label>
         <details ref="moreSettingsRef" class="more-settings" @toggle="handleMoreSettingsToggle">
@@ -829,7 +825,14 @@ function getEditorThemeStyle(theme: EditorTheme) {
                 <option value="comfortable">舒展</option>
               </select>
             </label>
-            <p class="font-helper">字体仅调用本机已安装字体，不随软件分发字体文件；未安装时会自动使用后备字体。</p>
+            <label>
+              <span>显示模式</span>
+              <select v-model="appearanceSettings.theme">
+                <option value="plain">默认</option>
+                <option value="eye">护眼</option>
+                <option value="dark">深色</option>
+              </select>
+            </label>
           </div>
         </details>
         <button
@@ -862,7 +865,8 @@ function getEditorThemeStyle(theme: EditorTheme) {
 <style scoped>
 .chapter-editor {
   display: grid;
-  gap: 12px;
+  gap: var(--zs-space-3);
+  min-width: 0;
 }
 
 .editor-toolbar {
@@ -871,39 +875,39 @@ function getEditorThemeStyle(theme: EditorTheme) {
 
 .editor-title {
   display: grid;
-  gap: 6px;
+  gap: var(--zs-space-1);
 }
 
 .editor-title h2 {
   margin: 0;
-  color: #111827;
-  font-size: 1.25rem;
-  line-height: 1.4;
+  color: var(--zs-color-text);
+  font-size: 1.12rem;
+  line-height: 1.35;
 }
 
 .writing-status-line {
   margin: 0;
-  color: #64748b;
-  font-size: 0.82rem;
+  color: var(--zs-color-text-muted);
+  font-size: 0.78rem;
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 8px;
+  gap: 2px var(--zs-space-2);
   align-items: center;
-  line-height: 1.5;
+  line-height: 1.45;
 }
 
 .writing-status-line .warning {
-  color: #9a3412;
+  color: var(--zs-color-warning);
   font-weight: 800;
 }
 
 .recovery-banner {
   display: grid;
-  gap: 10px;
-  border: 1px solid #facc15;
-  border-radius: 8px;
-  padding: 12px;
-  background: #fffbeb;
+  gap: var(--zs-space-2);
+  border: 1px solid var(--zs-color-warning);
+  border-radius: var(--zs-radius-md);
+  padding: var(--zs-space-3);
+  background: var(--zs-color-warning-soft);
 }
 
 .recovery-banner h3,
@@ -912,38 +916,38 @@ function getEditorThemeStyle(theme: EditorTheme) {
 }
 
 .recovery-banner h3 {
-  color: #92400e;
+  color: var(--zs-color-warning);
   font-size: 1rem;
 }
 
 .recovery-banner p {
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.88rem;
 }
 
 .recovery-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--zs-space-2);
 }
 
 .draft-preview {
   max-height: 220px;
   overflow: auto;
-  border: 1px solid #fde68a;
-  border-radius: 6px;
-  padding: 10px;
-  background: #ffffff;
-  color: #111827;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-sm);
+  padding: var(--zs-space-3);
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
   white-space: pre-wrap;
 }
 
 .save-button,
 .secondary-button,
 .primary-outline-button {
-  min-height: 38px;
-  border-radius: 6px;
-  padding: 0 14px;
+  min-height: 34px;
+  border-radius: var(--zs-radius-sm);
+  padding: 0 var(--zs-space-3);
   font: inherit;
   font-weight: 800;
   cursor: pointer;
@@ -951,20 +955,20 @@ function getEditorThemeStyle(theme: EditorTheme) {
 
 .save-button {
   border: 1px solid transparent;
-  background: #2563eb;
-  color: #ffffff;
+  background: var(--zs-color-primary);
+  color: var(--zs-color-on-primary);
 }
 
 .secondary-button {
-  border: 1px solid #cfd7e3;
-  background: #ffffff;
-  color: #374151;
+  border: 1px solid var(--zs-color-border);
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
 }
 
 .primary-outline-button {
-  border: 1px solid #2563eb;
-  background: #eff6ff;
-  color: #2563eb;
+  border: 1px solid var(--zs-color-primary);
+  background: var(--zs-color-primary-soft);
+  color: var(--zs-color-primary);
 }
 
 .save-button:disabled {
@@ -975,43 +979,44 @@ function getEditorThemeStyle(theme: EditorTheme) {
 .editor-textarea-shell {
   width: 100%;
   justify-self: center;
+  min-width: 0;
 }
 
 .writing-toolbar {
   position: relative;
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--zs-space-2);
   align-items: center;
-  margin-bottom: 10px;
-  color: #64748b;
-  font-size: 0.82rem;
+  margin-bottom: var(--zs-space-2);
+  color: var(--zs-color-text-muted);
+  font-size: 0.8rem;
 }
 
 .writing-toolbar label {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--zs-space-1);
 }
 
 .writing-toolbar select {
   min-height: 30px;
-  border: 1px solid #d8dee9;
-  border-radius: 6px;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-sm);
   padding: 0 8px;
-  background: #ffffff;
-  color: #111827;
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
   font: inherit;
 }
 
 .writing-toolbar input {
   min-height: 30px;
   box-sizing: border-box;
-  border: 1px solid #d8dee9;
-  border-radius: 6px;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-sm);
   padding: 0 8px;
-  background: #ffffff;
-  color: #111827;
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
   font: inherit;
 }
 
@@ -1028,11 +1033,11 @@ function getEditorThemeStyle(theme: EditorTheme) {
   display: inline-flex;
   align-items: center;
   min-height: 30px;
-  border: 1px solid #d8dee9;
-  border-radius: 6px;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-sm);
   padding: 0 9px;
-  background: #ffffff;
-  color: #374151;
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
   font-weight: 800;
   list-style: none;
   cursor: pointer;
@@ -1048,13 +1053,13 @@ function getEditorThemeStyle(theme: EditorTheme) {
   right: 0;
   z-index: 10;
   display: grid;
-  gap: 10px;
-  min-width: 220px;
-  border: 1px solid #d8dee9;
-  border-radius: 8px;
-  padding: 12px;
-  background: #ffffff;
-  box-shadow: 0 16px 36px rgb(20 24 31 / 12%);
+  gap: var(--zs-space-2);
+  min-width: 240px;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-md);
+  padding: var(--zs-space-3);
+  background: var(--zs-color-surface);
+  box-shadow: var(--zs-shadow-md);
 }
 
 .more-settings-menu label {
@@ -1062,30 +1067,24 @@ function getEditorThemeStyle(theme: EditorTheme) {
   justify-content: space-between;
 }
 
-.font-helper {
-  margin: 0;
-  color: #64748b;
-  font-size: 0.78rem;
-  line-height: 1.55;
-}
-
 .editor-textarea {
   width: 100%;
-  min-height: 420px;
+  min-height: clamp(420px, calc(100vh - 270px), 760px);
   box-sizing: border-box;
-  border: 1px solid #d8dee9;
-  border-radius: 8px;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-md);
   padding: 20px;
   resize: vertical;
-  color: #111827;
+  color: var(--zs-color-text);
   font: inherit;
   white-space: pre-wrap;
   box-shadow: inset 0 1px 2px rgb(15 23 42 / 4%);
 }
 
 .editor-textarea:focus {
-  border-color: #2563eb;
-  outline: 3px solid rgb(37 99 235 / 15%);
+  border-color: var(--zs-color-primary);
+  outline: none;
+  box-shadow: var(--zs-shadow-focus), inset 0 1px 2px rgb(15 23 42 / 4%);
 }
 
 .editor-messages {
@@ -1100,32 +1099,44 @@ function getEditorThemeStyle(theme: EditorTheme) {
 }
 
 .error-message {
-  color: #b42318;
+  color: var(--zs-color-danger);
 }
 
 .recovery-message {
-  color: #047857;
+  color: var(--zs-color-success);
 }
 
-@media (max-width: 720px) {
+@media (max-width: 1320px) {
+  .writing-toolbar {
+    gap: var(--zs-space-1) var(--zs-space-2);
+  }
+
+  .writing-toolbar label span {
+    font-size: 0.76rem;
+  }
+}
+
+@media (max-width: 1099px) {
   .save-button,
   .secondary-button,
   .primary-outline-button {
-    width: 100%;
+    width: auto;
   }
 
   .writing-toolbar {
-    align-items: stretch;
-    flex-direction: column;
+    align-items: center;
   }
 
-  .writing-toolbar label,
-  .writing-toolbar select,
-  .more-settings,
-  .more-settings summary {
-    width: 100%;
+  .writing-status-line {
+    font-size: 0.74rem;
   }
 
+  .editor-textarea {
+    min-height: clamp(380px, calc(100vh - 280px), 680px);
+  }
+}
+
+@media (max-width: 720px) {
   .more-settings-menu {
     position: static;
     margin-top: 8px;
