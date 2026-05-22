@@ -217,6 +217,7 @@ async function loadAll() {
     await loadBindingData()
     await nextTick()
     applyStoredGraphViewport()
+    focusRouteNode()
   } catch (error) {
     void error
     errorMessage.value = '关系图加载失败，请稍后重试。'
@@ -337,6 +338,22 @@ function selectNode(node: GraphNode) {
 }
 
 function selectNodeFromList(node: GraphNode) {
+  selectNode(node)
+  canvasRef.value?.centerOnNode(node.id)
+}
+
+function focusRouteNode() {
+  const focusNodeId = Array.isArray(route.query.focusNodeId)
+    ? route.query.focusNodeId[0]
+    : route.query.focusNodeId
+  if (!focusNodeId) {
+    return
+  }
+  const node = nodes.value.find((item) => item.id === focusNodeId)
+  if (!node) {
+    errorMessage.value = '未找到对应关系图节点'
+    return
+  }
   selectNode(node)
   canvasRef.value?.centerOnNode(node.id)
 }
@@ -496,6 +513,17 @@ async function saveSelectedNode() {
     errorMessage.value = '节点标题不能为空。'
     return
   }
+  const boundType = nodeDraft.bound_type
+  const boundId = nodeDraft.bound_id.trim()
+  if (boundType && boundType !== 'custom' && boundId) {
+    const duplicate = findExistingBoundNode(boundType, boundId)
+    if (duplicate && duplicate.id !== selectedNode.value.id) {
+      selectNode(duplicate)
+      canvasRef.value?.centerOnNode(duplicate.id)
+      errorMessage.value = '该绑定资料已存在关系图节点，已打开现有节点。'
+      return
+    }
+  }
   try {
     isSaving.value = true
     const saved = await updateGraphNode(selectedNode.value.id, {
@@ -639,6 +667,14 @@ function duplicateNode(node: GraphNode) {
 }
 
 function createFromBinding(boundType: Exclude<GraphNodeBoundType, 'custom'>, boundId: string) {
+  const existingNode = findExistingBoundNode(boundType, boundId)
+  if (existingNode) {
+    selectNode(existingNode)
+    canvasRef.value?.centerOnNode(existingNode.id)
+    successMessage.value = '已打开现有关系图节点'
+    errorMessage.value = ''
+    return
+  }
   const option = bindingOptions.value[boundType].find((item) => item.id === boundId)
   if (!option) {
     errorMessage.value = '绑定对象不存在或已被删除。'
@@ -652,6 +688,14 @@ function createFromBinding(boundType: Exclude<GraphNodeBoundType, 'custom'>, bou
     bound_id: option.id,
     summary: option.summary,
   })
+}
+
+function findExistingBoundNode(boundType: Exclude<GraphNodeBoundType, 'custom'>, boundId: string) {
+  return nodes.value.find((node) =>
+    node.bound_type === boundType
+    && node.bound_id === boundId
+    && node.visibility !== 'hidden',
+  ) ?? null
 }
 
 async function createMaterialFromSelectedNode() {
@@ -803,6 +847,7 @@ function syncSelectedNodeFromBound() {
   nodeDraft.title = syncData.title
   nodeDraft.summary = syncData.summary
   nodeDraft.node_type = syncData.nodeType
+  void saveSelectedNode()
 }
 
 function getBoundSyncData(): BoundSyncData | null {

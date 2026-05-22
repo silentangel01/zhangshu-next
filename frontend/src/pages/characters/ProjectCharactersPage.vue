@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 import {
   createCharacter,
@@ -22,8 +22,10 @@ import {
 } from '@/entities/character/types'
 import { getProject } from '@/entities/project/api'
 import type { Project } from '@/entities/project/types'
+import { ensureMaterialGraphNode, graphFocusRoute } from '@/features/graph/useMaterialGraphNode'
 
 const route = useRoute()
+const router = useRouter()
 
 const project = ref<Project | null>(null)
 const characters = ref<Character[]>([])
@@ -209,6 +211,23 @@ async function handleDeleteCharacter() {
     await refreshCharacters()
     successMessage.value = '人物已删除。'
   }, '删除人物失败。')
+}
+
+async function handleOpenGraphNode() {
+  if (!selectedCharacter.value || !projectId.value) {
+    return
+  }
+  await saveSafe(async () => {
+    const node = await ensureMaterialGraphNode({
+      projectId: projectId.value,
+      boundType: 'character',
+      boundId: selectedCharacter.value!.id,
+      nodeType: 'character',
+      title: selectedCharacter.value!.name,
+      summary: selectedCharacter.value!.summary || selectedCharacter.value!.biography,
+    })
+    await router.push(graphFocusRoute(projectId.value, node.id))
+  }, '打开关系图节点失败。')
 }
 
 async function saveSafe(action: () => Promise<void>, fallback: string) {
@@ -398,6 +417,14 @@ function getErrorMessage(error: unknown, fallback: string): string {
         </div>
 
         <footer class="editor-actions">
+          <button
+            class="secondary-button"
+            type="button"
+            :disabled="isSaving || isCreating || !selectedCharacter"
+            @click="handleOpenGraphNode"
+          >
+            在关系图中查看
+          </button>
           <button
             class="danger-button"
             type="button"
