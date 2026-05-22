@@ -21,6 +21,7 @@ import type { Project } from '@/entities/project/types'
 import { listVolumes } from '@/entities/volume/api'
 import type { Volume } from '@/entities/volume/types'
 import CreateOutlineDialog from '@/features/outlines/CreateOutlineDialog.vue'
+import MaterialLinkPanel from '@/features/material-links/MaterialLinkPanel.vue'
 import OutlineEditor from '@/features/outlines/OutlineEditor.vue'
 import OutlineTree from '@/features/outlines/OutlineTree.vue'
 
@@ -237,6 +238,13 @@ function getErrorMessage(error: unknown, fallback: string): string {
           :is-saving="isSaving"
           @save="handleSaveOutline"
           @delete="handleDeleteOutline"
+        />
+        <MaterialLinkPanel
+          v-if="selectedOutline"
+          :project-id="projectId"
+          source-type="outline"
+          :source-id="selectedOutline.id"
+          :source-title="selectedOutline.title"
         />
 
         <article v-else class="empty-detail">

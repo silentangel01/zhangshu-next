@@ -23,6 +23,7 @@ import {
 import { getProject } from '@/entities/project/api'
 import type { Project } from '@/entities/project/types'
 import { ensureMaterialGraphNode, graphFocusRoute } from '@/features/graph/useMaterialGraphNode'
+import MaterialLinkPanel from '@/features/material-links/MaterialLinkPanel.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -438,6 +439,13 @@ function getErrorMessage(error: unknown, fallback: string): string {
           </button>
         </footer>
       </form>
+      <MaterialLinkPanel
+        v-if="selectedCharacter"
+        :project-id="projectId"
+        source-type="character"
+        :source-id="selectedCharacter.id"
+        :source-title="selectedCharacter.name"
+      />
     </section>
   </main>
 </template>
