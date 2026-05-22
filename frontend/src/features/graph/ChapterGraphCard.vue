@@ -289,7 +289,7 @@ function getVisibilityClass(visibility: GraphNode['visibility']) {
         <p class="eyebrow">本章关系图</p>
         <h2>关系图摘要</h2>
       </div>
-      <RouterLink class="graph-link" :to="`/projects/${projectId}/graph`">查看完整关系图</RouterLink>
+      <RouterLink class="graph-link" :to="`/projects/${projectId}/graph`">完整关系图</RouterLink>
     </header>
 
     <p class="helper-note">仅显示与当前章节资料显式关联的关系节点。当前结果来自显式绑定，暂未启用智能匹配。</p>

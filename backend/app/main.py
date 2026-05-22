@@ -1,5 +1,10 @@
+import os
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.backups import router as backups_router
 from app.api.chapter_versions import router as chapter_versions_router
@@ -60,3 +65,31 @@ app.include_router(settings_router)
 app.include_router(clues_router)
 app.include_router(graphs_router)
 app.include_router(timeline_router)
+
+
+def _mount_frontend_static() -> None:
+    frontend_dist = os.environ.get("ZHANGSHU_FRONTEND_DIST")
+    if frontend_dist is None:
+        frontend_dist_path = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+    else:
+        frontend_dist_path = Path(frontend_dist)
+
+    index_path = frontend_dist_path / "index.html"
+    assets_path = frontend_dist_path / "assets"
+    if not index_path.exists():
+        return
+
+    if assets_path.exists():
+        app.mount("/assets", StaticFiles(directory=assets_path), name="frontend-assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def serve_frontend_app(full_path: str):
+        if full_path.startswith(("api/", "docs", "openapi.json", "redoc", "health")):
+            return FileResponse(index_path)
+        target_path = frontend_dist_path / full_path
+        if target_path.is_file():
+            return FileResponse(target_path)
+        return FileResponse(index_path)
+
+
+_mount_frontend_static()

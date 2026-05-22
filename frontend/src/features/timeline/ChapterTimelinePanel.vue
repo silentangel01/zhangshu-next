@@ -322,7 +322,7 @@ function getEventPositionRatio(event: TimelineEvent) {
         <h2>时间轴摘要</h2>
       </div>
       <RouterLink v-if="chapterId" class="timeline-link" :to="`/projects/${projectId}/timeline`">
-        查看完整时间轴
+        完整时间轴
       </RouterLink>
     </header>
 

@@ -70,8 +70,11 @@ type RenderedEdge = {
   id: string
   edge: TimelineEdge
   path: string
+  labelX: number
+  labelY: number
   dashed: boolean
   hasArrow: boolean
+  curved: boolean
 }
 
 const project = ref<Project | null>(null)
@@ -371,14 +374,21 @@ const canvasBodyRef = ref<HTMLElement | null>(null)
 const trackLaneRefs = ref<Record<string, HTMLElement | null>>({})
 const eventNodeRefs = ref<Record<string, HTMLElement | null>>({})
 let edgeMeasureFrameId: number | null = null
+let timelineResizeObserver: ResizeObserver | null = null
 
 onMounted(() => {
   void loadWorkspace()
   window.addEventListener('resize', scheduleMeasureEdges)
+  void nextTick(() => {
+    setupTimelineResizeObserver()
+    requestMeasureEdges()
+  })
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', scheduleMeasureEdges)
+  timelineResizeObserver?.disconnect()
+  timelineResizeObserver = null
   if (edgeMeasureFrameId !== null) {
     window.cancelAnimationFrame(edgeMeasureFrameId)
     edgeMeasureFrameId = null
@@ -396,6 +406,20 @@ watch(
     void scheduleMeasureEdges()
   },
   { deep: true },
+)
+
+watch(
+  () => [panelKind.value, panelMode.value, selectedTrackId.value, selectedEventId.value, selectedEdgeId.value, hasDetailSelection.value],
+  () => {
+    requestMeasureEdges()
+  },
+)
+
+watch(
+  () => rows.value.map((row) => `${row.id}:${row.events.length}`).join('|'),
+  () => {
+    requestMeasureEdges()
+  },
 )
 
 async function loadWorkspace() {
@@ -980,17 +1004,41 @@ function truncateText(value: string, limit: number) {
 function registerEventNode(eventId: string, element: Element | null) {
   if (element instanceof HTMLElement) {
     eventNodeRefs.value[eventId] = element
+    requestMeasureEdges()
     return
   }
   delete eventNodeRefs.value[eventId]
+  requestMeasureEdges()
 }
 
 function registerTrackLane(trackId: string, element: Element | null) {
   if (element instanceof HTMLElement) {
     trackLaneRefs.value[trackId] = element
+    requestMeasureEdges()
     return
   }
   delete trackLaneRefs.value[trackId]
+  requestMeasureEdges()
+}
+
+function setupTimelineResizeObserver() {
+  timelineResizeObserver?.disconnect()
+  timelineResizeObserver = null
+
+  if (typeof ResizeObserver === 'undefined') {
+    return
+  }
+
+  timelineResizeObserver = new ResizeObserver(() => {
+    requestMeasureEdges()
+  })
+
+  if (canvasViewportRef.value) {
+    timelineResizeObserver.observe(canvasViewportRef.value)
+  }
+  if (canvasBodyRef.value) {
+    timelineResizeObserver.observe(canvasBodyRef.value)
+  }
 }
 
 async function scheduleMeasureEdges() {
@@ -1023,6 +1071,21 @@ function measureEdgeOverlay() {
   const scrollLeft = viewport.scrollLeft
   const scrollTop = viewport.scrollTop
   const nextPoints: RenderedEdge[] = []
+  const nodeBoxes = Object.entries(eventNodeRefs.value)
+    .flatMap(([eventId, node]) => {
+      if (!node) {
+        return []
+      }
+      const rect = node.getBoundingClientRect()
+      return [{
+        eventId,
+        left: rect.left - bodyRect.left + scrollLeft,
+        right: rect.right - bodyRect.left + scrollLeft,
+        top: rect.top - bodyRect.top + scrollTop,
+        bottom: rect.bottom - bodyRect.top + scrollTop,
+      }]
+    })
+  const similarEdgeCounts = new Map<string, number>()
 
   for (const edge of visibleEdges.value) {
     const fromNode = eventNodeRefs.value[edge.from_event_id]
@@ -1042,13 +1105,23 @@ function measureEdgeOverlay() {
       y: toRect.top - bodyRect.top + scrollTop + toRect.height / 2,
     }
 
-    const path = buildEdgePath(start.x, start.y, end.x, end.y, edge.line_style)
+    const areaKey = buildEdgeAreaKey(start.x, start.y, end.x, end.y)
+    const similarIndex = similarEdgeCounts.get(areaKey) ?? 0
+    similarEdgeCounts.set(areaKey, similarIndex + 1)
+
+    const obstacleBoxes = nodeBoxes.filter(
+      (box) => box.eventId !== edge.from_event_id && box.eventId !== edge.to_event_id,
+    )
+    const route = buildEdgeRoute(start.x, start.y, end.x, end.y, edge.line_style, similarIndex, obstacleBoxes)
     nextPoints.push({
       id: edge.id,
       edge,
-      path,
+      path: route.path,
+      labelX: route.labelX,
+      labelY: route.labelY,
       dashed: edge.line_style === 'dashed',
       hasArrow: edge.line_style === 'arrow',
+      curved: route.curved,
     })
   }
 
@@ -1057,16 +1130,96 @@ function measureEdgeOverlay() {
   canvasHeight.value = Math.max(body.scrollHeight, body.clientHeight)
 }
 
-function buildEdgePath(x1: number, y1: number, x2: number, y2: number, style: TimelineEdgeLineStyle) {
-  if (style === 'arc') {
+type NodeBox = {
+  eventId: string
+  left: number
+  right: number
+  top: number
+  bottom: number
+}
+
+function buildEdgeAreaKey(x1: number, y1: number, x2: number, y2: number) {
+  const left = Math.round(Math.min(x1, x2) / 80)
+  const right = Math.round(Math.max(x1, x2) / 80)
+  const top = Math.round(Math.min(y1, y2) / 60)
+  const bottom = Math.round(Math.max(y1, y2) / 60)
+  return `${left}:${right}:${top}:${bottom}`
+}
+
+function buildEdgeRoute(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  style: TimelineEdgeLineStyle,
+  similarIndex: number,
+  obstacleBoxes: NodeBox[],
+) {
+  const crossesTrack = Math.abs(y2 - y1) > 36
+  const overlapsNode = obstacleBoxes.some((box) => lineIntersectsBox(x1, y1, x2, y2, box, 10))
+  const shouldCurve = style === 'arc' || crossesTrack || overlapsNode
+  const distance = Math.hypot(x2 - x1, y2 - y1)
+  const siblingOffset = ((similarIndex % 5) - 2) * 12
+
+  if (shouldCurve) {
     const distance = Math.abs(x2 - x1)
-    const lift = Math.max(32, Math.min(120, distance / 4))
+    const liftDirection = y2 >= y1 ? -1 : 1
+    const lift = Math.max(34, Math.min(140, distance / 4 + Math.abs(y2 - y1) / 3))
     const controlX = (x1 + x2) / 2
-    const controlY = Math.min(y1, y2) - lift
-    return `M ${x1} ${y1} Q ${controlX} ${controlY} ${x2} ${y2}`
+    const controlY = (y1 + y2) / 2 + liftDirection * lift + siblingOffset
+    return {
+      path: `M ${x1} ${y1} Q ${controlX} ${controlY} ${x2} ${y2}`,
+      labelX: controlX,
+      labelY: controlY - 8,
+      curved: true,
+    }
   }
 
-  return `M ${x1} ${y1} L ${x2} ${y2}`
+  const normalX = distance > 0 ? -(y2 - y1) / distance : 0
+  const normalY = distance > 0 ? (x2 - x1) / distance : 0
+  const offsetX = normalX * siblingOffset
+  const offsetY = normalY * siblingOffset
+  return {
+    path: `M ${x1 + offsetX} ${y1 + offsetY} L ${x2 + offsetX} ${y2 + offsetY}`,
+    labelX: (x1 + x2) / 2 + offsetX,
+    labelY: (y1 + y2) / 2 + offsetY - 8,
+    curved: false,
+  }
+}
+
+function lineIntersectsBox(x1: number, y1: number, x2: number, y2: number, box: NodeBox, padding: number) {
+  const left = box.left - padding
+  const right = box.right + padding
+  const top = box.top - padding
+  const bottom = box.bottom + padding
+
+  if ((x1 >= left && x1 <= right && y1 >= top && y1 <= bottom) || (x2 >= left && x2 <= right && y2 >= top && y2 <= bottom)) {
+    return true
+  }
+
+  return (
+    segmentsIntersect(x1, y1, x2, y2, left, top, right, top) ||
+    segmentsIntersect(x1, y1, x2, y2, right, top, right, bottom) ||
+    segmentsIntersect(x1, y1, x2, y2, right, bottom, left, bottom) ||
+    segmentsIntersect(x1, y1, x2, y2, left, bottom, left, top)
+  )
+}
+
+function segmentsIntersect(
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+  cx: number,
+  cy: number,
+  dx: number,
+  dy: number,
+) {
+  const ccw = (px: number, py: number, qx: number, qy: number, rx: number, ry: number) =>
+    (ry - py) * (qx - px) > (qy - py) * (rx - px)
+
+  return ccw(ax, ay, cx, cy, dx, dy) !== ccw(bx, by, cx, cy, dx, dy) &&
+    ccw(ax, ay, bx, by, cx, cy) !== ccw(ax, ay, bx, by, dx, dy)
 }
 
 function getNodeClass(event: TimelineEvent) {
@@ -1443,14 +1596,30 @@ function clearDragState() {
                   <path d="M0,0 L0,6 L8,3 z" fill="#64748b" />
                 </marker>
               </defs>
-              <path
+              <g
                 v-for="edge in edgePoints"
                 :key="edge.id"
-                :d="edge.path"
-                :class="{ dashed: edge.dashed, selected: selectedEdgeId === edge.id }"
-                :marker-end="edge.hasArrow ? 'url(#timeline-arrow)' : undefined"
+                class="timeline-edge"
+                :class="{ selected: selectedEdgeId === edge.id, curved: edge.curved }"
                 @click.stop="selectEdge(edge.edge)"
-              />
+              >
+                <path class="edge-hitbox" :d="edge.path" />
+                <path
+                  class="edge-line"
+                  :d="edge.path"
+                  :class="{ dashed: edge.dashed }"
+                  :marker-end="edge.hasArrow ? 'url(#timeline-arrow)' : undefined"
+                />
+                <text
+                  v-if="edge.edge.label || selectedEdgeId === edge.id"
+                  class="edge-floating-label"
+                  :x="edge.labelX"
+                  :y="edge.labelY"
+                  text-anchor="middle"
+                >
+                  {{ edge.edge.label || getEdgeLabel(edge.edge) }}
+                </text>
+              </g>
             </svg>
 
             <article
@@ -2215,23 +2384,49 @@ h2 {
   pointer-events: auto;
 }
 
-.timeline-edge-overlay path {
+.timeline-edge {
+  cursor: pointer;
+}
+
+.timeline-edge .edge-line {
   fill: none;
   stroke: #94a3b8;
   stroke-width: 2;
   opacity: 0.72;
-  pointer-events: stroke;
-  cursor: pointer;
+  pointer-events: none;
 }
 
-.timeline-edge-overlay path.dashed {
+.timeline-edge .edge-hitbox {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 16;
+  pointer-events: stroke;
+}
+
+.timeline-edge .edge-line.dashed {
   stroke-dasharray: 8 6;
 }
 
-.timeline-edge-overlay path.selected {
+.timeline-edge.selected .edge-line {
   stroke: #2563eb;
   stroke-width: 3;
   opacity: 0.98;
+}
+
+.edge-floating-label {
+  fill: #1e293b;
+  stroke: #ffffff;
+  stroke-width: 4;
+  paint-order: stroke;
+  font-size: 0.75rem;
+  font-weight: 800;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.timeline-edge:hover .edge-floating-label,
+.timeline-edge.selected .edge-floating-label {
+  opacity: 1;
 }
 
 .track-row {

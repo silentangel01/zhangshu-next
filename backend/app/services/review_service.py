@@ -15,6 +15,9 @@ from app.repositories.review_repo import ReviewRepository
 from app.schemas.review import (
     CheckResultRead,
     ProhibitedTermCreate,
+    ProhibitedTermExportItem,
+    ProhibitedTermExportPayload,
+    ProhibitedTermImportReport,
     ProhibitedTermUpdate,
     ReviewCheckRequest,
     ReviewCheckResponse,
@@ -23,6 +26,9 @@ from app.schemas.review import (
 
 class ReviewNotFoundError(Exception):
     pass
+
+
+ALLOWED_PROHIBITED_TERM_SEVERITIES = {"low", "medium", "high"}
 
 
 class ReviewService:
@@ -71,6 +77,112 @@ class ReviewService:
             raise ReviewNotFoundError()
         self.db.delete(term)
         self.db.commit()
+
+    def export_prohibited_terms(self) -> ProhibitedTermExportPayload:
+        terms = self.repo.list_prohibited_terms()
+        return ProhibitedTermExportPayload(
+            exported_at=datetime.now(timezone.utc),
+            terms=[
+                ProhibitedTermExportItem(
+                    term=term.term,
+                    severity=term.severity,
+                    suggestion=term.suggestion,
+                    enabled=term.enabled,
+                )
+                for term in terms
+            ],
+        )
+
+    def import_prohibited_terms(self, payload: dict) -> ProhibitedTermImportReport:
+        errors: list[str] = []
+        imported_count = 0
+        updated_count = 0
+        skipped_count = 0
+
+        if payload.get("app") != "Zhangshu" or payload.get("type") != "prohibited_terms":
+            return ProhibitedTermImportReport(
+                imported_count=0,
+                updated_count=0,
+                skipped_count=0,
+                errors=["文件类型不正确。"],
+            )
+
+        raw_terms = payload.get("terms")
+        if not isinstance(raw_terms, list):
+            return ProhibitedTermImportReport(
+                imported_count=0,
+                updated_count=0,
+                skipped_count=0,
+                errors=["缺少 terms 数组。"],
+            )
+
+        seen_terms: set[str] = set()
+        for index, raw_item in enumerate(raw_terms, start=1):
+            if not isinstance(raw_item, dict):
+                skipped_count += 1
+                errors.append(f"第 {index} 条格式不正确。")
+                continue
+
+            term_text = str(raw_item.get("term", "")).strip()
+            if not term_text:
+                skipped_count += 1
+                errors.append(f"第 {index} 条缺少词条。")
+                continue
+            if len(term_text) > 255:
+                skipped_count += 1
+                errors.append(f"第 {index} 条词条过长。")
+                continue
+
+            term_key = term_text.casefold()
+            if term_key in seen_terms:
+                skipped_count += 1
+                continue
+            seen_terms.add(term_key)
+
+            severity = str(raw_item.get("severity", "medium")).strip() or "medium"
+            if severity not in ALLOWED_PROHIBITED_TERM_SEVERITIES:
+                skipped_count += 1
+                errors.append(f"第 {index} 条严重程度无效。")
+                continue
+
+            enabled_value = raw_item.get("enabled", True)
+            if not isinstance(enabled_value, bool):
+                skipped_count += 1
+                errors.append(f"第 {index} 条启用状态无效。")
+                continue
+
+            suggestion = raw_item.get("suggestion", "")
+            if suggestion is None:
+                suggestion = ""
+            suggestion = str(suggestion)
+
+            existing = self.repo.get_term_by_text(term_text)
+            if existing:
+                existing.severity = severity
+                existing.suggestion = suggestion
+                existing.enabled = enabled_value
+                existing.updated_at = datetime.now(timezone.utc)
+                updated_count += 1
+                continue
+
+            self.db.add(
+                ProhibitedTerm(
+                    id=str(uuid4()),
+                    term=term_text,
+                    severity=severity,
+                    suggestion=suggestion,
+                    enabled=enabled_value,
+                )
+            )
+            imported_count += 1
+
+        self.db.commit()
+        return ProhibitedTermImportReport(
+            imported_count=imported_count,
+            updated_count=updated_count,
+            skipped_count=skipped_count,
+            errors=errors,
+        )
 
     def run_check(self, project_id: str, data: ReviewCheckRequest) -> ReviewCheckResponse:
         self._ensure_project(project_id)

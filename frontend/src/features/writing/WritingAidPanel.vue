@@ -91,13 +91,6 @@ function isAidTab(value: unknown): value is AidTab {
 
 <template>
   <aside class="writing-aid-panel">
-    <header class="panel-header">
-      <div>
-        <p class="eyebrow">写作资料与辅助</p>
-        <h2>资料面板</h2>
-      </div>
-    </header>
-
     <nav class="tab-list" aria-label="写作资料分类">
       <button
         v-for="tab in tabs"
@@ -186,27 +179,11 @@ function isAidTab(value: unknown): value is AidTab {
   box-shadow: 0 10px 28px rgb(20 24 31 / 6%);
 }
 
-.panel-header {
-  display: grid;
-  gap: 10px;
-}
-
 .eyebrow,
 h2,
 .state-message,
 .status-message {
   margin: 0;
-}
-
-.eyebrow {
-  color: #64748b;
-  font-size: 0.75rem;
-  font-weight: 800;
-}
-
-h2 {
-  color: #111827;
-  font-size: 1.05rem;
 }
 
 .tab-list {

@@ -51,6 +51,28 @@ class ProhibitedTermRead(BaseModel):
     updated_at: datetime
 
 
+class ProhibitedTermExportItem(BaseModel):
+    term: str
+    severity: str = "medium"
+    suggestion: str = ""
+    enabled: bool = True
+
+
+class ProhibitedTermExportPayload(BaseModel):
+    app: str = "Zhangshu"
+    type: str = "prohibited_terms"
+    version: int = 1
+    exported_at: datetime
+    terms: list[ProhibitedTermExportItem]
+
+
+class ProhibitedTermImportReport(BaseModel):
+    imported_count: int
+    updated_count: int
+    skipped_count: int
+    errors: list[str]
+
+
 class ReviewCheckRequest(BaseModel):
     scope: ReviewScope
     chapter_id: str | None = None

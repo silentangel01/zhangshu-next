@@ -1,4 +1,5 @@
 from collections.abc import Generator
+import os
 from pathlib import Path
 
 from uuid import uuid4
@@ -8,8 +9,8 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
-DATABASE_DIR = BACKEND_DIR.parent / "data"
-DATABASE_PATH = DATABASE_DIR / "zhangshu_dev.sqlite3"
+DATABASE_DIR = Path(os.environ.get("ZHANGSHU_DATA_DIR", BACKEND_DIR.parent / "data")).resolve()
+DATABASE_PATH = DATABASE_DIR / os.environ.get("ZHANGSHU_DB_FILENAME", "zhangshu_dev.sqlite3")
 DATABASE_URL = f"sqlite:///{DATABASE_PATH.as_posix()}"
 
 
@@ -74,11 +75,17 @@ def _ensure_timeline_edge_columns() -> bool:
             )
             added_temporal_relation = True
 
-        connection.execute(
+        missing_temporal_relation_count = connection.scalar(
             text(
-                "UPDATE timeline_edges SET temporal_relation='unordered' WHERE temporal_relation IS NULL OR temporal_relation=''"
+                "SELECT COUNT(*) FROM timeline_edges WHERE temporal_relation IS NULL OR temporal_relation=''"
             )
         )
+        if missing_temporal_relation_count:
+            connection.execute(
+                text(
+                    "UPDATE timeline_edges SET temporal_relation='unordered' WHERE temporal_relation IS NULL OR temporal_relation=''"
+                )
+            )
 
     return added_temporal_relation
 

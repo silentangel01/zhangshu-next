@@ -24,6 +24,13 @@ export interface ProhibitedTermUpdatePayload {
   enabled?: boolean
 }
 
+export interface ProhibitedTermImportReport {
+  imported_count: number
+  updated_count: number
+  skipped_count: number
+  errors: string[]
+}
+
 export interface ReviewCheckPayload {
   scope: ReviewScope
   chapter_id?: string | null
