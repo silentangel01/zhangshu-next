@@ -215,8 +215,8 @@ function handleCreateFromBinding(boundType: Exclude<GraphNodeBoundType, 'custom'
 
     <template v-else>
       <section class="placeholder">
-        <h2>请选择节点或关系查看详情。</h2>
-        <p>快速创建</p>
+        <h2>请选择节点或关系。</h2>
+        <p>可从资料创建节点。</p>
       </section>
       <GraphBindingPanel :options="bindingOptions" @create-from-binding="handleCreateFromBinding" />
     </template>
@@ -227,12 +227,12 @@ function handleCreateFromBinding(boundType: Exclude<GraphNodeBoundType, 'custom'
 .graph-inspector {
   display: grid;
   align-content: start;
-  gap: 14px;
+  gap: var(--zs-space-3);
   min-width: 0;
-  border: 1px solid #d8dee9;
-  border-radius: 8px;
-  padding: 14px;
-  background: #ffffff;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-md);
+  padding: var(--zs-space-3);
+  background: var(--zs-color-surface);
   overflow: auto;
 }
 
@@ -243,7 +243,7 @@ function handleCreateFromBinding(boundType: Exclude<GraphNodeBoundType, 'custom'
 }
 
 .inspector-header {
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--zs-color-border-soft);
   padding-bottom: 10px;
 }
 
@@ -257,26 +257,26 @@ function handleCreateFromBinding(boundType: Exclude<GraphNodeBoundType, 'custom'
 }
 
 .inspector-header p {
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.76rem;
   font-weight: 900;
 }
 
 .inspector-header h2,
 .placeholder h2 {
-  color: #111827;
+  color: var(--zs-color-text);
   font-size: 1rem;
 }
 
 .field-section {
-  border: 1px solid #eef2f7;
-  border-radius: 8px;
+  border: 1px solid var(--zs-color-border-soft);
+  border-radius: var(--zs-radius-md);
   padding: 10px;
-  background: #fbfdff;
+  background: var(--zs-color-surface-soft);
 }
 
 .field-section h3 {
-  color: #334155;
+  color: var(--zs-color-text);
   font-size: 0.84rem;
 }
 
@@ -297,7 +297,7 @@ label {
 }
 
 span {
-  color: #475569;
+  color: var(--zs-color-text-muted);
   font-size: 0.78rem;
   font-weight: 800;
 }
@@ -308,11 +308,11 @@ textarea,
 button {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid #cbd5e1;
-  border-radius: 7px;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-sm);
   padding: 8px 10px;
-  background: #ffffff;
-  color: #111827;
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
   font: inherit;
   font-size: 0.84rem;
 }
@@ -323,7 +323,7 @@ textarea {
 }
 
 .hint {
-  color: #b45309;
+  color: var(--zs-color-warning);
   font-size: 0.8rem;
 }
 
@@ -340,15 +340,15 @@ button {
 }
 
 button.primary {
-  border-color: #2563eb;
-  background: #2563eb;
-  color: #ffffff;
+  border-color: var(--zs-color-primary);
+  background: var(--zs-color-primary);
+  color: var(--zs-color-on-primary);
 }
 
 button.danger {
-  border-color: #fecaca;
-  background: #fff1f2;
-  color: #b42318;
+  border-color: var(--zs-color-danger);
+  background: var(--zs-color-danger-soft);
+  color: var(--zs-color-danger);
 }
 
 button:disabled {
@@ -359,14 +359,14 @@ button:disabled {
 .placeholder {
   display: grid;
   gap: 8px;
-  border: 1px dashed #cbd5e1;
-  border-radius: 8px;
+  border: 1px dashed var(--zs-color-border);
+  border-radius: var(--zs-radius-md);
   padding: 14px;
-  background: #f8fafc;
+  background: var(--zs-color-surface-soft);
 }
 
 .placeholder p {
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.84rem;
   font-weight: 800;
 }

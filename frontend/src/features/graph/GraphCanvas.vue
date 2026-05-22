@@ -203,7 +203,7 @@ const gridStyle = computed(() => {
   }
   const grid = GRID_SIZE * viewport.zoom
   return {
-    backgroundImage: 'linear-gradient(90deg, rgb(148 163 184 / 16%) 1px, transparent 1px), linear-gradient(rgb(148 163 184 / 16%) 1px, transparent 1px)',
+    backgroundImage: 'linear-gradient(90deg, rgb(107 124 131 / 14%) 1px, transparent 1px), linear-gradient(rgb(107 124 131 / 14%) 1px, transparent 1px)',
     backgroundSize: `${grid}px ${grid}px`,
     backgroundPosition: `${viewport.panX}px ${viewport.panY}px`,
   }
@@ -943,12 +943,12 @@ function clamp(value: number, min: number, max: number) {
 <style scoped>
 .graph-canvas {
   position: relative;
-  min-height: 680px;
+  min-height: 600px;
   height: 100%;
   overflow: hidden;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  background-color: #fbfdff;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-md);
+  background-color: var(--zs-color-surface);
   box-shadow: inset 0 0 0 1px rgb(255 255 255 / 80%), 0 10px 26px rgb(15 23 42 / 6%);
   cursor: default;
   outline: none;
@@ -987,10 +987,10 @@ function clamp(value: number, min: number, max: number) {
   width: 14px;
   height: 14px;
   box-sizing: border-box;
-  border: 2px solid #ffffff;
-  border-radius: 4px;
+  border: 2px solid var(--zs-color-surface);
+  border-radius: var(--zs-radius-sm);
   padding: 0;
-  background: #2563eb;
+  background: var(--zs-color-primary);
   box-shadow: 0 2px 8px rgb(15 23 42 / 22%);
   cursor: nwse-resize;
   touch-action: none;
@@ -1020,11 +1020,11 @@ function clamp(value: number, min: number, max: number) {
 
 .canvas-status span,
 .canvas-hints span {
-  border: 1px solid rgb(203 213 225 / 80%);
+  border: 1px solid color-mix(in srgb, var(--zs-color-border) 80%, transparent);
   border-radius: 999px;
   padding: 4px 8px;
-  background: rgb(255 255 255 / 86%);
-  color: #475569;
+  background: color-mix(in srgb, var(--zs-color-surface) 86%, transparent);
+  color: var(--zs-color-text-muted);
   font-size: 0.72rem;
   font-weight: 800;
   backdrop-filter: blur(8px);
@@ -1036,7 +1036,7 @@ function clamp(value: number, min: number, max: number) {
   display: grid;
   place-content: center;
   gap: 9px;
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   text-align: center;
   pointer-events: none;
 }
@@ -1047,7 +1047,7 @@ function clamp(value: number, min: number, max: number) {
 }
 
 .empty-state h2 {
-  color: #0f172a;
+  color: var(--zs-color-text);
   font-size: 1.08rem;
   font-weight: 900;
 }

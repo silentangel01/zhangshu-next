@@ -101,7 +101,7 @@ function compareOutlineItems(left: OutlineItem, right: OutlineItem): number {
 <style scoped>
 .outline-tree {
   display: grid;
-  gap: 12px;
+  gap: var(--zs-space-3);
 }
 
 .tree-header {
@@ -120,34 +120,34 @@ h2 {
 }
 
 h3 {
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.9rem;
 }
 
 .empty-state {
   margin: 0;
-  border: 1px dashed #cbd5e1;
-  border-radius: 8px;
-  padding: 18px;
-  background: #fbfcfe;
-  color: #64748b;
+  border: 1px dashed var(--zs-color-border);
+  border-radius: var(--zs-radius-md);
+  padding: var(--zs-space-4);
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text-muted);
   text-align: center;
 }
 
 .tree-groups,
 .orphan-group {
   display: grid;
-  gap: 10px;
+  gap: var(--zs-space-2);
 }
 
 .orphan-group {
-  border-top: 1px solid #e5e7eb;
-  padding-top: 12px;
+  border-top: 1px solid var(--zs-color-border-soft);
+  padding-top: var(--zs-space-3);
 }
 
 .tree-list {
   display: grid;
-  gap: 8px;
+  gap: var(--zs-space-2);
   margin: 0;
   padding: 0;
   list-style: none;

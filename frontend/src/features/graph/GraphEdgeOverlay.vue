@@ -82,7 +82,7 @@ const emit = defineEmits<{
 }
 
 .edge-group {
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   pointer-events: auto;
 }
 
@@ -91,7 +91,7 @@ const emit = defineEmits<{
 }
 
 .edge-group.selected {
-  color: #2563eb;
+  color: var(--zs-color-primary);
   opacity: 1;
 }
 
@@ -122,22 +122,22 @@ const emit = defineEmits<{
 }
 
 .edge-line.selected {
-  filter: drop-shadow(0 0 4px rgb(37 99 235 / 45%));
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--zs-color-primary) 45%, transparent));
 }
 
 .edge-label {
-  fill: #0f172a;
+  fill: var(--zs-color-text);
   font-size: 12px;
   font-weight: 800;
   paint-order: stroke;
-  stroke: #ffffff;
+  stroke: var(--zs-color-surface);
   stroke-linejoin: round;
   stroke-width: 4px;
   pointer-events: none;
 }
 
 .preview-line {
-  stroke: #2563eb;
+  stroke: var(--zs-color-primary);
   stroke-dasharray: 8 6;
   stroke-width: 2;
   pointer-events: none;

@@ -32,7 +32,7 @@ const emit = defineEmits<{
       <span class="group-label">工具</span>
       <div class="button-row">
         <button type="button" :class="{ active: mode === 'select' }" @click="emit('setMode', 'select')">选择</button>
-        <button type="button" :class="{ active: mode === 'node' }" @click="emit('setMode', 'node')">新建节点</button>
+        <button type="button" :class="{ active: mode === 'node' }" @click="emit('setMode', 'node')">新建</button>
         <button type="button" :class="{ active: mode === 'edge' }" @click="emit('setMode', 'edge')">连线</button>
         <button type="button" :class="{ active: mode === 'pan' }" @click="emit('setMode', 'pan')">平移</button>
       </div>
@@ -54,7 +54,7 @@ const emit = defineEmits<{
       <div class="button-row">
         <button type="button" class="toggle-button" :class="{ active: showGrid }" @click="emit('toggleGrid')">网格</button>
         <button type="button" class="toggle-button" :class="{ active: snapToGrid }" @click="emit('toggleSnap')">吸附</button>
-        <button type="button" class="toggle-button" :class="{ active: cleanMode }" @click="emit('toggleClean')">纯净模式</button>
+        <button type="button" class="toggle-button" :class="{ active: cleanMode }" @click="emit('toggleClean')">清爽模式</button>
       </div>
     </section>
 
@@ -72,21 +72,21 @@ const emit = defineEmits<{
 .graph-toolbar {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--zs-space-2);
   align-items: stretch;
-  border: 1px solid #d8dee9;
-  border-radius: 8px;
-  padding: 8px;
-  background: #ffffff;
-  box-shadow: 0 8px 22px rgb(15 23 42 / 5%);
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-md);
+  padding: var(--zs-space-2);
+  background: var(--zs-color-surface);
+  box-shadow: var(--zs-shadow-sm);
 }
 
 .toolbar-group {
   display: grid;
   gap: 5px;
   align-content: start;
-  border-right: 1px solid #e2e8f0;
-  padding-right: 8px;
+  border-right: 1px solid var(--zs-color-border-soft);
+  padding-right: var(--zs-space-2);
 }
 
 .toolbar-group:last-child {
@@ -95,7 +95,7 @@ const emit = defineEmits<{
 }
 
 .group-label {
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.7rem;
   font-weight: 900;
 }
@@ -113,11 +113,11 @@ button,
   align-items: center;
   justify-content: center;
   min-height: 31px;
-  border: 1px solid #d8dee9;
-  border-radius: 7px;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-sm);
   padding: 0 10px;
-  background: #ffffff;
-  color: #1f2937;
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
   font: inherit;
   font-size: 0.82rem;
   font-weight: 750;
@@ -128,9 +128,9 @@ button,
 button:hover,
 button.active,
 .toolbar-link:hover {
-  border-color: #2563eb;
-  background: #eff6ff;
-  color: #1d4ed8;
+  border-color: var(--zs-color-primary);
+  background: var(--zs-color-primary-soft);
+  color: var(--zs-color-primary);
 }
 
 .toggle-button {
@@ -143,16 +143,16 @@ button.active,
   left: 9px;
   width: 10px;
   height: 10px;
-  border: 1px solid #94a3b8;
+  border: 1px solid var(--zs-color-text-faint);
   border-radius: 999px;
-  background: #ffffff;
+  background: var(--zs-color-surface);
   content: '';
 }
 
 .toggle-button.active::before {
-  border-color: #2563eb;
-  background: #2563eb;
-  box-shadow: inset 0 0 0 2px #ffffff;
+  border-color: var(--zs-color-primary);
+  background: var(--zs-color-primary);
+  box-shadow: inset 0 0 0 2px var(--zs-color-surface);
 }
 
 button:disabled {
@@ -162,10 +162,10 @@ button:disabled {
 
 .zoom-readout {
   min-width: 48px;
-  border-radius: 7px;
+  border-radius: var(--zs-radius-sm);
   padding: 7px 8px;
-  background: #f8fafc;
-  color: #334155;
+  background: var(--zs-color-surface-soft);
+  color: var(--zs-color-text);
   font-size: 0.8rem;
   font-weight: 900;
   text-align: center;

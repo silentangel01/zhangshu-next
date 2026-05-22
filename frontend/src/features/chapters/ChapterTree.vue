@@ -614,7 +614,8 @@ function isVolumeDropTarget(volumeId: string | null) {
 <style scoped>
 .chapter-tree {
   display: grid;
-  gap: 4px;
+  gap: var(--zs-space-1);
+  min-width: 0;
 }
 
 .tree-root,
@@ -633,13 +634,13 @@ function isVolumeDropTarget(volumeId: string | null) {
 .tree-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--zs-space-1);
   min-height: 30px;
   border: 0;
-  border-radius: 6px;
-  padding: 0 10px;
+  border-radius: var(--zs-radius-sm);
+  padding: 0 var(--zs-space-2);
   background: transparent;
-  color: #111827;
+  color: var(--zs-color-text);
   font: inherit;
   text-align: left;
   cursor: pointer;
@@ -647,21 +648,21 @@ function isVolumeDropTarget(volumeId: string | null) {
 
 .tree-row:hover,
 .tree-row:focus-visible {
-  background: #f8fafc;
+  background: var(--zs-color-surface-soft);
   outline: none;
 }
 
 .root-row {
   min-height: 32px;
-  color: #0f172a;
+  color: var(--zs-color-text);
   font-weight: 800;
 }
 
 .create-row {
   min-height: 28px;
-  border: 1px solid #dbeafe;
-  background: #f8fbff;
-  color: #2563eb;
+  border: 1px solid var(--zs-color-border);
+  background: var(--zs-color-surface);
+  color: var(--zs-color-primary);
   font-size: 0.84rem;
   font-weight: 700;
 }
@@ -673,30 +674,30 @@ function isVolumeDropTarget(volumeId: string | null) {
 
 .volume-row {
   min-height: 32px;
-  color: #111827;
+  color: var(--zs-color-text);
   font-weight: 700;
 }
 
 .volume-row.drop-target {
-  background: #eef6ff;
+  background: var(--zs-color-primary-soft);
 }
 
 .chapter-row {
   position: relative;
   min-height: 30px;
-  color: #334155;
+  color: var(--zs-color-text-muted);
   user-select: none;
 }
 
 .chapter-row.selected {
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: var(--zs-color-primary-soft);
+  color: var(--zs-color-primary);
   font-weight: 800;
 }
 
 .chapter-row.selected:hover,
 .chapter-row.selected:focus-visible {
-  background: #eaf2ff;
+  background: var(--zs-color-primary-soft);
 }
 
 .chapter-row.dragging {
@@ -710,8 +711,8 @@ function isVolumeDropTarget(volumeId: string | null) {
   left: 40px;
   right: 10px;
   height: 2px;
-  border-radius: 999px;
-  background: #2563eb;
+  border-radius: var(--zs-radius-pill);
+  background: var(--zs-color-primary);
 }
 
 .chapter-row.drop-before::before {
@@ -734,7 +735,7 @@ function isVolumeDropTarget(volumeId: string | null) {
   display: inline-flex;
   width: 14px;
   flex: 0 0 auto;
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.78rem;
   justify-content: center;
 }
@@ -752,7 +753,7 @@ function isVolumeDropTarget(volumeId: string | null) {
   justify-content: center;
   width: 22px;
   flex: 0 0 auto;
-  color: #94a3b8;
+  color: var(--zs-color-text-faint);
   font-size: 0.8rem;
   letter-spacing: 0;
   opacity: 0.3;

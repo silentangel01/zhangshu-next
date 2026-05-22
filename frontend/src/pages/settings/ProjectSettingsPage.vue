@@ -330,7 +330,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
 </script>
 
 <template>
-  <main class="settings-page">
+  <main class="settings-page material-page">
     <header class="page-header">
       <div>
         <RouterLink class="back-link" :to="`/projects/${projectId}`">返回写作页</RouterLink>
@@ -350,8 +350,8 @@ function getErrorMessage(error: unknown, fallback: string): string {
     <section v-if="successMessage" class="success-banner" role="status">{{ successMessage }}</section>
     <section v-if="isLoading" class="state-message">正在加载设定集…</section>
 
-    <section v-else class="settings-layout">
-      <aside class="list-panel">
+    <section v-else class="settings-layout material-layout">
+      <aside class="list-panel material-list-panel">
         <p class="boundary-card">这里保存的是本书内部设定。外部资料、灵感素材和参考内容后续将放入知识库模块。</p>
 
         <div class="filters">
@@ -403,7 +403,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
         </ul>
       </aside>
 
-      <form class="editor-panel" @submit.prevent="handleSaveSetting">
+      <form class="editor-panel material-editor-panel" @submit.prevent="handleSaveSetting">
         <header class="editor-header">
           <div>
             <p class="eyebrow">{{ isCreating ? '新建设定' : '设定条目' }}</p>
@@ -493,13 +493,16 @@ function getErrorMessage(error: unknown, fallback: string): string {
           </button>
         </footer>
       </form>
-      <MaterialLinkPanel
-        v-if="selectedSetting"
-        :project-id="projectId"
-        source-type="setting"
-        :source-id="selectedSetting.id"
-        :source-title="selectedSetting.title"
-      />
+      <aside class="material-related-panel">
+        <MaterialLinkPanel
+          v-if="selectedSetting"
+          :project-id="projectId"
+          source-type="setting"
+          :source-id="selectedSetting.id"
+          :source-title="selectedSetting.title"
+        />
+        <article v-else class="empty-state related-empty">暂无关联资料</article>
+      </aside>
     </section>
   </main>
 </template>
@@ -609,7 +612,7 @@ h2 {
 
 .settings-layout {
   display: grid;
-  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr) minmax(280px, 320px);
   gap: 18px;
   align-items: start;
 }
@@ -783,6 +786,148 @@ button:disabled {
 
   .page-header {
     flex-direction: column;
+  }
+}
+
+.material-page {
+  overflow-x: hidden;
+  padding: var(--zs-space-6);
+  background: var(--zs-color-bg);
+  color: var(--zs-color-text);
+}
+
+.material-page .page-header,
+.material-page .error-banner,
+.material-page .success-banner,
+.material-page .state-message,
+.material-layout {
+  max-width: 1480px;
+}
+
+.material-page .page-header {
+  gap: var(--zs-space-4);
+  margin-bottom: var(--zs-space-4);
+}
+
+.material-page .back-link {
+  margin-bottom: var(--zs-space-2);
+  color: var(--zs-color-primary);
+}
+
+.material-page .eyebrow,
+.material-page .project-title,
+.material-page .boundary-note,
+.material-page .meta,
+.material-page .tags {
+  color: var(--zs-color-text-muted);
+}
+
+.material-page h1 {
+  font-size: 1.6rem;
+}
+
+.material-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr) minmax(280px, 320px);
+  gap: var(--zs-space-4);
+  align-items: start;
+}
+
+.material-list-panel,
+.material-editor-panel,
+.material-related-panel {
+  min-width: 0;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-md);
+  padding: var(--zs-space-4);
+  background: var(--zs-color-surface);
+  box-shadow: var(--zs-shadow-sm);
+}
+
+.material-page input,
+.material-page select,
+.material-page textarea {
+  border-color: var(--zs-color-border);
+  border-radius: var(--zs-radius-sm);
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
+}
+
+.material-page .setting-card {
+  border-color: var(--zs-color-border);
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
+}
+
+.material-page .setting-card.active {
+  border-color: var(--zs-color-primary);
+  background: var(--zs-color-primary-soft);
+}
+
+.material-page .boundary-card {
+  border-color: var(--zs-color-info);
+  background: var(--zs-color-info-soft);
+  color: var(--zs-color-info);
+}
+
+.material-page .empty-state,
+.material-page .state-message {
+  border-color: var(--zs-color-border);
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text-muted);
+}
+
+.material-page .error-banner {
+  border-color: var(--zs-color-danger);
+  background: var(--zs-color-danger-soft);
+  color: var(--zs-color-danger);
+}
+
+.material-page .success-banner {
+  border-color: var(--zs-color-success);
+  background: var(--zs-color-success-soft);
+  color: var(--zs-color-success);
+}
+
+.material-page .primary-button {
+  background: var(--zs-color-primary);
+  color: var(--zs-color-on-primary);
+}
+
+.material-page .secondary-button {
+  border-color: var(--zs-color-border);
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
+}
+
+.material-page .danger-button {
+  border-color: var(--zs-color-danger);
+  background: var(--zs-color-danger-soft);
+  color: var(--zs-color-danger);
+}
+
+.material-page .version {
+  background: var(--zs-color-info-soft);
+  color: var(--zs-color-info);
+}
+
+@media (max-width: 1366px) {
+  .material-page {
+    padding: var(--zs-space-4);
+  }
+
+  .material-layout {
+    grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  }
+
+  .material-related-panel {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 900px) {
+  .material-layout {
+    grid-template-columns: 1fr;
   }
 }
 </style>

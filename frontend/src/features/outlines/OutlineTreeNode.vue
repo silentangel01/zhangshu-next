@@ -73,20 +73,20 @@ function handleToggle() {
 <style scoped>
 .tree-item {
   display: grid;
-  gap: 8px;
+  gap: var(--zs-space-2);
 }
 
 .node-row {
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr);
-  gap: 6px;
+  gap: var(--zs-space-1);
   align-items: stretch;
   margin-left: calc(var(--depth) * 22px);
 }
 
 .child-list {
   display: grid;
-  gap: 8px;
+  gap: var(--zs-space-2);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -99,9 +99,9 @@ function handleToggle() {
 
 .toggle-button {
   border: 0;
-  border-radius: 6px;
-  background: #eef2ff;
-  color: #3730a3;
+  border-radius: var(--zs-radius-sm);
+  background: var(--zs-color-primary-soft);
+  color: var(--zs-color-primary);
   font: inherit;
   font-size: 0.78rem;
   font-weight: 800;
@@ -116,19 +116,19 @@ function handleToggle() {
   display: grid;
   gap: 5px;
   width: 100%;
-  border: 1px solid #d8dee9;
-  border-radius: 8px;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-md);
   padding: 10px 12px;
-  background: #ffffff;
-  color: #111827;
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
   font: inherit;
   text-align: left;
   cursor: pointer;
 }
 
 .tree-node.active {
-  border-color: #2563eb;
-  background: #eff6ff;
+  border-color: var(--zs-color-primary);
+  background: var(--zs-color-primary-soft);
 }
 
 .node-title {
@@ -137,7 +137,7 @@ function handleToggle() {
 }
 
 .node-meta {
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.82rem;
   line-height: 1.4;
 }

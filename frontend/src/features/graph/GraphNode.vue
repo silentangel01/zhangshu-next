@@ -16,13 +16,13 @@ const emit = defineEmits<{
 }>()
 
 const fallbackColors: Record<GraphNode['node_type'], string> = {
-  character: '#4f7cff',
-  setting: '#0f9f88',
-  clue: '#d97706',
-  timeline_event: '#7c3aed',
-  organization: '#ef4444',
-  location: '#0891b2',
-  custom: '#64748b',
+  character: 'var(--zs-module-character)',
+  setting: 'var(--zs-module-setting)',
+  clue: 'var(--zs-module-clue)',
+  timeline_event: 'var(--zs-module-timeline)',
+  organization: 'var(--zs-color-danger)',
+  location: 'var(--zs-color-info)',
+  custom: 'var(--zs-color-text-muted)',
 }
 
 function getAccentColor() {
@@ -59,13 +59,13 @@ function getAccentColor() {
   width: 100%;
   height: 100%;
   min-height: 0;
-  border: 1px solid color-mix(in srgb, var(--node-accent) 48%, #cbd5e1);
+  border: 1px solid color-mix(in srgb, var(--node-accent) 42%, var(--zs-color-border));
   border-left: 5px solid var(--node-accent);
-  border-radius: 8px;
+  border-radius: var(--zs-radius-md);
   padding: 10px 12px;
-  background: #ffffff;
-  box-shadow: 0 8px 18px rgb(15 23 42 / 8%);
-  color: #111827;
+  background: var(--zs-color-surface);
+  box-shadow: var(--zs-shadow-sm);
+  color: var(--zs-color-text);
   text-align: left;
   cursor: grab;
   touch-action: none;
@@ -76,14 +76,14 @@ function getAccentColor() {
   inset: 0;
   z-index: -1;
   border-radius: inherit;
-  background: color-mix(in srgb, var(--node-accent) 8%, #ffffff);
+  background: color-mix(in srgb, var(--node-accent) 8%, var(--zs-color-surface));
   content: '';
 }
 
 .graph-node:hover,
 .graph-node.selected {
-  border-color: #2563eb;
-  box-shadow: 0 0 0 3px rgb(37 99 235 / 16%), 0 12px 24px rgb(15 23 42 / 13%);
+  border-color: var(--zs-color-primary);
+  box-shadow: var(--zs-shadow-focus), 0 12px 24px rgb(31 42 46 / 11%);
 }
 
 .graph-node.dragging {
@@ -142,7 +142,7 @@ function getAccentColor() {
 
 .node-title {
   overflow: hidden;
-  color: #0f172a;
+  color: var(--zs-color-text);
   font-size: 0.92rem;
   font-weight: 900;
   line-height: 1.35;
@@ -168,21 +168,21 @@ function getAccentColor() {
 .bound-badge {
   border-radius: 999px;
   padding: 2px 7px;
-  background: color-mix(in srgb, var(--node-accent) 12%, #ffffff);
+  background: color-mix(in srgb, var(--node-accent) 12%, var(--zs-color-surface));
   color: var(--node-accent);
   font-size: 0.7rem;
   font-weight: 900;
 }
 
 .bound-badge {
-  background: #f8fafc;
-  color: #475569;
+  background: var(--zs-color-surface-soft);
+  color: var(--zs-color-text-muted);
 }
 
 .node-summary {
   display: -webkit-box;
   overflow: hidden;
-  color: #475569;
+  color: var(--zs-color-text-muted);
   font-size: 0.75rem;
   line-height: 1.45;
   -webkit-box-orient: vertical;
