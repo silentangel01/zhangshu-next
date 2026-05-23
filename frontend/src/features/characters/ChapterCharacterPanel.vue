@@ -360,18 +360,18 @@ p {
 }
 
 .eyebrow {
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.75rem;
   font-weight: 800;
 }
 
 h2 {
-  color: #111827;
+  color: var(--zs-color-text);
   font-size: 1rem;
 }
 
 h3 {
-  color: #111827;
+  color: var(--zs-color-text);
   font-size: 1rem;
 }
 
@@ -379,10 +379,10 @@ h3 {
 .danger-button,
 .text-button {
   min-height: 34px;
-  border: 1px solid #cfd7e3;
+  border: 1px solid var(--zs-color-border);
   border-radius: 6px;
   padding: 0 10px;
-  background: #ffffff;
+  background: var(--zs-color-surface);
   font: inherit;
   font-size: 0.8rem;
   font-weight: 800;
@@ -391,33 +391,33 @@ h3 {
 
 .secondary-button,
 .text-button {
-  color: #2563eb;
+  color: var(--zs-color-primary);
 }
 
 .danger-button {
-  border-color: #fecaca;
-  color: #b42318;
+  border-color: var(--zs-color-danger);
+  color: var(--zs-color-danger);
 }
 
 .bind-form,
 .profile-card {
   display: grid;
   gap: 12px;
-  border: 1px solid #d8dee9;
+  border: 1px solid var(--zs-color-border);
   border-radius: 8px;
   padding: 14px;
-  background: #fbfcfe;
+  background: var(--zs-color-bg);
 }
 
 .profile-card {
-  background: #ffffff;
+  background: var(--zs-color-surface);
 }
 
 .profile-eyebrow,
 .field-label,
 .section-label,
 .tiny-meta {
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.78rem;
   font-weight: 800;
 }
@@ -429,10 +429,10 @@ h3 {
 }
 
 .profile-summary div {
-  border: 1px solid #edf0f5;
+  border: 1px solid var(--zs-color-border-soft);
   border-radius: 8px;
   padding: 10px;
-  background: #fbfcfe;
+  background: var(--zs-color-bg);
 }
 
 .field-label {
@@ -441,7 +441,7 @@ h3 {
 }
 
 .profile-summary strong {
-  color: #111827;
+  color: var(--zs-color-text);
   font-size: 0.9rem;
 }
 
@@ -451,18 +451,18 @@ h3 {
 }
 
 .section-label {
-  color: #0f172a;
+  color: var(--zs-color-text);
 }
 
 .text-block,
 .muted-block {
-  color: #334155;
+  color: var(--zs-color-text);
   line-height: 1.7;
   white-space: pre-wrap;
 }
 
 .muted-block {
-  color: #94a3b8;
+  color: var(--zs-color-text-faint);
 }
 
 .relation-grid {
@@ -474,7 +474,7 @@ h3 {
 .bind-form label {
   display: grid;
   gap: 6px;
-  color: #4b5563;
+  color: var(--zs-color-text-muted);
   font-size: 0.9rem;
   font-weight: 800;
 }
@@ -483,10 +483,10 @@ select,
 textarea {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid #cfd7e3;
+  border: 1px solid var(--zs-color-border);
   border-radius: 6px;
   padding: 9px 10px;
-  color: #111827;
+  color: var(--zs-color-text);
   font: inherit;
 }
 
@@ -507,27 +507,27 @@ textarea {
   display: grid;
   gap: 4px;
   width: 100%;
-  border: 1px solid #d8dee9;
+  border: 1px solid var(--zs-color-border);
   border-radius: 8px;
   padding: 12px;
-  background: #ffffff;
+  background: var(--zs-color-surface);
   text-align: left;
 }
 
 .character-card.active {
-  border-color: #2563eb;
-  background: #eff6ff;
+  border-color: var(--zs-color-primary);
+  background: var(--zs-color-primary-soft);
 }
 
 .name {
-  color: #111827;
+  color: var(--zs-color-text);
   font-weight: 800;
 }
 
 .meta,
 .faction,
 .summary {
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.82rem;
 }
 
@@ -537,16 +537,16 @@ textarea {
 
 .state-message,
 .error-message {
-  border: 1px dashed #cbd5e1;
+  border: 1px dashed var(--zs-color-border);
   border-radius: 8px;
   padding: 14px;
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   text-align: center;
 }
 
 .error-message {
-  border-color: #fecaca;
-  color: #b42318;
+  border-color: var(--zs-color-danger);
+  color: var(--zs-color-danger);
 }
 
 .relation-actions {

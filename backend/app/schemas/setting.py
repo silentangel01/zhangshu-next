@@ -14,8 +14,10 @@ SettingItemType = Literal[
     "rule",
     "race",
     "object",
+    "character",
     "custom",
 ]
+SettingNodeKind = Literal["folder", "page"]
 SettingCanonStatus = Literal["draft", "confirmed", "deprecated", "conflicted"]
 SettingImportance = Literal["low", "normal", "high", "critical"]
 ChapterSettingRelationType = Literal[
@@ -30,13 +32,16 @@ ChapterSettingRelationType = Literal[
 class SettingBase(BaseModel):
     parent_id: str | None = None
     title: str = Field(..., min_length=1, max_length=255)
-    item_type: SettingItemType
+    item_type: SettingItemType | None = None
     canon_status: SettingCanonStatus = "draft"
     summary: str = ""
     detail: str = ""
     tags: str = ""
     order_index: int = Field(default=0, ge=0)
     importance: SettingImportance = "normal"
+    node_kind: SettingNodeKind = "page"
+    folder_key: str | None = None
+    folder_default_item_type: SettingItemType | None = None
 
     @field_validator("title")
     @classmethod
@@ -61,6 +66,8 @@ class SettingUpdate(BaseModel):
     tags: str | None = None
     order_index: int | None = Field(default=None, ge=0)
     importance: SettingImportance | None = None
+    node_kind: SettingNodeKind | None = None
+    folder_default_item_type: SettingItemType | None = None
 
     @field_validator("title")
     @classmethod
@@ -88,6 +95,10 @@ class SettingRead(BaseModel):
     tags: str
     order_index: int
     importance: str
+    node_kind: str
+    folder_key: str | None
+    folder_default_item_type: str | None
+    is_system: bool
     created_at: datetime
     updated_at: datetime
     deleted_at: datetime | None

@@ -2,15 +2,64 @@
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 
+import defaultBookCover from '@/assets/default-book-cover.svg'
 import {
   createProject,
   deleteProject,
+  deleteProjectCover,
+  getProjectCoverUrl,
   listProjects,
   updateProject,
+  uploadProjectCover,
 } from '@/entities/project/api'
-import type { CreateProjectPayload, Project, UpdateProjectPayload } from '@/entities/project/types'
+import type { CreateProjectPayload, Project, ProjectStatus, UpdateProjectPayload } from '@/entities/project/types'
 import CreateProjectDialog from '@/features/projects/CreateProjectDialog.vue'
 import EditProjectDialog from '@/features/projects/EditProjectDialog.vue'
+import {
+  collectProjectTags,
+  countActiveFilters,
+  filterProjects,
+  sortProjects,
+  type ProjectFilterState,
+  type ProjectSortKey,
+} from '@/features/projects/projectFilters'
+
+const BUILTIN_TAGS = [
+  '玄幻',
+  '都市',
+  '科幻',
+  '悬疑',
+  '历史',
+  '仙侠',
+  '奇幻',
+  '群像',
+  '长篇',
+  '短篇',
+]
+
+const STATUS_LABELS: Record<string, string> = {
+  planning: '筹备中',
+  writing: '连载中',
+  paused: '暂停',
+  completed: '已完结',
+  archived: '已归档',
+}
+
+const STATUS_OPTIONS: { value: ProjectStatus | ''; label: string }[] = [
+  { value: '', label: '全部状态' },
+  { value: 'planning', label: '筹备中' },
+  { value: 'writing', label: '连载中' },
+  { value: 'paused', label: '暂停' },
+  { value: 'completed', label: '已完结' },
+  { value: 'archived', label: '已归档' },
+]
+
+const SORT_OPTIONS: { value: ProjectSortKey; label: string }[] = [
+  { value: 'updated_at', label: '最近更新' },
+  { value: 'created_at', label: '创建时间' },
+  { value: 'title', label: '书名' },
+  { value: 'author', label: '作者' },
+]
 
 const projects = ref<Project[]>([])
 const isLoading = ref(false)
@@ -18,8 +67,22 @@ const isSaving = ref(false)
 const errorMessage = ref('')
 const showCreateDialog = ref(false)
 const editingProject = ref<Project | null>(null)
+const isFilterPanelOpen = ref(false)
+
+const searchKeyword = ref('')
+const filterState = ref<ProjectFilterState>({ keyword: '', status: '', tag: '' })
+const sortKey = ref<ProjectSortKey>('updated_at')
 
 const hasProjects = computed(() => projects.value.length > 0)
+const activeFilterCount = computed(() => countActiveFilters(filterState.value))
+
+const tagSuggestions = computed(() => collectProjectTags(projects.value, BUILTIN_TAGS))
+
+const displayedProjects = computed(() => {
+  const withKeyword = { ...filterState.value, keyword: searchKeyword.value }
+  const filtered = filterProjects(projects.value, withKeyword)
+  return sortProjects(filtered, sortKey.value)
+})
 
 onMounted(() => {
   void refreshProjects()
@@ -38,12 +101,34 @@ async function refreshProjects() {
   }
 }
 
-async function handleCreate(payload: CreateProjectPayload) {
+function getCoverUrl(project: Project): string | null {
+  if (!project.cover_image_path) {
+    return null
+  }
+  return getProjectCoverUrl(project.id, project.version)
+}
+
+function handleClearFilters() {
+  filterState.value = { keyword: '', status: '', tag: '' }
+  searchKeyword.value = ''
+  isFilterPanelOpen.value = false
+}
+
+async function handleCreate(payload: { project: CreateProjectPayload; coverFile: File | null }) {
   isSaving.value = true
   errorMessage.value = ''
 
   try {
-    await createProject(payload)
+    const created = await createProject(payload.project)
+
+    if (payload.coverFile) {
+      try {
+        await uploadProjectCover(created.id, payload.coverFile)
+      } catch {
+        errorMessage.value = `项目"${created.title}"已创建，但封面上传失败。`
+      }
+    }
+
     showCreateDialog.value = false
     await refreshProjects()
   } catch (error) {
@@ -72,8 +157,52 @@ async function handleEdit(payload: UpdateProjectPayload) {
   }
 }
 
+async function handleEditCoverUpload(file: File) {
+  if (!editingProject.value) {
+    return
+  }
+
+  isSaving.value = true
+  errorMessage.value = ''
+
+  try {
+    await uploadProjectCover(editingProject.value.id, file)
+    await refreshProjects()
+    const updated = projects.value.find((p) => p.id === editingProject.value!.id)
+    if (updated) {
+      editingProject.value = updated
+    }
+  } catch (error) {
+    errorMessage.value = getErrorMessage(error, '封面上传失败。')
+  } finally {
+    isSaving.value = false
+  }
+}
+
+async function handleEditCoverDelete() {
+  if (!editingProject.value) {
+    return
+  }
+
+  isSaving.value = true
+  errorMessage.value = ''
+
+  try {
+    await deleteProjectCover(editingProject.value.id)
+    await refreshProjects()
+    const updated = projects.value.find((p) => p.id === editingProject.value!.id)
+    if (updated) {
+      editingProject.value = updated
+    }
+  } catch (error) {
+    errorMessage.value = getErrorMessage(error, '删除封面失败。')
+  } finally {
+    isSaving.value = false
+  }
+}
+
 async function handleDelete(project: Project) {
-  const confirmed = window.confirm(`确定要删除项目“${project.title}”吗？`)
+  const confirmed = window.confirm(`确定要删除项目"${project.title}"吗？`)
 
   if (!confirmed) {
     return
@@ -99,8 +228,14 @@ function formatUpdatedAt(value: string): string {
   }).format(new Date(value))
 }
 
+function getStatusLabel(status: string): string {
+  return STATUS_LABELS[status] ?? status
+}
+
 function getErrorMessage(error: unknown, fallback: string): string {
-  void error
+  if (error instanceof Error && error.message) {
+    return error.message
+  }
   return fallback
 }
 </script>
@@ -109,14 +244,14 @@ function getErrorMessage(error: unknown, fallback: string): string {
   <main class="projects-page">
     <header class="page-header">
       <div>
-        <p class="eyebrow">掌书 Next</p>
-        <h1>项目</h1>
+        <p class="eyebrow">章枢 Next</p>
+        <h1>书籍</h1>
       </div>
       <div class="header-actions">
         <RouterLink class="secondary-link" to="/imports">导入作品</RouterLink>
         <RouterLink class="secondary-link" to="/backup">备份恢复</RouterLink>
         <button class="primary-button" type="button" :disabled="isSaving" @click="showCreateDialog = true">
-          新建项目
+          新建书籍
         </button>
       </div>
     </header>
@@ -125,44 +260,132 @@ function getErrorMessage(error: unknown, fallback: string): string {
       {{ errorMessage }}
     </section>
 
+    <section v-if="hasProjects" class="projects-toolbar">
+      <div class="toolbar-search">
+        <input
+          v-model="searchKeyword"
+          type="search"
+          placeholder="搜索书名、作者、简介或标签"
+          class="search-input"
+        />
+      </div>
+      <div class="toolbar-controls">
+        <div class="filter-menu">
+          <button
+            class="filter-button"
+            type="button"
+            :class="{ active: isFilterPanelOpen || activeFilterCount > 0 }"
+            :aria-expanded="isFilterPanelOpen"
+            aria-controls="projects-filter-panel"
+            @click="isFilterPanelOpen = !isFilterPanelOpen"
+          >
+            筛选{{ activeFilterCount > 0 ? `（${activeFilterCount}）` : '' }}
+          </button>
+          <div v-if="isFilterPanelOpen" id="projects-filter-panel" class="filter-panel">
+            <label class="filter-field">
+              <span>写作状态</span>
+              <select v-model="filterState.status">
+                <option v-for="opt in STATUS_OPTIONS" :key="opt.value" :value="opt.value">
+                  {{ opt.label }}
+                </option>
+              </select>
+            </label>
+            <label class="filter-field">
+              <span>标签</span>
+              <select v-model="filterState.tag">
+                <option value="">全部标签</option>
+                <option v-for="tag in tagSuggestions" :key="tag" :value="tag">{{ tag }}</option>
+              </select>
+            </label>
+            <div class="filter-actions">
+              <button class="secondary-button" type="button" @click="handleClearFilters">清空</button>
+              <button class="primary-button" type="button" @click="isFilterPanelOpen = false">确定</button>
+            </div>
+          </div>
+        </div>
+        <label class="sort-control">
+          <span>排序</span>
+          <select v-model="sortKey">
+            <option v-for="opt in SORT_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+          </select>
+        </label>
+      </div>
+    </section>
+
     <section class="content-panel" aria-live="polite">
-      <div v-if="isLoading" class="state-message">正在加载项目……</div>
+      <div v-if="isLoading" class="state-message">正在加载……</div>
 
       <div v-else-if="!hasProjects" class="empty-state">
-        <h2>暂无项目</h2>
+        <h2>暂无书籍</h2>
         <p>新建一个小说项目，开始整理你的创作资料。</p>
       </div>
 
-      <div v-else class="project-grid">
-        <article v-for="project in projects" :key="project.id" class="project-card">
-          <header class="project-card-header">
-            <div>
+      <div v-else-if="displayedProjects.length === 0" class="empty-state compact">
+        <p>没有匹配的书籍，试试调整搜索或筛选条件。</p>
+      </div>
+
+      <div v-else class="book-grid">
+        <article v-for="project in displayedProjects" :key="project.id" class="book-card">
+          <div class="book-cover">
+            <img
+              :src="getCoverUrl(project) || defaultBookCover"
+              :alt="`${project.title} 封面`"
+            />
+          </div>
+
+          <div class="book-info">
+            <header class="book-header">
               <h2>{{ project.title }}</h2>
-              <p class="genre">{{ project.genre || '未设置类型' }}</p>
-            </div>
-            <span class="version">v{{ project.version }}</span>
-          </header>
+              <span class="status-badge" :class="`status-${project.status}`">
+                {{ getStatusLabel(project.status) }}
+              </span>
+            </header>
 
-          <p class="summary">{{ project.summary || '暂无项目简介。' }}</p>
+            <p class="book-author">{{ project.author || '未设置作者' }}</p>
+            <p class="book-genre">{{ project.genre || '未设置类型' }}</p>
 
-          <footer class="project-card-footer">
-            <span>更新于 {{ formatUpdatedAt(project.updated_at) }}</span>
-            <div class="card-actions">
-              <RouterLink class="open-link" :to="`/projects/${project.id}`">打开</RouterLink>
-              <button class="secondary-button" type="button" :disabled="isSaving" @click="editingProject = project">
-                编辑
-              </button>
-              <button class="danger-button" type="button" :disabled="isSaving" @click="handleDelete(project)">
-                删除
-              </button>
+            <div v-if="project.tags.length > 0" class="book-tags">
+              <span v-for="tag in project.tags.slice(0, 6)" :key="tag" class="book-tag">
+                {{ tag }}
+              </span>
+              <span v-if="project.tags.length > 6" class="book-tag more">
+                +{{ project.tags.length - 6 }}
+              </span>
             </div>
-          </footer>
+
+            <p class="book-summary">{{ project.summary || '暂无简介。' }}</p>
+
+            <footer class="book-footer">
+              <span class="book-updated">更新于 {{ formatUpdatedAt(project.updated_at) }}</span>
+              <div class="book-actions">
+                <RouterLink class="open-link" :to="`/projects/${project.id}`">打开</RouterLink>
+                <button
+                  class="secondary-button"
+                  type="button"
+                  :disabled="isSaving"
+                  @click="editingProject = project"
+                >
+                  编辑
+                </button>
+                <button
+                  class="danger-button"
+                  type="button"
+                  :disabled="isSaving"
+                  @click="handleDelete(project)"
+                >
+                  删除
+                </button>
+              </div>
+            </footer>
+          </div>
         </article>
       </div>
     </section>
 
     <CreateProjectDialog
       v-if="showCreateDialog"
+      :tag-suggestions="tagSuggestions"
+      :default-cover-url="defaultBookCover"
       @close="showCreateDialog = false"
       @submit="handleCreate"
     />
@@ -170,8 +393,12 @@ function getErrorMessage(error: unknown, fallback: string): string {
     <EditProjectDialog
       v-if="editingProject"
       :project="editingProject"
+      :tag-suggestions="tagSuggestions"
+      :default-cover-url="defaultBookCover"
       @close="editingProject = null"
       @submit="handleEdit"
+      @upload-cover="handleEditCoverUpload"
+      @delete-cover="handleEditCoverDelete"
     />
   </main>
 </template>
@@ -181,8 +408,8 @@ function getErrorMessage(error: unknown, fallback: string): string {
   min-height: 100vh;
   box-sizing: border-box;
   padding: 40px;
-  background: #f6f8fb;
-  color: #111827;
+  background: var(--zs-color-bg);
+  color: var(--zs-color-text);
 }
 
 .page-header {
@@ -202,7 +429,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
 
 .eyebrow {
   margin: 0 0 6px;
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.78rem;
   font-weight: 800;
   letter-spacing: 0;
@@ -228,11 +455,11 @@ h1 {
 .error-banner {
   box-sizing: border-box;
   margin-bottom: 16px;
-  border: 1px solid #f4b4ad;
+  border: 1px solid var(--zs-color-danger);
   border-radius: 8px;
   padding: 12px 14px;
-  background: #fff1f0;
-  color: #9f1c12;
+  background: var(--zs-color-danger-soft);
+  color: var(--zs-color-danger);
   font-weight: 700;
 }
 
@@ -241,10 +468,10 @@ h1 {
   display: grid;
   place-items: center;
   min-height: 320px;
-  border: 1px dashed #cbd5e1;
+  border: 1px dashed var(--zs-color-border);
   border-radius: 8px;
-  background: #ffffff;
-  color: #64748b;
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text-muted);
 }
 
 .empty-state {
@@ -259,75 +486,155 @@ h1 {
 }
 
 .empty-state h2 {
-  color: #1f2937;
+  color: var(--zs-color-text);
   font-size: 1.25rem;
 }
 
-.project-grid {
+.book-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 16px;
 }
 
-.project-card {
+.book-card {
   display: grid;
-  gap: 18px;
-  min-height: 220px;
-  border: 1px solid #d8dee9;
+  grid-template-columns: 100px 1fr;
+  gap: 20px;
+  border: 1px solid var(--zs-color-border);
   border-radius: 8px;
   padding: 20px;
-  background: #ffffff;
-  box-shadow: 0 10px 28px rgb(20 24 31 / 6%);
+  background: var(--zs-color-surface);
+  box-shadow: var(--zs-shadow-sm);
 }
 
-.project-card-header,
-.project-card-footer {
+.book-cover {
+  width: 100px;
+  aspect-ratio: 3 / 4.2;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--zs-color-border-soft);
+  background: var(--zs-color-surface-soft);
+  flex-shrink: 0;
+}
+
+.book-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.book-info {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  min-width: 0;
+}
+
+.book-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
 }
 
-.project-card h2 {
-  margin: 0 0 6px;
-  color: #111827;
+.book-header h2 {
+  margin: 0;
+  color: var(--zs-color-text);
   font-size: 1.15rem;
   line-height: 1.25;
 }
 
-.genre,
-.summary,
-.project-card-footer {
-  color: #64748b;
+.status-badge {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
-.genre,
-.summary {
+.status-planning {
+  background: var(--zs-color-info-soft);
+  color: var(--zs-color-info);
+}
+
+.status-writing {
+  background: var(--zs-color-success-soft);
+  color: var(--zs-color-success);
+}
+
+.status-paused {
+  background: var(--zs-color-warning-soft);
+  color: var(--zs-color-warning);
+}
+
+.status-completed {
+  background: var(--zs-color-success-soft);
+  color: var(--zs-color-success);
+}
+
+.status-archived {
+  background: var(--zs-color-surface-muted);
+  color: var(--zs-color-text-muted);
+}
+
+.book-author {
   margin: 0;
+  color: var(--zs-color-text);
+  font-size: 0.88rem;
+  font-weight: 600;
 }
 
-.summary {
+.book-genre {
+  margin: 0;
+  color: var(--zs-color-text-muted);
+  font-size: 0.82rem;
+}
+
+.book-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.book-tag {
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: var(--zs-color-info-soft);
+  color: var(--zs-color-info);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.book-tag.more {
+  background: var(--zs-color-surface-muted);
+  color: var(--zs-color-text-muted);
+}
+
+.book-summary {
+  margin: 4px 0 0;
+  color: var(--zs-color-text-muted);
+  font-size: 0.86rem;
   line-height: 1.6;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
   white-space: pre-wrap;
 }
 
-.version {
-  flex: 0 0 auto;
-  border-radius: 999px;
-  padding: 4px 9px;
-  background: #eef2ff;
-  color: #3730a3;
-  font-size: 0.78rem;
-  font-weight: 800;
-}
-
-.project-card-footer {
+.book-footer {
+  display: flex;
   align-items: center;
-  margin-top: auto;
-  font-size: 0.86rem;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  color: var(--zs-color-text-faint);
+  font-size: 0.82rem;
 }
 
-.card-actions {
+.book-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -336,13 +643,14 @@ h1 {
 .open-link {
   display: inline-flex;
   align-items: center;
-  min-height: 38px;
+  min-height: 34px;
   box-sizing: border-box;
   border-radius: 6px;
-  padding: 0 14px;
-  background: #2563eb;
-  color: #ffffff;
+  padding: 0 12px;
+  background: var(--zs-color-primary);
+  color: var(--zs-color-on-primary);
   font-weight: 800;
+  font-size: 0.86rem;
   text-decoration: none;
 }
 
@@ -351,22 +659,23 @@ h1 {
   align-items: center;
   min-height: 38px;
   box-sizing: border-box;
-  border: 1px solid #cfd7e3;
+  border: 1px solid var(--zs-color-border);
   border-radius: 6px;
   padding: 0 14px;
-  background: #ffffff;
-  color: #374151;
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
   font-weight: 800;
   text-decoration: none;
 }
 
 button {
-  min-height: 38px;
+  min-height: 34px;
   border-radius: 6px;
   border: 1px solid transparent;
-  padding: 0 14px;
+  padding: 0 12px;
   font: inherit;
   font-weight: 800;
+  font-size: 0.86rem;
   cursor: pointer;
 }
 
@@ -376,20 +685,143 @@ button:disabled {
 }
 
 .primary-button {
-  background: #2563eb;
-  color: #ffffff;
+  background: var(--zs-color-primary);
+  color: var(--zs-color-on-primary);
 }
 
 .secondary-button {
-  border-color: #cfd7e3;
-  background: #ffffff;
-  color: #374151;
+  border-color: var(--zs-color-border);
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
 }
 
 .danger-button {
-  border-color: #fecaca;
-  background: #fff7f7;
-  color: #b42318;
+  border-color: var(--zs-color-danger);
+  background: var(--zs-color-danger-soft);
+  color: var(--zs-color-danger);
+}
+
+.projects-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  max-width: 1120px;
+  margin: 0 auto 16px;
+}
+
+.toolbar-search {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.search-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 38px;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-sm);
+  padding: 0 14px;
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
+  font: inherit;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--zs-color-primary);
+  box-shadow: var(--zs-shadow-focus);
+}
+
+.toolbar-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.filter-menu {
+  position: relative;
+}
+
+.filter-button {
+  min-height: 38px;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-sm);
+  padding: 0 14px;
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.filter-button.active {
+  border-color: var(--zs-color-primary);
+  color: var(--zs-color-primary);
+}
+
+.filter-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 10;
+  display: grid;
+  gap: 10px;
+  min-width: 240px;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-md);
+  padding: 14px;
+  background: var(--zs-color-surface);
+  box-shadow: var(--zs-shadow-md);
+}
+
+.filter-field {
+  display: grid;
+  gap: 6px;
+  color: var(--zs-color-text-muted);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.filter-field select {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-sm);
+  padding: 0 10px;
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
+  font: inherit;
+}
+
+.filter-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.sort-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--zs-color-text-muted);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.sort-control select {
+  min-height: 38px;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-sm);
+  padding: 0 10px;
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
+  font: inherit;
+}
+
+.empty-state.compact {
+  min-height: 140px;
 }
 
 @media (max-width: 720px) {
@@ -399,9 +831,19 @@ button:disabled {
 
   .page-header,
   .header-actions,
-  .project-card-footer {
+  .book-footer {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .book-card {
+    grid-template-columns: 80px 1fr;
+    gap: 14px;
+    padding: 16px;
+  }
+
+  .book-cover {
+    width: 80px;
   }
 
   .primary-button,

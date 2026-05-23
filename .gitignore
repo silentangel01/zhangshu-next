@@ -33,11 +33,30 @@ backups/
 exports/
 recovery/
 
-# OS / editor
+# OS / editor / AI tools
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
+.claude/
+.cursor/
+.windsurf/
+.trae/
+.augment/
+.qoder/
+
+# bat files
+*.bat
+
+# Agents Md
+AGENTS.md
+CLAUDE.md
+
+# ps files
+*.ps1
+
+# AI handoff docs
+docs\ai-handoff
 
 # Tauri build output
 frontend/src-tauri/target/

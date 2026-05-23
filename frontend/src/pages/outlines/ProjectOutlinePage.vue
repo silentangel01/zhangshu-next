@@ -280,8 +280,8 @@ function getErrorMessage(error: unknown, fallback: string): string {
   min-height: 100vh;
   box-sizing: border-box;
   padding: 32px;
-  background: #f6f8fb;
-  color: #111827;
+  background: var(--zs-color-bg);
+  color: var(--zs-color-text);
 }
 
 .page-header,
@@ -305,7 +305,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
 .back-link {
   display: inline-flex;
   margin-bottom: 14px;
-  color: #2563eb;
+  color: var(--zs-color-primary);
   font-weight: 800;
   text-decoration: none;
 }
@@ -313,7 +313,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
 .eyebrow,
 .project-title {
   margin: 0;
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-weight: 800;
 }
 
@@ -338,25 +338,25 @@ h1 {
 }
 
 .error-banner {
-  border: 1px solid #f4b4ad;
-  background: #fff1f0;
-  color: #9f1c12;
+  border: 1px solid var(--zs-color-danger);
+  background: var(--zs-color-danger-soft);
+  color: var(--zs-color-danger);
 }
 
 .success-banner {
-  border: 1px solid #bbf7d0;
-  background: #f0fdf4;
-  color: #047857;
+  border: 1px solid var(--zs-color-success);
+  background: var(--zs-color-success-soft);
+  color: var(--zs-color-success);
 }
 
 .state-message {
   display: grid;
   place-items: center;
   min-height: 360px;
-  border: 1px dashed #cbd5e1;
+  border: 1px dashed var(--zs-color-border);
   border-radius: 8px;
-  background: #ffffff;
-  color: #64748b;
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text-muted);
 }
 
 .outline-layout {
@@ -369,10 +369,10 @@ h1 {
 .tree-panel,
 .editor-panel {
   min-width: 0;
-  border: 1px solid #d8dee9;
+  border: 1px solid var(--zs-color-border);
   border-radius: 8px;
   padding: 20px;
-  background: #ffffff;
+  background: var(--zs-color-surface);
   box-shadow: 0 10px 28px rgb(20 24 31 / 6%);
 }
 
@@ -382,7 +382,7 @@ h1 {
   align-content: center;
   gap: 10px;
   min-height: 420px;
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   text-align: center;
 }
 
@@ -392,7 +392,7 @@ h1 {
 }
 
 .empty-detail h2 {
-  color: #111827;
+  color: var(--zs-color-text);
   font-size: 1.2rem;
 }
 
@@ -412,8 +412,8 @@ button:disabled {
 }
 
 .primary-button {
-  background: #2563eb;
-  color: #ffffff;
+  background: var(--zs-color-primary);
+  color: var(--zs-color-on-primary);
 }
 
 @media (max-width: 860px) {

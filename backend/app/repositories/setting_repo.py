@@ -22,6 +22,7 @@ class SettingRepository:
         canon_status: str | None = None,
         importance: str | None = None,
         keyword: str | None = None,
+        node_kind: str | None = None,
     ) -> list[SettingItem]:
         statement = select(SettingItem).where(
             SettingItem.project_id == project_id,
@@ -34,6 +35,8 @@ class SettingRepository:
             statement = statement.where(SettingItem.canon_status == canon_status)
         if importance is not None:
             statement = statement.where(SettingItem.importance == importance)
+        if node_kind is not None:
+            statement = statement.where(SettingItem.node_kind == node_kind)
         if keyword:
             pattern = f"%{keyword}%"
             statement = statement.where(
@@ -83,3 +86,27 @@ class SettingRepository:
         self.db.commit()
         self.db.refresh(setting)
         return setting
+
+    def get_active_by_project_and_folder_key(
+        self, project_id: str, folder_key: str
+    ) -> SettingItem | None:
+        statement = select(SettingItem).where(
+            SettingItem.project_id == project_id,
+            SettingItem.folder_key == folder_key,
+            SettingItem.deleted_at.is_(None),
+        )
+        return self.db.scalar(statement)
+
+    def list_active_children(self, parent_id: str) -> list[SettingItem]:
+        statement = (
+            select(SettingItem)
+            .where(
+                SettingItem.parent_id == parent_id,
+                SettingItem.deleted_at.is_(None),
+            )
+            .order_by(
+                SettingItem.order_index.asc(),
+                SettingItem.updated_at.desc(),
+            )
+        )
+        return list(self.db.scalars(statement).all())

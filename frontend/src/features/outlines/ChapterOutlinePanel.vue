@@ -324,7 +324,7 @@ function resetForm() {
 
 .detail-header {
   padding-bottom: 4px;
-  border-bottom: 1px solid #edf0f5;
+  border-bottom: 1px solid var(--zs-color-border-soft);
 }
 
 .eyebrow,
@@ -334,29 +334,29 @@ p {
 }
 
 .eyebrow {
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.75rem;
   font-weight: 800;
 }
 
 h2 {
-  color: #111827;
+  color: var(--zs-color-text);
   font-size: 1rem;
 }
 
 .panel-note {
   margin-top: 4px;
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.82rem;
 }
 
 .text-button,
 .primary-button,
 .danger-button {
-  border: 1px solid #cfd7e3;
+  border: 1px solid var(--zs-color-border);
   border-radius: 6px;
   padding: 0 10px;
-  background: #ffffff;
+  background: var(--zs-color-surface);
   font: inherit;
   font-size: 0.8rem;
   font-weight: 800;
@@ -365,16 +365,16 @@ h2 {
 
 .text-button {
   min-height: 30px;
-  color: #2563eb;
+  color: var(--zs-color-primary);
 }
 
 .detail-card {
   display: grid;
   gap: 14px;
-  border: 1px solid #d8dee9;
+  border: 1px solid var(--zs-color-border);
   border-radius: 8px;
   padding: 14px;
-  background: #ffffff;
+  background: var(--zs-color-surface);
 }
 
 .summary-grid,
@@ -388,10 +388,10 @@ h2 {
 }
 
 .summary-grid div {
-  border: 1px solid #edf0f5;
+  border: 1px solid var(--zs-color-border-soft);
   border-radius: 8px;
   padding: 10px;
-  background: #fbfcfe;
+  background: var(--zs-color-bg);
 }
 
 .field-label,
@@ -401,20 +401,20 @@ h2 {
 
 .field-label {
   margin-bottom: 4px;
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.75rem;
   font-weight: 800;
 }
 
 .summary-grid strong {
-  color: #111827;
+  color: var(--zs-color-text);
   font-size: 0.9rem;
 }
 
 label {
   display: grid;
   gap: 6px;
-  color: #4b5563;
+  color: var(--zs-color-text-muted);
   font-size: 0.9rem;
   font-weight: 800;
 }
@@ -424,10 +424,10 @@ select,
 textarea {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid #cfd7e3;
+  border: 1px solid var(--zs-color-border);
   border-radius: 6px;
   padding: 10px 12px;
-  color: #111827;
+  color: var(--zs-color-text);
   font: inherit;
 }
 
@@ -444,14 +444,14 @@ textarea {
 
 .primary-button {
   border-color: transparent;
-  background: #2563eb;
-  color: #ffffff;
+  background: var(--zs-color-primary);
+  color: var(--zs-color-on-primary);
 }
 
 .danger-button {
-  border-color: #fecaca;
-  background: #fff7f7;
-  color: #b42318;
+  border-color: var(--zs-color-danger);
+  background: var(--zs-color-danger-soft);
+  color: var(--zs-color-danger);
 }
 
 .outline-list {
@@ -464,15 +464,15 @@ textarea {
 
 .state-message,
 .error-message {
-  border: 1px dashed #cbd5e1;
+  border: 1px dashed var(--zs-color-border);
   border-radius: 8px;
   padding: 14px;
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   text-align: center;
 }
 
 .error-message {
-  border-color: #fecaca;
-  color: #b42318;
+  border-color: var(--zs-color-danger);
+  color: var(--zs-color-danger);
 }
 </style>

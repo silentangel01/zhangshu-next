@@ -14,6 +14,7 @@ import type {
   SettingImportance,
   SettingItem,
   SettingItemType,
+  SettingNodeKind,
 } from '@/entities/setting/types'
 import {
   settingCanonStatusLabels,
@@ -60,6 +61,8 @@ const form = reactive({
   summary: '',
   detail: '',
   order_index: 0,
+  node_kind: 'page' as SettingNodeKind,
+  folder_default_item_type: 'custom' as SettingItemType | null,
 })
 
 const itemTypes: SettingItemType[] = [
@@ -72,6 +75,7 @@ const itemTypes: SettingItemType[] = [
   'rule',
   'race',
   'object',
+  'character',
   'custom',
 ]
 const canonStatuses: SettingCanonStatus[] = ['draft', 'confirmed', 'deprecated', 'conflicted']
@@ -85,8 +89,174 @@ const projectId = computed<string>(() => {
 const treeItems = computed<SettingTreeItem[]>(() => buildTree(settings.value))
 
 const parentOptions = computed(() =>
-  allSettings.value.filter((setting) => setting.id !== selectedSetting.value?.id),
+  allSettings.value.filter(
+    (setting) =>
+      setting.id !== selectedSetting.value?.id && setting.node_kind === 'folder',
+  ),
 )
+
+const folders = computed(() =>
+  allSettings.value.filter((s) => s.node_kind === 'folder'),
+)
+
+const selectedFolder = computed(() => {
+  if (!selectedSetting.value) return null
+  if (selectedSetting.value.node_kind === 'folder') return selectedSetting.value
+  if (selectedSetting.value.parent_id) {
+    return allSettings.value.find((s) => s.id === selectedSetting.value?.parent_id) ?? null
+  }
+  return null
+})
+
+const inheritedTypeLabel = computed(() => {
+  if (!selectedSetting.value || selectedSetting.value.node_kind !== 'page') return ''
+  const parentFolder = allSettings.value.find(
+    (s) => s.id === selectedSetting.value?.parent_id,
+  )
+  if (parentFolder?.folder_default_item_type) {
+    return settingItemTypeLabels[parentFolder.folder_default_item_type] ?? parentFolder.folder_default_item_type
+  }
+  return settingItemTypeLabels[selectedSetting.value.item_type] ?? selectedSetting.value.item_type
+})
+
+const selectedFolderId = ref<string | null>(null)
+
+// --- Filter panel state ---
+const isFilterPanelOpen = ref(false)
+
+const activeFilterCount = computed(() => {
+  let count = 0
+  if (filters.item_type) count++
+  if (filters.canon_status) count++
+  if (filters.importance) count++
+  return count
+})
+
+// --- Drag-and-drop state ---
+const draggedSettingId = ref<string | null>(null)
+const dragOverFolderId = ref<string | null>(null)
+const isMovingSetting = ref(false)
+const pendingMove = ref<{ page: SettingItem; targetFolder: SettingItem } | null>(null)
+
+// --- Drag helpers ---
+function getSettingById(id: string): SettingItem | undefined {
+  return allSettings.value.find((s) => s.id === id)
+}
+
+// --- Filter handlers ---
+function handleClearStructuredFilters() {
+  filters.item_type = ''
+  filters.canon_status = ''
+  filters.importance = ''
+  isFilterPanelOpen.value = false
+  void handleApplyFilters()
+}
+
+// --- Drag handlers ---
+function handleSettingDragStart(event: DragEvent, setting: SettingItem) {
+  if (setting.node_kind !== 'page' || isSaving.value || isMovingSetting.value) {
+    event.preventDefault()
+    return
+  }
+  draggedSettingId.value = setting.id
+  if (event.dataTransfer) {
+    event.dataTransfer.setData('text/plain', setting.id)
+    event.dataTransfer.effectAllowed = 'move'
+  }
+}
+
+function handleSettingDragEnd() {
+  draggedSettingId.value = null
+  dragOverFolderId.value = null
+}
+
+function handleFolderDragOver(event: DragEvent, folder: SettingItem) {
+  if (folder.node_kind !== 'folder' || !draggedSettingId.value) return
+  event.preventDefault()
+  dragOverFolderId.value = folder.id
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'move'
+  }
+}
+
+function handleFolderDragLeave(folder: SettingItem) {
+  if (dragOverFolderId.value === folder.id) {
+    dragOverFolderId.value = null
+  }
+}
+
+async function handleSettingDrop(_event: DragEvent, targetFolder: SettingItem) {
+  const pageId = draggedSettingId.value
+  draggedSettingId.value = null
+  dragOverFolderId.value = null
+
+  if (!pageId) return
+  if (targetFolder.node_kind !== 'folder') return
+
+  const page = getSettingById(pageId)
+  if (!page || page.node_kind !== 'page') return
+  if (page.parent_id === targetFolder.id) return // same folder, no-op
+
+  // Check type difference
+  const targetType = targetFolder.folder_default_item_type
+  if (targetType && targetType !== page.item_type) {
+    pendingMove.value = { page, targetFolder }
+    return
+  }
+
+  // Types match or target has no default type — move directly
+  await moveSettingToFolder(page, targetFolder, 'inherit')
+}
+
+// --- Move confirmation handlers ---
+async function confirmMoveWithTypeChange() {
+  if (!pendingMove.value) return
+  const { page, targetFolder } = pendingMove.value
+  pendingMove.value = null
+  await moveSettingToFolder(page, targetFolder, 'inherit')
+}
+
+async function confirmMoveKeepType() {
+  if (!pendingMove.value) return
+  const { page, targetFolder } = pendingMove.value
+  pendingMove.value = null
+  await moveSettingToFolder(page, targetFolder, 'keep')
+}
+
+function cancelPendingMove() {
+  pendingMove.value = null
+}
+
+async function moveSettingToFolder(
+  page: SettingItem,
+  targetFolder: SettingItem,
+  mode: 'inherit' | 'keep',
+) {
+  isMovingSetting.value = true
+  errorMessage.value = ''
+  successMessage.value = ''
+
+  try {
+    const payload =
+      mode === 'inherit'
+        ? { parent_id: targetFolder.id }
+        : { parent_id: targetFolder.id, item_type: page.item_type }
+
+    const updated = await updateSetting(page.id, payload)
+    await refreshSettings()
+    selectedSetting.value =
+      allSettings.value.find((s) => s.id === updated.id) ?? null
+    if (selectedSetting.value) {
+      applySettingToForm(selectedSetting.value)
+    }
+    selectedFolderId.value = targetFolder.id
+    successMessage.value = '设定已移动。'
+  } catch (error) {
+    errorMessage.value = getErrorMessage(error, '移动设定失败。')
+  } finally {
+    isMovingSetting.value = false
+  }
+}
 
 onMounted(() => {
   void loadWorkspace()
@@ -164,6 +334,13 @@ async function handleSelectSetting(setting: SettingItem) {
     selectedSetting.value = await getSetting(setting.id)
     isCreating.value = false
     applySettingToForm(selectedSetting.value)
+
+    // Track selected folder for creating new items under it
+    if (setting.node_kind === 'folder') {
+      selectedFolderId.value = setting.id
+    } else if (setting.parent_id) {
+      selectedFolderId.value = setting.parent_id
+    }
   } catch (error) {
     errorMessage.value = getErrorMessage(error, '加载设定详情失败。')
   }
@@ -175,6 +352,23 @@ function handleNewSetting() {
   successMessage.value = ''
   errorMessage.value = ''
   resetForm()
+  form.node_kind = 'page'
+  if (selectedFolderId.value) {
+    form.parent_id = selectedFolderId.value
+  }
+}
+
+function handleNewFolder() {
+  selectedSetting.value = null
+  isCreating.value = true
+  successMessage.value = ''
+  errorMessage.value = ''
+  resetForm()
+  form.node_kind = 'folder'
+  form.title = ''
+  if (selectedFolderId.value) {
+    form.parent_id = selectedFolderId.value
+  }
 }
 
 async function handleSaveSetting() {
@@ -183,16 +377,19 @@ async function handleSaveSetting() {
   }
 
   await saveSafe(async () => {
+    const isFolder = form.node_kind === 'folder'
     const payload = {
       parent_id: form.parent_id || null,
       title: form.title,
-      item_type: form.item_type,
-      canon_status: form.canon_status,
-      importance: form.importance,
-      tags: form.tags,
-      summary: form.summary,
-      detail: form.detail,
+      item_type: isFolder ? undefined : form.item_type,
+      canon_status: isFolder ? undefined : form.canon_status,
+      importance: isFolder ? undefined : form.importance,
+      tags: isFolder ? undefined : form.tags,
+      summary: isFolder ? undefined : form.summary,
+      detail: isFolder ? undefined : form.detail,
       order_index: Number(form.order_index) || 0,
+      node_kind: form.node_kind,
+      folder_default_item_type: isFolder ? form.folder_default_item_type : undefined,
     }
 
     const saved = isCreating.value
@@ -259,11 +456,29 @@ async function saveSafe(action: () => Promise<void>, fallback: string) {
 }
 
 function buildTree(items: SettingItem[]): SettingTreeItem[] {
+  const allItems = allSettings.value
+  const matchIds = new Set(items.map((item) => item.id))
+
+  // When filtering, include ancestor folders of matched items to keep tree intact
+  const visibleIds = new Set<string>(matchIds)
+  if (items.length < allItems.length) {
+    const byId = new Map(allItems.map((s) => [s.id, s]))
+    for (const item of items) {
+      let currentId = item.parent_id
+      while (currentId && !visibleIds.has(currentId)) {
+        visibleIds.add(currentId)
+        const ancestor = byId.get(currentId)
+        currentId = ancestor?.parent_id ?? null
+      }
+    }
+  }
+
+  const visibleItems = allItems.filter((s) => visibleIds.has(s.id))
   const childrenByParent = new Map<string, SettingItem[]>()
-  const ids = new Set(items.map((item) => item.id))
+  const ids = new Set(visibleItems.map((item) => item.id))
   const roots: SettingItem[] = []
 
-  for (const item of items) {
+  for (const item of visibleItems) {
     if (!item.parent_id || !ids.has(item.parent_id)) {
       roots.push(item)
       continue
@@ -274,8 +489,13 @@ function buildTree(items: SettingItem[]): SettingTreeItem[] {
     childrenByParent.set(item.parent_id, children)
   }
 
-  const sortItems = (left: SettingItem, right: SettingItem) =>
-    left.order_index - right.order_index || left.title.localeCompare(right.title, 'zh-Hans-CN')
+  const sortItems = (left: SettingItem, right: SettingItem) => {
+    // Folders first, then pages
+    if (left.node_kind !== right.node_kind) {
+      return left.node_kind === 'folder' ? -1 : 1
+    }
+    return left.order_index - right.order_index || left.title.localeCompare(right.title, 'zh-Hans-CN')
+  }
 
   roots.sort(sortItems)
   for (const children of childrenByParent.values()) {
@@ -307,6 +527,8 @@ function applySettingToForm(setting: SettingItem) {
   form.summary = setting.summary
   form.detail = setting.detail
   form.order_index = setting.order_index
+  form.node_kind = setting.node_kind
+  form.folder_default_item_type = setting.folder_default_item_type ?? 'custom'
 }
 
 function resetForm() {
@@ -319,6 +541,8 @@ function resetForm() {
   form.summary = ''
   form.detail = ''
   form.order_index = 0
+  form.node_kind = 'page'
+  form.folder_default_item_type = 'custom'
 }
 
 function getErrorMessage(error: unknown, fallback: string): string {
@@ -341,10 +565,81 @@ function getErrorMessage(error: unknown, fallback: string): string {
           设定集用于保存本书自设，如世界观、地点、组织、历史、规则和力量体系。外部素材和参考资料后续放入知识库，不在这里混用。
         </p>
       </div>
-      <button class="primary-button" type="button" :disabled="isSaving" @click="handleNewSetting">
-        新建设定
-      </button>
+      <div class="header-actions">
+        <button class="secondary-button" type="button" :disabled="isSaving" @click="handleNewFolder">
+          新建目录
+        </button>
+        <button class="primary-button" type="button" :disabled="isSaving" @click="handleNewSetting">
+          新建设定
+        </button>
+      </div>
     </header>
+
+    <!-- Toolbar: search + filter button -->
+    <div class="settings-toolbar">
+      <div class="search-group">
+        <input
+          v-model="filters.keyword"
+          type="search"
+          placeholder="搜索标题、简介、详细设定或标签"
+          @keyup.enter="handleApplyFilters"
+        />
+        <button class="secondary-button" type="button" :disabled="isSaving" @click="handleApplyFilters">
+          搜索
+        </button>
+      </div>
+      <div class="filter-menu">
+        <button
+          class="secondary-button"
+          type="button"
+          :class="{ active: isFilterPanelOpen || activeFilterCount > 0 }"
+          @click="isFilterPanelOpen = !isFilterPanelOpen"
+        >
+          筛选{{ activeFilterCount > 0 ? `（${activeFilterCount}）` : '' }}
+        </button>
+        <div v-if="isFilterPanelOpen" class="filter-panel">
+          <label>
+            <span>类型</span>
+            <select v-model="filters.item_type">
+              <option value="">全部类型</option>
+              <option v-for="itemType in itemTypes" :key="itemType" :value="itemType">
+                {{ settingItemTypeLabels[itemType] }}
+              </option>
+            </select>
+          </label>
+          <label>
+            <span>确认状态</span>
+            <select v-model="filters.canon_status">
+              <option value="">全部确认状态</option>
+              <option v-for="status in canonStatuses" :key="status" :value="status">
+                {{ settingCanonStatusLabels[status] }}
+              </option>
+            </select>
+          </label>
+          <label>
+            <span>重要程度</span>
+            <select v-model="filters.importance">
+              <option value="">全部重要程度</option>
+              <option v-for="importance in importances" :key="importance" :value="importance">
+                {{ settingImportanceLabels[importance] }}
+              </option>
+            </select>
+          </label>
+          <div class="filter-actions">
+            <button class="secondary-button" type="button" @click="handleClearStructuredFilters">
+              清空筛选
+            </button>
+            <button
+              class="primary-button"
+              type="button"
+              @click="isFilterPanelOpen = false; handleApplyFilters()"
+            >
+              应用筛选
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <section v-if="errorMessage" class="error-banner" role="alert">{{ errorMessage }}</section>
     <section v-if="successMessage" class="success-banner" role="status">{{ successMessage }}</section>
@@ -354,31 +649,6 @@ function getErrorMessage(error: unknown, fallback: string): string {
       <aside class="list-panel material-list-panel">
         <p class="boundary-card">这里保存的是本书内部设定。外部资料、灵感素材和参考内容后续将放入知识库模块。</p>
 
-        <div class="filters">
-          <input v-model="filters.keyword" type="search" placeholder="搜索标题、简介、详细设定或标签" />
-          <select v-model="filters.item_type">
-            <option value="">全部类型</option>
-            <option v-for="itemType in itemTypes" :key="itemType" :value="itemType">
-              {{ settingItemTypeLabels[itemType] }}
-            </option>
-          </select>
-          <select v-model="filters.canon_status">
-            <option value="">全部确认状态</option>
-            <option v-for="status in canonStatuses" :key="status" :value="status">
-              {{ settingCanonStatusLabels[status] }}
-            </option>
-          </select>
-          <select v-model="filters.importance">
-            <option value="">全部重要程度</option>
-            <option v-for="importance in importances" :key="importance" :value="importance">
-              {{ settingImportanceLabels[importance] }}
-            </option>
-          </select>
-          <button class="secondary-button" type="button" :disabled="isSaving" @click="handleApplyFilters">
-            筛选
-          </button>
-        </div>
-
         <p v-if="settings.length === 0" class="empty-state">暂无设定，请先新建设定。</p>
 
         <ul v-else class="setting-list">
@@ -386,18 +656,37 @@ function getErrorMessage(error: unknown, fallback: string): string {
             <button
               class="setting-card"
               type="button"
-              :class="{ active: selectedSetting?.id === item.setting.id }"
+              :class="{
+                active: selectedSetting?.id === item.setting.id,
+                'is-folder': item.setting.node_kind === 'folder',
+                dragging: draggedSettingId === item.setting.id,
+                'drop-target': dragOverFolderId === item.setting.id,
+              }"
               :style="{ paddingLeft: `${12 + item.level * 18}px` }"
+              :draggable="item.setting.node_kind === 'page' && !isSaving && !isMovingSetting"
               @click="handleSelectSetting(item.setting)"
+              @dragstart="handleSettingDragStart($event, item.setting)"
+              @dragend="handleSettingDragEnd"
+              @dragover="handleFolderDragOver($event, item.setting)"
+              @dragleave="handleFolderDragLeave(item.setting)"
+              @drop="handleSettingDrop($event, item.setting)"
             >
-              <span class="title">{{ item.setting.title }}</span>
-              <span class="meta">
+              <span class="title">
+                <span v-if="item.setting.node_kind === 'folder'" class="node-icon">&#x1F4C1;</span>
+                <span v-else class="node-icon">&#x1F4C4;</span>
+                {{ item.setting.title }}
+              </span>
+              <span v-if="item.setting.node_kind === 'page'" class="meta">
                 {{ settingItemTypeLabels[item.setting.item_type] }} ·
                 {{ settingCanonStatusLabels[item.setting.canon_status] }} ·
                 {{ settingImportanceLabels[item.setting.importance] }}
               </span>
-              <span v-if="item.setting.tags" class="tags">{{ item.setting.tags }}</span>
-              <span class="summary">{{ item.setting.summary || '暂无简介' }}</span>
+              <span v-else-if="item.setting.folder_default_item_type" class="meta">
+                目录 · 默认类型：{{ settingItemTypeLabels[item.setting.folder_default_item_type] }}
+              </span>
+              <span v-else class="meta">目录</span>
+              <span v-if="item.setting.node_kind === 'page' && item.setting.tags" class="tags">{{ item.setting.tags }}</span>
+              <span v-if="item.setting.node_kind === 'page'" class="summary">{{ item.setting.summary || '暂无简介' }}</span>
             </button>
           </li>
         </ul>
@@ -417,36 +706,48 @@ function getErrorMessage(error: unknown, fallback: string): string {
             <span>标题</span>
             <input v-model.trim="form.title" type="text" required />
           </label>
+          <template v-if="form.node_kind === 'folder'">
+            <label>
+              <span>默认设定类型</span>
+              <select v-model="form.folder_default_item_type">
+                <option v-for="itemType in itemTypes" :key="itemType" :value="itemType">
+                  {{ settingItemTypeLabels[itemType] }}
+                </option>
+              </select>
+            </label>
+          </template>
+          <template v-else>
+            <label v-if="!isCreating && selectedFolder">
+              <span>类型（继承自目录）</span>
+              <input :value="inheritedTypeLabel" type="text" disabled />
+            </label>
+            <label v-else-if="isCreating">
+              <span>类型（由目录继承）</span>
+              <input :value="inheritedTypeLabel || '自动继承'" type="text" disabled />
+            </label>
+            <label>
+              <span>确认状态</span>
+              <select v-model="form.canon_status">
+                <option v-for="status in canonStatuses" :key="status" :value="status">
+                  {{ settingCanonStatusLabels[status] }}
+                </option>
+              </select>
+            </label>
+            <label>
+              <span>重要程度</span>
+              <select v-model="form.importance">
+                <option v-for="importance in importances" :key="importance" :value="importance">
+                  {{ settingImportanceLabels[importance] }}
+                </option>
+              </select>
+            </label>
+          </template>
           <label>
-            <span>类型</span>
-            <select v-model="form.item_type">
-              <option v-for="itemType in itemTypes" :key="itemType" :value="itemType">
-                {{ settingItemTypeLabels[itemType] }}
-              </option>
-            </select>
-          </label>
-          <label>
-            <span>确认状态</span>
-            <select v-model="form.canon_status">
-              <option v-for="status in canonStatuses" :key="status" :value="status">
-                {{ settingCanonStatusLabels[status] }}
-              </option>
-            </select>
-          </label>
-          <label>
-            <span>重要程度</span>
-            <select v-model="form.importance">
-              <option v-for="importance in importances" :key="importance" :value="importance">
-                {{ settingImportanceLabels[importance] }}
-              </option>
-            </select>
-          </label>
-          <label>
-            <span>父级设定</span>
+            <span>所属目录</span>
             <select v-model="form.parent_id">
-              <option value="">无父级设定</option>
-              <option v-for="setting in parentOptions" :key="setting.id" :value="setting.id">
-                {{ setting.title }}
+              <option value="">无（根级）</option>
+              <option v-for="folder in parentOptions" :key="folder.id" :value="folder.id">
+                {{ folder.title }}
               </option>
             </select>
           </label>
@@ -456,23 +757,26 @@ function getErrorMessage(error: unknown, fallback: string): string {
           </label>
         </div>
 
-        <label>
-          <span>标签</span>
-          <input v-model.trim="form.tags" type="text" placeholder="例如：边城,主线地点" />
-        </label>
+        <template v-if="form.node_kind !== 'folder'">
+          <label>
+            <span>标签</span>
+            <input v-model.trim="form.tags" type="text" placeholder="例如：边城,主线地点" />
+          </label>
 
-        <label>
-          <span>简介</span>
-          <textarea v-model="form.summary" rows="3" />
-        </label>
+          <label>
+            <span>简介</span>
+            <textarea v-model="form.summary" rows="3" />
+          </label>
 
-        <label>
-          <span>详细设定</span>
-          <textarea v-model="form.detail" rows="10" />
-        </label>
+          <label>
+            <span>详细设定</span>
+            <textarea v-model="form.detail" rows="10" />
+          </label>
+        </template>
 
         <footer class="editor-actions">
           <button
+            v-if="form.node_kind === 'page'"
             class="secondary-button"
             type="button"
             :disabled="isSaving || isCreating || !selectedSetting"
@@ -481,29 +785,54 @@ function getErrorMessage(error: unknown, fallback: string): string {
             在关系图中查看
           </button>
           <button
+            v-if="!selectedSetting?.is_system"
             class="danger-button"
             type="button"
             :disabled="isSaving || isCreating || !selectedSetting"
             @click="handleDeleteSetting"
           >
-            删除设定
+            删除{{ form.node_kind === 'folder' ? '目录' : '设定' }}
           </button>
           <button class="primary-button" type="submit" :disabled="isSaving || !form.title.trim()">
-            {{ isSaving ? '正在保存…' : '保存设定' }}
+            {{ isSaving ? '正在保存…' : '保存' }}
           </button>
         </footer>
       </form>
       <aside class="material-related-panel">
         <MaterialLinkPanel
-          v-if="selectedSetting"
+          v-if="selectedSetting && selectedSetting.node_kind === 'page'"
           :project-id="projectId"
           source-type="setting"
           :source-id="selectedSetting.id"
           :source-title="selectedSetting.title"
         />
-        <article v-else class="empty-state related-empty">暂无关联资料</article>
+        <article v-else class="empty-state related-empty">
+          {{ selectedSetting?.node_kind === 'folder' ? '目录无关联资料' : '暂无关联资料' }}
+        </article>
       </aside>
     </section>
+
+    <!-- Move confirmation panel -->
+    <div v-if="pendingMove" class="move-confirm-overlay" @click.self="cancelPendingMove">
+      <div class="move-confirm-panel">
+        <h3>确认移动设定</h3>
+        <p>
+          「{{ pendingMove.page.title }}」当前类型为「{{ settingItemTypeLabels[pendingMove.page.item_type] }}」，
+          目标目录「{{ pendingMove.targetFolder.title }}」默认类型为「{{ settingItemTypeLabels[pendingMove.targetFolder.folder_default_item_type!] }}」。
+        </p>
+        <div class="move-confirm-actions">
+          <button class="primary-button" type="button" @click="confirmMoveWithTypeChange">
+            自动更改类型
+          </button>
+          <button class="secondary-button" type="button" @click="confirmMoveKeepType">
+            仅移动
+          </button>
+          <button class="danger-button" type="button" @click="cancelPendingMove">
+            取消
+          </button>
+        </div>
+      </div>
+    </div>
   </main>
 </template>
 
@@ -512,8 +841,8 @@ function getErrorMessage(error: unknown, fallback: string): string {
   min-height: 100vh;
   box-sizing: border-box;
   padding: 32px;
-  background: #f6f8fb;
-  color: #111827;
+  background: var(--zs-color-bg);
+  color: var(--zs-color-text);
 }
 
 .page-header,
@@ -537,7 +866,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
 .back-link {
   display: inline-flex;
   margin-bottom: 14px;
-  color: #2563eb;
+  color: var(--zs-color-primary);
   font-weight: 800;
   text-decoration: none;
 }
@@ -546,7 +875,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
 .project-title,
 .boundary-note {
   margin: 0;
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-weight: 800;
 }
 
@@ -587,15 +916,15 @@ h2 {
 }
 
 .error-banner {
-  border: 1px solid #f4b4ad;
-  background: #fff1f0;
-  color: #9f1c12;
+  border: 1px solid var(--zs-color-danger);
+  background: var(--zs-color-danger-soft);
+  color: var(--zs-color-danger);
 }
 
 .success-banner {
-  border: 1px solid #bbf7d0;
-  background: #f0fdf4;
-  color: #047857;
+  border: 1px solid var(--zs-color-success);
+  background: var(--zs-color-success-soft);
+  color: var(--zs-color-success);
 }
 
 .state-message,
@@ -603,10 +932,10 @@ h2 {
   display: grid;
   place-items: center;
   min-height: 220px;
-  border: 1px dashed #cbd5e1;
+  border: 1px dashed var(--zs-color-border);
   border-radius: 8px;
-  background: #ffffff;
-  color: #64748b;
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text-muted);
   text-align: center;
 }
 
@@ -620,28 +949,22 @@ h2 {
 .list-panel,
 .editor-panel {
   min-width: 0;
-  border: 1px solid #d8dee9;
+  border: 1px solid var(--zs-color-border);
   border-radius: 8px;
   padding: 20px;
-  background: #ffffff;
+  background: var(--zs-color-surface);
   box-shadow: 0 10px 28px rgb(20 24 31 / 6%);
 }
 
 .boundary-card {
   margin: 0 0 14px;
-  border: 1px solid #dbeafe;
+  border: 1px solid var(--zs-color-info-soft);
   border-radius: 8px;
   padding: 12px;
-  background: #eff6ff;
-  color: #1e40af;
+  background: var(--zs-color-primary-soft);
+  color: var(--zs-color-info);
   font-weight: 800;
   line-height: 1.7;
-}
-
-.filters {
-  display: grid;
-  gap: 10px;
-  margin-bottom: 14px;
 }
 
 input,
@@ -649,10 +972,10 @@ select,
 textarea {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid #cfd7e3;
+  border: 1px solid var(--zs-color-border);
   border-radius: 6px;
   padding: 10px 12px;
-  color: #111827;
+  color: var(--zs-color-text);
   font: inherit;
 }
 
@@ -673,19 +996,19 @@ textarea {
   display: grid;
   gap: 6px;
   width: 100%;
-  border: 1px solid #d8dee9;
+  border: 1px solid var(--zs-color-border);
   border-radius: 8px;
   padding: 12px;
-  background: #ffffff;
-  color: #111827;
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
   font: inherit;
   text-align: left;
   cursor: pointer;
 }
 
 .setting-card.active {
-  border-color: #2563eb;
-  background: #eff6ff;
+  border-color: var(--zs-color-primary);
+  background: var(--zs-color-primary-soft);
 }
 
 .title {
@@ -693,16 +1016,135 @@ textarea {
   font-weight: 800;
 }
 
+.node-icon {
+  margin-right: 4px;
+  font-size: 0.85rem;
+}
+
+.setting-card.is-folder {
+  font-weight: 800;
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* --- Toolbar: search + filter --- */
+.settings-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  max-width: 1480px;
+  margin-right: auto;
+  margin-left: auto;
+  margin-bottom: 16px;
+}
+
+.search-group {
+  display: flex;
+  flex: 1 1 280px;
+  gap: 8px;
+  min-width: 0;
+}
+
+.search-group input {
+  flex: 1;
+  min-width: 0;
+}
+
+.filter-menu {
+  position: relative;
+}
+
+.filter-menu .secondary-button.active {
+  border-color: var(--zs-color-primary);
+  color: var(--zs-color-primary);
+}
+
+.filter-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 10;
+  display: grid;
+  gap: 10px;
+  min-width: 240px;
+  border: 1px solid var(--zs-color-border);
+  border-radius: 8px;
+  padding: 14px;
+  background: var(--zs-color-surface);
+  box-shadow: 0 8px 24px rgb(20 24 31 / 12%);
+}
+
+.filter-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+/* --- Drag-and-drop --- */
+.setting-card.dragging {
+  opacity: 0.4;
+}
+
+.setting-card.drop-target {
+  border-color: var(--zs-color-primary);
+  border-style: dashed;
+  background: var(--zs-color-primary-soft);
+}
+
+/* --- Move confirmation --- */
+.move-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 30%);
+}
+
+.move-confirm-panel {
+  display: grid;
+  gap: 14px;
+  max-width: 420px;
+  border: 1px solid var(--zs-color-border);
+  border-radius: 10px;
+  padding: 24px;
+  background: var(--zs-color-surface);
+  box-shadow: 0 16px 48px rgb(20 24 31 / 16%);
+}
+
+.move-confirm-panel h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.move-confirm-panel p {
+  margin: 0;
+  color: var(--zs-color-text-muted);
+  line-height: 1.7;
+}
+
+.move-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .meta,
 .tags,
 .summary {
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.86rem;
   line-height: 1.5;
 }
 
 .summary {
-  color: #374151;
+  color: var(--zs-color-text);
 }
 
 .editor-panel {
@@ -727,7 +1169,7 @@ textarea {
 label {
   display: grid;
   gap: 7px;
-  color: #4b5563;
+  color: var(--zs-color-text-muted);
   font-weight: 800;
 }
 
@@ -735,8 +1177,8 @@ label {
   flex: 0 0 auto;
   border-radius: 999px;
   padding: 4px 9px;
-  background: #eef2ff;
-  color: #3730a3;
+  background: var(--zs-color-info-soft);
+  color: var(--zs-color-info);
   font-size: 0.78rem;
   font-weight: 800;
 }
@@ -757,20 +1199,20 @@ button:disabled {
 }
 
 .primary-button {
-  background: #2563eb;
-  color: #ffffff;
+  background: var(--zs-color-primary);
+  color: var(--zs-color-on-primary);
 }
 
 .secondary-button {
-  border-color: #cfd7e3;
-  background: #ffffff;
-  color: #374151;
+  border-color: var(--zs-color-border);
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
 }
 
 .danger-button {
-  border-color: #fecaca;
-  background: #fff7f7;
-  color: #b42318;
+  border-color: var(--zs-color-danger);
+  background: var(--zs-color-danger-soft);
+  color: var(--zs-color-danger);
 }
 
 @media (max-width: 860px) {

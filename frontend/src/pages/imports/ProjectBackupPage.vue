@@ -192,12 +192,11 @@ function getErrorMessage(error: unknown, fallback: string): string {
     <header class="page-header">
       <div>
         <RouterLink class="back-link" :to="projectId ? `/projects/${projectId}` : '/projects'">
-          {{ projectId ? '返回项目' : '返回项目列表' }}
+          {{ projectId ? '返回写作页' : '返回项目列表' }}
         </RouterLink>
         <p class="eyebrow">导入导出</p>
         <h1>导出与备份</h1>
       </div>
-      <RouterLink class="secondary-link" to="/projects">项目列表</RouterLink>
     </header>
 
     <section v-if="errorMessage" class="error-banner" role="alert">

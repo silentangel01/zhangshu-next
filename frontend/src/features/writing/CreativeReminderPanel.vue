@@ -121,23 +121,23 @@ p {
 }
 
 .eyebrow {
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.75rem;
   font-weight: 800;
 }
 
 h2 {
-  color: #111827;
+  color: var(--zs-color-text);
   font-size: 1rem;
 }
 
 button {
   min-height: 30px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--zs-color-border);
   border-radius: 7px;
   padding: 0 10px;
-  background: #ffffff;
-  color: #2563eb;
+  background: var(--zs-color-surface);
+  color: var(--zs-color-primary);
   font: inherit;
   font-size: 0.8rem;
   font-weight: 800;
@@ -145,24 +145,24 @@ button {
 }
 
 .helper-note {
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.78rem;
   line-height: 1.6;
 }
 
 .state-message,
 .error-message {
-  border: 1px dashed #cbd5e1;
+  border: 1px dashed var(--zs-color-border);
   border-radius: 8px;
   padding: 14px;
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   line-height: 1.6;
   text-align: center;
 }
 
 .error-message {
-  border-color: #fecaca;
-  color: #b42318;
+  border-color: var(--zs-color-danger);
+  color: var(--zs-color-danger);
 }
 
 .reminder-list {
@@ -173,20 +173,20 @@ button {
 .reminder-card {
   display: grid;
   gap: 8px;
-  border: 1px solid #d8dee9;
+  border: 1px solid var(--zs-color-border);
   border-radius: 8px;
   padding: 12px;
-  background: #ffffff;
+  background: var(--zs-color-surface);
 }
 
 .reminder-card.warning {
-  border-color: #facc15;
-  background: #fffbeb;
+  border-color: var(--zs-color-warning);
+  background: var(--zs-color-warning-soft);
 }
 
 .reminder-card.critical {
-  border-color: #fca5a5;
-  background: #fff1f2;
+  border-color: var(--zs-color-danger);
+  background: var(--zs-color-danger-soft);
 }
 
 .card-head {
@@ -198,26 +198,26 @@ button {
 .severity {
   border-radius: 999px;
   padding: 2px 7px;
-  background: #eef2ff;
-  color: #3730a3;
+  background: var(--zs-color-info-soft);
+  color: var(--zs-color-info);
   font-size: 0.72rem;
   font-weight: 800;
 }
 
 .reminder-card h3 {
-  color: #111827;
+  color: var(--zs-color-text);
   font-size: 0.9rem;
 }
 
 .reminder-card p {
-  color: #334155;
+  color: var(--zs-color-text);
   font-size: 0.82rem;
   line-height: 1.65;
 }
 
 .target-link {
   justify-self: start;
-  color: #2563eb;
+  color: var(--zs-color-primary);
   font-size: 0.8rem;
   font-weight: 800;
   text-decoration: none;

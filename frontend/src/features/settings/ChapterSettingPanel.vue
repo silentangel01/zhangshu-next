@@ -99,7 +99,7 @@ async function loadProjectSettings() {
   if (!props.projectId) {
     return
   }
-  projectSettings.value = await listProjectSettings(props.projectId)
+  projectSettings.value = await listProjectSettings(props.projectId, { node_kind: 'page' })
 }
 
 function selectLink(link: ChapterSettingLink) {
@@ -351,27 +351,27 @@ p {
 }
 
 .eyebrow {
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.75rem;
   font-weight: 800;
 }
 
 h2 {
-  color: #111827;
+  color: var(--zs-color-text);
   font-size: 1rem;
 }
 
 h3 {
-  color: #111827;
+  color: var(--zs-color-text);
   font-size: 1rem;
 }
 
 .hint {
-  border: 1px solid #dbeafe;
+  border: 1px solid var(--zs-color-info-soft);
   border-radius: 8px;
   padding: 10px;
-  background: #eff6ff;
-  color: #1e40af;
+  background: var(--zs-color-primary-soft);
+  color: var(--zs-color-info);
   font-size: 0.86rem;
   line-height: 1.6;
 }
@@ -381,10 +381,10 @@ h3 {
 .text-button,
 .primary-button {
   min-height: 34px;
-  border: 1px solid #cfd7e3;
+  border: 1px solid var(--zs-color-border);
   border-radius: 6px;
   padding: 0 10px;
-  background: #ffffff;
+  background: var(--zs-color-surface);
   font: inherit;
   font-size: 0.8rem;
   font-weight: 800;
@@ -393,38 +393,38 @@ h3 {
 
 .secondary-button,
 .text-button {
-  color: #2563eb;
+  color: var(--zs-color-primary);
 }
 
 .danger-button {
-  border-color: #fecaca;
-  color: #b42318;
+  border-color: var(--zs-color-danger);
+  color: var(--zs-color-danger);
 }
 
 .primary-button {
   border-color: transparent;
-  background: #2563eb;
-  color: #ffffff;
+  background: var(--zs-color-primary);
+  color: var(--zs-color-on-primary);
 }
 
 .bind-form,
 .setting-card {
   display: grid;
   gap: 12px;
-  border: 1px solid #d8dee9;
+  border: 1px solid var(--zs-color-border);
   border-radius: 8px;
   padding: 14px;
-  background: #fbfcfe;
+  background: var(--zs-color-bg);
 }
 
 .setting-card {
-  background: #ffffff;
+  background: var(--zs-color-surface);
 }
 
 .setting-eyebrow,
 .field-label,
 .section-label {
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.78rem;
   font-weight: 800;
 }
@@ -436,10 +436,10 @@ h3 {
 }
 
 .summary-grid div {
-  border: 1px solid #edf0f5;
+  border: 1px solid var(--zs-color-border-soft);
   border-radius: 8px;
   padding: 10px;
-  background: #fbfcfe;
+  background: var(--zs-color-bg);
 }
 
 .field-label {
@@ -448,7 +448,7 @@ h3 {
 }
 
 .summary-grid strong {
-  color: #111827;
+  color: var(--zs-color-text);
   font-size: 0.9rem;
 }
 
@@ -460,17 +460,17 @@ h3 {
 .text-block,
 .muted-block,
 .detail-block {
-  color: #334155;
+  color: var(--zs-color-text);
   line-height: 1.7;
   white-space: pre-wrap;
 }
 
 .muted-block {
-  color: #94a3b8;
+  color: var(--zs-color-text-faint);
 }
 
 .detail-block {
-  border-left: 3px solid #dbeafe;
+  border-left: 3px solid var(--zs-color-info-soft);
   padding-left: 10px;
 }
 
@@ -483,7 +483,7 @@ h3 {
 .bind-form label {
   display: grid;
   gap: 6px;
-  color: #4b5563;
+  color: var(--zs-color-text-muted);
   font-size: 0.9rem;
   font-weight: 800;
 }
@@ -492,10 +492,10 @@ select,
 textarea {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid #cfd7e3;
+  border: 1px solid var(--zs-color-border);
   border-radius: 6px;
   padding: 9px 10px;
-  color: #111827;
+  color: var(--zs-color-text);
   font: inherit;
 }
 
@@ -518,18 +518,18 @@ textarea {
 }
 
 .list-card.active {
-  border-color: #2563eb;
-  background: #eff6ff;
+  border-color: var(--zs-color-primary);
+  background: var(--zs-color-primary-soft);
 }
 
 .name {
-  color: #111827;
+  color: var(--zs-color-text);
   font-weight: 800;
 }
 
 .meta,
 .summary {
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.82rem;
 }
 
@@ -539,16 +539,16 @@ textarea {
 
 .state-message,
 .error-message {
-  border: 1px dashed #cbd5e1;
+  border: 1px dashed var(--zs-color-border);
   border-radius: 8px;
   padding: 14px;
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   text-align: center;
 }
 
 .error-message {
-  border-color: #fecaca;
-  color: #b42318;
+  border-color: var(--zs-color-danger);
+  color: var(--zs-color-danger);
 }
 
 .relation-actions {

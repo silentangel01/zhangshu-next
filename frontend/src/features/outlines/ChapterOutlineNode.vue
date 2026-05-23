@@ -54,10 +54,10 @@ defineProps<{
 .outline-card {
   display: grid;
   gap: 8px;
-  border: 1px solid #edf0f5;
+  border: 1px solid var(--zs-color-border-soft);
   border-radius: 8px;
   padding: 12px;
-  background: #ffffff;
+  background: var(--zs-color-surface);
 }
 
 .outline-card header {
@@ -73,7 +73,7 @@ p {
 }
 
 h3 {
-  color: #111827;
+  color: var(--zs-color-text);
   font-size: 0.95rem;
   line-height: 1.4;
 }
@@ -82,20 +82,20 @@ h3 {
   flex: 0 0 auto;
   border-radius: 999px;
   padding: 3px 8px;
-  background: #eef2ff;
-  color: #3730a3;
+  background: var(--zs-color-info-soft);
+  color: var(--zs-color-info);
   font-size: 0.75rem;
   font-weight: 800;
 }
 
 .meta {
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.82rem;
   font-weight: 800;
 }
 
 .content-preview {
-  color: #374151;
+  color: var(--zs-color-text);
   line-height: 1.7;
   white-space: pre-wrap;
 }

@@ -424,18 +424,18 @@ p {
 }
 
 .eyebrow {
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.75rem;
   font-weight: 800;
 }
 
 h2 {
-  color: #111827;
+  color: var(--zs-color-text);
   font-size: 1rem;
 }
 
 .context-link {
-  color: #2563eb;
+  color: var(--zs-color-primary);
   font-size: 0.8rem;
   font-weight: 800;
   text-decoration: none;
@@ -444,7 +444,7 @@ h2 {
 
 .subtle-note,
 .maintenance-hint {
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.78rem;
   line-height: 1.6;
 }
@@ -457,24 +457,24 @@ h2 {
 .context-card {
   display: grid;
   gap: 6px;
-  border: 1px solid #d8dee9;
+  border: 1px solid var(--zs-color-border);
   border-radius: 8px;
   padding: 11px;
-  background: #ffffff;
+  background: var(--zs-color-surface);
 }
 
 .context-card h4 {
-  color: #111827;
+  color: var(--zs-color-text);
   font-size: 0.9rem;
 }
 
 .meta {
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.78rem;
 }
 
 .body {
-  color: #334155;
+  color: var(--zs-color-text);
   font-size: 0.82rem;
   line-height: 1.65;
 }
@@ -484,7 +484,7 @@ h2 {
   gap: 6px;
   margin: 0;
   padding-left: 18px;
-  color: #334155;
+  color: var(--zs-color-text);
   font-size: 0.82rem;
   line-height: 1.55;
 }
@@ -492,10 +492,10 @@ h2 {
 .compact-hint,
 .state-message,
 .error-message {
-  border: 1px dashed #cbd5e1;
+  border: 1px dashed var(--zs-color-border);
   border-radius: 8px;
   padding: 12px;
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   line-height: 1.6;
   text-align: center;
 }
@@ -505,7 +505,7 @@ h2 {
 }
 
 .error-message {
-  border-color: #fecaca;
-  color: #b42318;
+  border-color: var(--zs-color-danger);
+  color: var(--zs-color-danger);
 }
 </style>

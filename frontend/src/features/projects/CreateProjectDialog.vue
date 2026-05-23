@@ -1,71 +1,167 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 
-import type { CreateProjectPayload } from '@/entities/project/types'
+import type { CreateProjectPayload, ProjectStatus } from '@/entities/project/types'
+import ProjectCoverUploader from '@/features/projects/ProjectCoverUploader.vue'
+import ProjectTagInput from '@/features/projects/ProjectTagInput.vue'
+
+defineProps<{
+  tagSuggestions: string[]
+  defaultCoverUrl: string
+}>()
 
 const emit = defineEmits<{
   close: []
-  submit: [payload: CreateProjectPayload]
+  submit: [payload: { project: CreateProjectPayload; coverFile: File | null }]
 }>()
 
 const form = reactive({
   title: '',
+  author: '',
   genre: '',
   summary: '',
+  tags: [] as string[],
+  status: 'planning' as ProjectStatus,
+  targetWordCount: '' as string,
 })
 
+const coverFile = ref<File | null>(null)
 const titleError = ref('')
+
+const STATUS_OPTIONS: { value: ProjectStatus; label: string }[] = [
+  { value: 'planning', label: '筹备中' },
+  { value: 'writing', label: '连载中' },
+  { value: 'paused', label: '暂停' },
+  { value: 'completed', label: '已完结' },
+  { value: 'archived', label: '已归档' },
+]
 
 function normalizeOptional(value: string): string | null {
   const trimmed = value.trim()
   return trimmed ? trimmed : null
 }
 
+function parseTargetWordCount(value: string): number | null {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return null
+  }
+  const parsed = Number.parseInt(trimmed, 10)
+  if (Number.isNaN(parsed) || parsed < 0) {
+    return null
+  }
+  return parsed
+}
+
+function handleCoverSelect(file: File) {
+  coverFile.value = file
+}
+
+function handleCoverClear() {
+  coverFile.value = null
+}
+
 function handleSubmit() {
   const title = form.title.trim()
 
   if (!title) {
-    titleError.value = '标题不能为空。'
+    titleError.value = '书名不能为空。'
     return
   }
 
   titleError.value = ''
   emit('submit', {
-    title,
-    genre: normalizeOptional(form.genre),
-    summary: normalizeOptional(form.summary),
+    project: {
+      title,
+      author: normalizeOptional(form.author),
+      genre: normalizeOptional(form.genre),
+      summary: normalizeOptional(form.summary),
+      tags: form.tags,
+      status: form.status,
+      target_word_count: parseTargetWordCount(form.targetWordCount),
+    },
+    coverFile: coverFile.value,
   })
 }
 </script>
 
 <template>
-  <div class="dialog-backdrop" role="presentation">
-    <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="create-project-title">
-      <header class="dialog-header">
-        <h2 id="create-project-title">新建项目</h2>
-        <button class="icon-button" type="button" aria-label="关闭" @click="emit('close')">x</button>
+  <div class="zs-dialog" role="presentation">
+    <section class="zs-dialog-content" role="dialog" aria-modal="true" aria-labelledby="create-project-title">
+      <header class="zs-dialog-header">
+        <h2 id="create-project-title">新建书籍</h2>
+        <button class="zs-icon-button" type="button" aria-label="关闭" @click="emit('close')">x</button>
       </header>
 
       <form class="project-form" @submit.prevent="handleSubmit">
-        <label>
-          <span>标题</span>
-          <input v-model="form.title" name="title" type="text" autocomplete="off" required />
-        </label>
-        <p v-if="titleError" class="field-error">{{ titleError }}</p>
+        <div class="form-row">
+          <div class="form-main">
+            <label class="zs-field">
+              <span>书名</span>
+              <input v-model="form.title" name="title" type="text" autocomplete="off" required />
+            </label>
+            <p v-if="titleError" class="field-error">{{ titleError }}</p>
 
-        <label>
-          <span>类型</span>
-          <input v-model="form.genre" name="genre" type="text" autocomplete="off" />
+            <label class="zs-field">
+              <span>作者</span>
+              <input v-model="form.author" name="author" type="text" autocomplete="off" />
+            </label>
+
+            <label class="zs-field">
+              <span>题材 / 类型</span>
+              <input v-model="form.genre" name="genre" type="text" autocomplete="off" />
+            </label>
+
+            <label class="zs-field">
+              <span>简介</span>
+              <textarea v-model="form.summary" name="summary" rows="4" />
+            </label>
+          </div>
+
+          <div class="form-side">
+            <ProjectCoverUploader
+              :cover-url="coverFile ? null : null"
+              :default-cover-url="defaultCoverUrl"
+              @select-file="handleCoverSelect"
+              @clear-cover="handleCoverClear"
+            />
+          </div>
+        </div>
+
+        <label class="zs-field">
+          <span>标签</span>
+          <ProjectTagInput
+            v-model="form.tags"
+            :suggestions="tagSuggestions"
+          />
         </label>
 
-        <label>
-          <span>简介</span>
-          <textarea v-model="form.summary" name="summary" rows="5" />
-        </label>
+        <div class="form-inline-row">
+          <label class="zs-field inline-field">
+            <span>状态</span>
+            <select v-model="form.status">
+              <option v-for="opt in STATUS_OPTIONS" :key="opt.value" :value="opt.value">
+                {{ opt.label }}
+              </option>
+            </select>
+          </label>
 
-        <footer class="dialog-actions">
-          <button class="secondary-button" type="button" @click="emit('close')">取消</button>
-          <button class="primary-button" type="submit">新建</button>
+          <label class="zs-field inline-field">
+            <span>目标字数</span>
+            <input
+              v-model="form.targetWordCount"
+              name="targetWordCount"
+              type="number"
+              min="0"
+              step="1000"
+              placeholder="可选"
+            />
+          </label>
+        </div>
+
+        <footer class="zs-dialog-footer">
+          <button class="zs-button zs-button-secondary" type="button" @click="emit('close')">取消</button>
+          <button class="zs-button zs-button-primary" type="submit">新建</button>
         </footer>
       </form>
     </section>
@@ -73,40 +169,9 @@ function handleSubmit() {
 </template>
 
 <style scoped>
-.dialog-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 20;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: rgb(20 24 31 / 54%);
-}
-
-.dialog {
-  width: min(560px, 100%);
-  border: 1px solid #d8dee9;
-  border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 24px 80px rgb(20 24 31 / 22%);
-}
-
-.dialog-header,
-.dialog-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 20px 24px;
-}
-
-.dialog-header {
-  border-bottom: 1px solid #edf0f5;
-}
-
 h2 {
   margin: 0;
-  color: #1f2937;
+  color: var(--zs-color-text);
   font-size: 1.25rem;
 }
 
@@ -116,72 +181,42 @@ h2 {
   padding: 20px 24px 24px;
 }
 
-label {
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 140px;
+  gap: 20px;
+  align-items: start;
+}
+
+.form-main {
+  display: grid;
+  gap: 16px;
+}
+
+.form-side {
   display: grid;
   gap: 8px;
-  color: #4b5563;
-  font-size: 0.9rem;
-  font-weight: 600;
 }
 
-input,
-textarea {
-  width: 100%;
-  box-sizing: border-box;
-  border: 1px solid #cfd7e3;
-  border-radius: 6px;
-  padding: 10px 12px;
-  color: #111827;
-  font: inherit;
-}
-
-textarea {
-  resize: vertical;
-}
-
-input:focus,
-textarea:focus {
-  border-color: #2563eb;
-  outline: 3px solid rgb(37 99 235 / 15%);
+.form-inline-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
 }
 
 .field-error {
   margin: -8px 0 0;
-  color: #b42318;
+  color: var(--zs-color-danger);
   font-size: 0.9rem;
 }
 
-.dialog-actions {
-  padding: 4px 0 0;
-}
+@media (max-width: 560px) {
+  .form-row {
+    grid-template-columns: 1fr;
+  }
 
-button {
-  min-height: 38px;
-  border-radius: 6px;
-  border: 1px solid transparent;
-  padding: 0 14px;
-  font: inherit;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.icon-button {
-  width: 36px;
-  min-height: 36px;
-  padding: 0;
-  border-color: #d8dee9;
-  background: #ffffff;
-  color: #374151;
-}
-
-.primary-button {
-  background: #2563eb;
-  color: #ffffff;
-}
-
-.secondary-button {
-  border-color: #cfd7e3;
-  background: #ffffff;
-  color: #374151;
+  .form-inline-row {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
