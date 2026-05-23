@@ -59,13 +59,13 @@ function getAccentColor() {
   width: 100%;
   height: 100%;
   min-height: 0;
-  border: 1px solid color-mix(in srgb, var(--node-accent) 42%, var(--zs-color-border));
+  border: 1px solid color-mix(in srgb, var(--node-accent) 42%, var(--zs-canvas-node-border));
   border-left: 5px solid var(--node-accent);
   border-radius: var(--zs-radius-md);
   padding: 10px 12px;
-  background: var(--zs-color-surface);
+  background: var(--zs-canvas-node-bg);
   box-shadow: var(--zs-shadow-sm);
-  color: var(--zs-color-text);
+  color: var(--zs-canvas-text);
   text-align: left;
   cursor: grab;
   touch-action: none;
@@ -76,7 +76,7 @@ function getAccentColor() {
   inset: 0;
   z-index: -1;
   border-radius: inherit;
-  background: color-mix(in srgb, var(--node-accent) 8%, var(--zs-color-surface));
+  background: color-mix(in srgb, var(--node-accent) 8%, var(--zs-canvas-node-bg));
   content: '';
 }
 
@@ -142,7 +142,7 @@ function getAccentColor() {
 
 .node-title {
   overflow: hidden;
-  color: var(--zs-color-text);
+  color: var(--zs-canvas-text);
   font-size: 0.92rem;
   font-weight: 900;
   line-height: 1.35;
@@ -168,7 +168,7 @@ function getAccentColor() {
 .bound-badge {
   border-radius: 999px;
   padding: 2px 7px;
-  background: color-mix(in srgb, var(--node-accent) 12%, var(--zs-color-surface));
+  background: color-mix(in srgb, var(--node-accent) 12%, var(--zs-canvas-node-bg));
   color: var(--node-accent);
   font-size: 0.7rem;
   font-weight: 900;
@@ -176,7 +176,7 @@ function getAccentColor() {
 
 .bound-badge {
   background: var(--zs-color-surface-soft);
-  color: var(--zs-color-text-muted);
+  color: var(--zs-canvas-text-muted);
 }
 
 .node-summary {

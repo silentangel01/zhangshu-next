@@ -25,6 +25,10 @@ export interface CreativeReminder {
   severity: CreativeReminderSeverity
   title: string
   message: string
+  reason: string
+  suggestion: string
+  scope_label: string
+  context_summary: string | null
   target_type: CreativeReminderTargetType
   target_id: string
   action_label: string

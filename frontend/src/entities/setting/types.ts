@@ -1,3 +1,5 @@
+export type SettingNodeKind = 'folder' | 'page'
+
 export type SettingItemType =
   | 'world'
   | 'location'
@@ -8,6 +10,7 @@ export type SettingItemType =
   | 'rule'
   | 'race'
   | 'object'
+  | 'character'
   | 'custom'
 
 export type SettingCanonStatus = 'draft' | 'confirmed' | 'deprecated' | 'conflicted'
@@ -25,6 +28,10 @@ export interface SettingItem {
   tags: string
   order_index: number
   importance: SettingImportance
+  node_kind: SettingNodeKind
+  folder_key: string | null
+  folder_default_item_type: SettingItemType | null
+  is_system: boolean
   created_at: string
   updated_at: string
   deleted_at: string | null
@@ -34,13 +41,15 @@ export interface SettingItem {
 export interface SettingPayload {
   parent_id?: string | null
   title: string
-  item_type: SettingItemType
-  canon_status: SettingCanonStatus
+  item_type?: SettingItemType
+  canon_status?: SettingCanonStatus
   summary?: string
   detail?: string
   tags?: string
   order_index?: number
   importance?: SettingImportance
+  node_kind?: SettingNodeKind
+  folder_default_item_type?: SettingItemType | null
 }
 
 export type CreateSettingPayload = SettingPayload
@@ -51,6 +60,7 @@ export interface SettingFilters {
   canon_status?: SettingCanonStatus
   importance?: SettingImportance
   keyword?: string
+  node_kind?: SettingNodeKind
 }
 
 export const settingItemTypeLabels: Record<SettingItemType, string> = {
@@ -63,6 +73,7 @@ export const settingItemTypeLabels: Record<SettingItemType, string> = {
   rule: '规则',
   race: '种族',
   object: '物品',
+  character: '人物',
   custom: '自定义',
 }
 

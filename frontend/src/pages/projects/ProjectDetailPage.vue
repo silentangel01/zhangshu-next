@@ -26,7 +26,8 @@ import type {
   ReorderChaptersPayload,
   UpdateChapterMetadataPayload,
 } from '@/entities/chapter/types'
-import { getProject } from '@/entities/project/api'
+import defaultBookCover from '@/assets/default-book-cover.svg'
+import { getProject, getProjectCoverUrl } from '@/entities/project/api'
 import type { Project } from '@/entities/project/types'
 import { createVolume, deleteVolume, listVolumes, updateVolume } from '@/entities/volume/api'
 import type { CreateVolumePayload, UpdateVolumePayload, Volume } from '@/entities/volume/types'
@@ -516,6 +517,25 @@ function formatDate(value: string): string {
   }).format(new Date(value))
 }
 
+const STATUS_LABELS: Record<string, string> = {
+  planning: '筹备中',
+  writing: '连载中',
+  paused: '暂停',
+  completed: '已完结',
+  archived: '已归档',
+}
+
+function getStatusLabel(status: string): string {
+  return STATUS_LABELS[status] ?? status
+}
+
+const projectCoverUrl = computed<string | null>(() => {
+  if (!project.value?.cover_image_path) {
+    return null
+  }
+  return getProjectCoverUrl(project.value.id, project.value.version)
+})
+
 function getErrorMessage(error: unknown, fallback: string): string {
   void error
   return fallback
@@ -527,11 +547,11 @@ function getErrorMessage(error: unknown, fallback: string): string {
   <main class="project-detail-page">
     <header class="page-header">
       <div>
+        <RouterLink class="back-link" to="/projects">返回项目列表</RouterLink>
         <p class="eyebrow">写作工作区</p>
         <h1>{{ project?.title || '正在加载项目……' }}</h1>
       </div>
       <div class="header-actions">
-        <RouterLink class="toolbar-link" to="/projects">项目列表</RouterLink>
         <RouterLink class="toolbar-link" :to="`/projects/${projectId}/search`">搜索</RouterLink>
         <RouterLink class="toolbar-link" :to="`/projects/${projectId}/review`">检查</RouterLink>
         <details class="more-menu">
@@ -612,29 +632,52 @@ function getErrorMessage(error: unknown, fallback: string): string {
               <h2>{{ project?.title || '项目' }}</h2>
             </div>
             <div class="panel-badges">
+              <span v-if="project" class="status-pill" :class="`status-${project.status}`">
+                {{ getStatusLabel(project.status) }}
+              </span>
               <span class="status-pill">未选择章节</span>
               <span v-if="project" class="version">v{{ project.version }}</span>
             </div>
           </header>
 
-          <dl v-if="project" class="metadata-grid">
-            <div>
-              <dt>类型</dt>
-              <dd>{{ project.genre || '未设置类型' }}</dd>
+          <div v-if="project" class="summary-cover-row">
+            <div class="summary-cover">
+              <img
+                :src="projectCoverUrl || defaultBookCover"
+                :alt="`${project.title} 封面`"
+              />
             </div>
-            <div>
-              <dt>更新时间</dt>
-              <dd>{{ formatDate(project.updated_at) }}</dd>
-            </div>
-            <div>
-              <dt>分卷</dt>
-              <dd>{{ volumes.length }}</dd>
-            </div>
-            <div>
-              <dt>章节</dt>
-              <dd>{{ chapters.length }}</dd>
-            </div>
-          </dl>
+            <dl class="metadata-grid">
+              <div>
+                <dt>作者</dt>
+                <dd>{{ project.author || '未设置作者' }}</dd>
+              </div>
+              <div>
+                <dt>类型</dt>
+                <dd>{{ project.genre || '未设置类型' }}</dd>
+              </div>
+              <div>
+                <dt>目标字数</dt>
+                <dd>{{ project.target_word_count ? project.target_word_count.toLocaleString() : '未设置' }}</dd>
+              </div>
+              <div>
+                <dt>更新时间</dt>
+                <dd>{{ formatDate(project.updated_at) }}</dd>
+              </div>
+              <div>
+                <dt>分卷</dt>
+                <dd>{{ volumes.length }}</dd>
+              </div>
+              <div>
+                <dt>章节</dt>
+                <dd>{{ chapters.length }}</dd>
+              </div>
+            </dl>
+          </div>
+
+          <div v-if="project?.tags.length" class="summary-tags">
+            <span v-for="tag in project.tags" :key="tag" class="summary-tag">{{ tag }}</span>
+          </div>
 
           <p class="summary-text">{{ project?.summary || '暂无项目简介。' }}</p>
         </article>
@@ -723,6 +766,14 @@ function getErrorMessage(error: unknown, fallback: string): string {
   gap: var(--zs-space-4);
   max-width: 1600px;
   margin: 0 auto var(--zs-space-4);
+}
+
+.back-link {
+  display: inline-flex;
+  margin-bottom: var(--zs-space-2);
+  color: var(--zs-color-primary);
+  font-weight: 800;
+  text-decoration: none;
 }
 
 .eyebrow {
@@ -1043,6 +1094,70 @@ dd {
   color: var(--zs-color-text);
   line-height: 1.7;
   white-space: pre-wrap;
+}
+
+.summary-cover-row {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.summary-cover {
+  width: 90px;
+  aspect-ratio: 3 / 4.2;
+  border-radius: var(--zs-radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--zs-color-border-soft);
+  background: var(--zs-color-surface-soft);
+  flex-shrink: 0;
+}
+
+.summary-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.summary-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.summary-tag {
+  border-radius: 999px;
+  padding: 3px 10px;
+  background: var(--zs-color-info-soft, #eef2ff);
+  color: var(--zs-color-info, #3730a3);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.status-planning {
+  background: var(--zs-color-info-soft, #f0f4ff);
+  color: var(--zs-color-info, #3730a3);
+}
+
+.status-writing {
+  background: var(--zs-color-success-soft);
+  color: var(--zs-color-success);
+}
+
+.status-paused {
+  background: var(--zs-color-warning-soft);
+  color: var(--zs-color-warning);
+}
+
+.status-completed {
+  background: var(--zs-color-success-soft);
+  color: var(--zs-color-success);
+}
+
+.status-archived {
+  background: var(--zs-color-surface-soft);
+  color: var(--zs-color-text-muted);
 }
 
 .chapter-loading {

@@ -72,7 +72,7 @@ function formatDateTime(value: string): string {
   display: grid;
   gap: 12px;
   margin-top: 22px;
-  border-top: 1px solid #edf0f5;
+  border-top: 1px solid var(--zs-color-border-soft);
   padding-top: 18px;
 }
 
@@ -86,7 +86,7 @@ function formatDateTime(value: string): string {
 
 .eyebrow {
   margin: 0 0 4px;
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.78rem;
   font-weight: 800;
   text-transform: uppercase;
@@ -94,19 +94,19 @@ function formatDateTime(value: string): string {
 
 h3 {
   margin: 0;
-  color: #111827;
+  color: var(--zs-color-text);
   font-size: 1.05rem;
 }
 
 .state-message,
 .error-message {
   margin: 0;
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-weight: 700;
 }
 
 .error-message {
-  color: #b42318;
+  color: var(--zs-color-danger);
 }
 
 .version-list {
@@ -118,21 +118,21 @@ h3 {
 }
 
 .version-item {
-  border: 1px solid #edf0f5;
+  border: 1px solid var(--zs-color-border-soft);
   border-radius: 8px;
   padding: 12px;
-  background: #fbfcfe;
+  background: var(--zs-color-bg);
 }
 
 .version-main {
   display: grid;
   gap: 4px;
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.88rem;
 }
 
 .version-main strong {
-  color: #111827;
+  color: var(--zs-color-text);
   font-size: 0.95rem;
 }
 
@@ -149,11 +149,11 @@ h3 {
 
 button {
   min-height: 34px;
-  border: 1px solid #cfd7e3;
+  border: 1px solid var(--zs-color-border);
   border-radius: 6px;
   padding: 0 12px;
-  background: #ffffff;
-  color: #374151;
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
   font: inherit;
   font-size: 0.84rem;
   font-weight: 800;
@@ -168,8 +168,8 @@ button:disabled {
 .primary-button {
   min-height: 38px;
   border-color: transparent;
-  background: #2563eb;
-  color: #ffffff;
+  background: var(--zs-color-primary);
+  color: var(--zs-color-on-primary);
 }
 
 @media (max-width: 720px) {

@@ -15,8 +15,15 @@ class Project(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
+    author: Mapped[str | None] = mapped_column(String(128), nullable=True)
     genre: Mapped[str | None] = mapped_column(String(100), nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tags: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    cover_image_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="planning"
+    )
+    target_word_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=utc_now,

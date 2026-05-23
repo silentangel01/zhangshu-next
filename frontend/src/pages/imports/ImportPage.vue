@@ -127,10 +127,10 @@ function getErrorMessage(error: unknown, fallback: string): string {
   <main class="import-page">
     <header class="page-header">
       <div>
+        <RouterLink class="back-link" to="/projects">返回项目列表</RouterLink>
         <p class="eyebrow">章枢 Next</p>
         <h1>导入作品</h1>
       </div>
-      <RouterLink class="secondary-link" to="/projects">返回项目</RouterLink>
     </header>
 
     <section v-if="errorMessage" class="error-banner" role="alert">
@@ -250,6 +250,14 @@ function getErrorMessage(error: unknown, fallback: string): string {
   justify-content: space-between;
   gap: var(--zs-space-6);
   margin-bottom: var(--zs-space-6);
+}
+
+.back-link {
+  display: inline-flex;
+  margin-bottom: var(--zs-space-2);
+  color: var(--zs-color-primary);
+  font-weight: 800;
+  text-decoration: none;
 }
 
 .eyebrow {

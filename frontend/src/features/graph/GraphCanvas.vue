@@ -203,7 +203,7 @@ const gridStyle = computed(() => {
   }
   const grid = GRID_SIZE * viewport.zoom
   return {
-    backgroundImage: 'linear-gradient(90deg, rgb(107 124 131 / 14%) 1px, transparent 1px), linear-gradient(rgb(107 124 131 / 14%) 1px, transparent 1px)',
+    backgroundImage: 'linear-gradient(90deg, var(--zs-canvas-grid) 1px, transparent 1px), linear-gradient(var(--zs-canvas-grid) 1px, transparent 1px)',
     backgroundSize: `${grid}px ${grid}px`,
     backgroundPosition: `${viewport.panX}px ${viewport.panY}px`,
   }
@@ -946,9 +946,9 @@ function clamp(value: number, min: number, max: number) {
   min-height: 600px;
   height: 100%;
   overflow: hidden;
-  border: 1px solid var(--zs-color-border);
+  border: 1px solid var(--zs-canvas-node-border);
   border-radius: var(--zs-radius-md);
-  background-color: var(--zs-color-surface);
+  background-color: var(--zs-canvas-bg);
   box-shadow: inset 0 0 0 1px rgb(255 255 255 / 80%), 0 10px 26px rgb(15 23 42 / 6%);
   cursor: default;
   outline: none;

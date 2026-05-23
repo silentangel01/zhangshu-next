@@ -1525,7 +1525,6 @@ function clearDragState() {
           <button class="secondary-button" type="button" :disabled="isLoading" @click="refreshWorkspace">
             刷新
           </button>
-          <RouterLink class="toolbar-link" :to="`/projects/${projectId}`">返回写作页</RouterLink>
         </div>
       </section>
     </section>
@@ -2450,6 +2449,7 @@ h2 {
   position: relative;
   overflow: hidden;
   min-height: 620px;
+  background: var(--zs-canvas-bg);
 }
 
 .loading-mask {
@@ -2490,7 +2490,7 @@ h2 {
 
 .timeline-edge .edge-line {
   fill: none;
-  stroke: var(--zs-color-text-faint);
+  stroke: var(--zs-canvas-text-muted);
   stroke-width: 2;
   opacity: 0.72;
   pointer-events: none;
@@ -2555,11 +2555,11 @@ h2 {
 .track-row-label {
   display: grid;
   gap: 5px;
-  border: 1px solid var(--zs-color-border);
+  border: 1px solid var(--zs-canvas-node-border);
   border-radius: var(--zs-radius-md);
   padding: 12px 12px 11px;
-  background: var(--zs-color-surface);
-  color: var(--zs-color-text);
+  background: var(--zs-canvas-node-bg);
+  color: var(--zs-canvas-text);
   text-align: left;
 }
 
@@ -2591,7 +2591,7 @@ h2 {
   top: 50%;
   height: 2px;
   transform: translateY(-50%);
-  background: linear-gradient(90deg, transparent, var(--zs-color-border) 8%, var(--zs-color-text-faint) 50%, var(--zs-color-border) 92%, transparent);
+  background: linear-gradient(90deg, transparent, var(--zs-canvas-axis) 8%, var(--zs-canvas-text-muted) 50%, var(--zs-canvas-axis) 92%, transparent);
 }
 
 .track-row-lane.dragging .lane-axis {
@@ -2607,10 +2607,10 @@ h2 {
   gap: 4px;
   width: 156px;
   min-height: 70px;
-  border: 1px solid var(--zs-color-border);
+  border: 1px solid var(--zs-canvas-node-border);
   border-radius: var(--zs-radius-md);
   padding: 20px 12px 11px;
-  background: var(--zs-color-surface);
+  background: var(--zs-canvas-node-bg);
   box-shadow: var(--zs-shadow-sm);
   text-align: left;
   transform: translate(-50%, -50%);
@@ -2637,7 +2637,7 @@ h2 {
 }
 
 .node-title {
-  color: var(--zs-color-text);
+  color: var(--zs-canvas-text);
   font-size: 0.88rem;
   font-weight: 800;
   line-height: 1.45;
@@ -2661,7 +2661,7 @@ h2 {
 }
 
 .node-description {
-  color: var(--zs-color-text-muted);
+  color: var(--zs-canvas-text-muted);
   font-size: 0.76rem;
   line-height: 1.45;
 }
@@ -2670,7 +2670,7 @@ h2 {
   position: absolute;
   top: 6px;
   right: 8px;
-  color: var(--zs-color-text-faint);
+  color: var(--zs-canvas-text-muted);
   font-size: 0.9rem;
   line-height: 1;
   pointer-events: none;

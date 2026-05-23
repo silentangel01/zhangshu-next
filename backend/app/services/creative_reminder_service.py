@@ -14,6 +14,40 @@ from app.models.setting_item import SettingItem
 from app.models.timeline_event import TimelineEvent
 from app.schemas.creative_reminder import CreativeReminderRead
 
+_SEVERITY_RANK = {"critical": 0, "warning": 1, "info": 2}
+
+_RULE_META: dict[str, dict[str, str]] = {
+    "important_clue_unresolved": {
+        "reason": "重要伏笔从埋设后经过较多章节仍未回收，读者可能遗忘或认为线索断裂。",
+        "suggestion": "检查该伏笔是否仍需要保留；如需要，请规划回收章节或在近期章节补一次提示；如不需要，请将伏笔状态调整为废弃或降低重要性。",
+    },
+    "important_character_absent": {
+        "reason": "重要人物长时间未出场或未被章节绑定，可能削弱人物存在感。",
+        "suggestion": "考虑安排该人物出场、被其他角色提及，或在人物资料中下调重要性。",
+    },
+    "outline_not_done_for_written_chapter": {
+        "reason": "章节已有正文，但关联大纲仍处于未完成状态，可能导致进度记录不准确。",
+        "suggestion": "确认正文是否已覆盖该大纲目标；如果已完成，请更新大纲状态；如果未完成，请补充遗漏情节。",
+    },
+    "timeline_event_missing_chapter": {
+        "reason": "重要时间线事件没有绑定章节，后续查找和一致性检查会变弱。",
+        "suggestion": "为该事件绑定发生章节；如果它只是背景事件，请在备注中说明并降低重要性。",
+    },
+    "graph_node_broken_binding": {
+        "reason": "关系图节点绑定的资料不存在或已删除，图谱可能显示失效信息。",
+        "suggestion": "重新绑定到有效资料，或将节点改为自定义节点并更新说明。",
+    },
+    "clue_payoff_without_setup": {
+        "reason": "伏笔有回收记录但缺少埋设记录，读者可能感到回收突兀。",
+        "suggestion": "补充埋设章节或设置埋设关系；如果回收本身不需要前置伏笔，请调整伏笔状态和说明。",
+    },
+    "setting_used_but_draft": {
+        "reason": "章节已使用草稿设定，可能导致正文引用未定稿内容。",
+        "suggestion": "确认该设定是否已经稳定；如果稳定，请将设定状态改为正式；如果仍在试验，请在章节备注中标记风险。",
+    },
+}
+
+
 
 class CreativeReminderProjectNotFoundError(Exception):
     pass
@@ -75,7 +109,7 @@ class CreativeReminderService:
         if reminder_type:
             reminders = [item for item in reminders if item.type == reminder_type]
 
-        return reminders
+        return self._sort_reminders(reminders)
 
     def _important_clue_unresolved(
         self,
@@ -112,6 +146,8 @@ class CreativeReminderService:
                 "clue",
                 clue.id,
                 "查看伏笔",
+                scope_label="全书",
+                context_summary=f"伏笔“{clue.title}”·距埋设 {distance} 章",
             ))
         return reminders
 
@@ -163,6 +199,8 @@ class CreativeReminderService:
                 "character",
                 character.id,
                 "查看人物",
+                scope_label="全书",
+                context_summary=f"人物“{character.name}”·已缺席 {distance} 章",
             ))
         return reminders
 
@@ -189,6 +227,8 @@ class CreativeReminderService:
                 "outline",
                 outline.id,
                 "查看大纲",
+                scope_label="关联章节",
+                context_summary=f"章节“{chapter.title}”·细纲“{outline.title}”",
             )
             for outline, chapter in rows
         ]
@@ -215,6 +255,8 @@ class CreativeReminderService:
                 "timeline_event",
                 event.id,
                 "查看时间轴",
+                scope_label="全书",
+                context_summary=f"事件“{event.title}”",
             )
             for event in events
         ]
@@ -246,6 +288,8 @@ class CreativeReminderService:
                 "graph_node",
                 node.id,
                 "查看关系图",
+                scope_label="跨资料",
+                context_summary=f"节点“{node.title}”",
             ))
         return reminders
 
@@ -286,6 +330,8 @@ class CreativeReminderService:
                 "clue",
                 clue.id,
                 "查看伏笔",
+                scope_label="全书",
+                context_summary=f"伏笔“{clue.title}”",
             ))
         return reminders
 
@@ -310,6 +356,8 @@ class CreativeReminderService:
                 "setting",
                 setting.id,
                 "查看设定",
+                scope_label="关联章节",
+                context_summary=f"设定“{setting.title}”",
             )
             for relation, setting in rows
         ]
@@ -366,7 +414,10 @@ class CreativeReminderService:
         target_type: str,
         target_id: str,
         action_label: str,
+        scope_label: str,
+        context_summary: str | None = None,
     ) -> CreativeReminderRead:
+        meta = _RULE_META.get(reminder_type, {"reason": "", "suggestion": ""})
         return CreativeReminderRead(
             id=f"{reminder_type}:{target_type}:{target_id}:{chapter_id or 'project'}",
             project_id=project_id,
@@ -375,8 +426,22 @@ class CreativeReminderService:
             severity=severity,  # type: ignore[arg-type]
             title=title,
             message=message,
+            reason=meta["reason"],
+            suggestion=meta["suggestion"],
+            scope_label=scope_label,
+            context_summary=context_summary,
             target_type=target_type,  # type: ignore[arg-type]
             target_id=target_id,
             action_label=action_label,
             created_from="rule",
+        )
+
+    @staticmethod
+    def _sort_reminders(reminders: list[CreativeReminderRead]) -> list[CreativeReminderRead]:
+        return sorted(
+            reminders,
+            key=lambda item: (
+                _SEVERITY_RANK.get(item.severity, 99),
+                0 if item.chapter_id is not None else 1,
+            ),
         )

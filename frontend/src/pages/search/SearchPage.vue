@@ -80,7 +80,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
   <main class="search-page">
     <header class="page-header">
       <div>
-        <RouterLink class="back-link" :to="`/projects/${projectId}`">返回项目</RouterLink>
+        <RouterLink class="back-link" :to="`/projects/${projectId}`">返回写作页</RouterLink>
         <p class="eyebrow">搜索</p>
         <h1>搜索</h1>
       </div>

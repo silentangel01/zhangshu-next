@@ -32,6 +32,10 @@ class CreativeReminderRead(BaseModel):
     severity: CreativeReminderSeverity
     title: str
     message: str
+    reason: str
+    suggestion: str
+    scope_label: str
+    context_summary: str | None = None
     target_type: CreativeReminderTargetType
     target_id: str
     action_label: str

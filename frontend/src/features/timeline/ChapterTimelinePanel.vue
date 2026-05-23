@@ -451,19 +451,19 @@ function getEventPositionRatio(event: TimelineEvent) {
 }
 
 .eyebrow {
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.75rem;
   font-weight: 800;
 }
 
 h2 {
   margin: 0;
-  color: #111827;
+  color: var(--zs-color-text);
   font-size: 1rem;
 }
 
 .timeline-link {
-  color: #2563eb;
+  color: var(--zs-color-primary);
   font-size: 0.8rem;
   font-weight: 800;
   text-decoration: none;
@@ -471,17 +471,17 @@ h2 {
 }
 
 .helper-note {
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.78rem;
   line-height: 1.6;
 }
 
 .state-message,
 .error-message {
-  border: 1px dashed #cbd5e1;
+  border: 1px dashed var(--zs-color-border);
   border-radius: 8px;
   padding: 14px;
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   line-height: 1.6;
   text-align: center;
 }
@@ -491,8 +491,8 @@ h2 {
 }
 
 .error-message {
-  border-color: #fecaca;
-  color: #b42318;
+  border-color: var(--zs-color-danger);
+  color: var(--zs-color-danger);
 }
 
 .section-block {
@@ -508,7 +508,7 @@ h2 {
 }
 
 .section-head h3 {
-  color: #111827;
+  color: var(--zs-color-text);
   font-size: 0.95rem;
 }
 
@@ -516,8 +516,8 @@ h2 {
   min-width: 28px;
   border-radius: 999px;
   padding: 3px 8px;
-  background: #eef2ff;
-  color: #3730a3;
+  background: var(--zs-color-info-soft);
+  color: var(--zs-color-info);
   font-size: 0.75rem;
   font-weight: 800;
   text-align: center;
@@ -535,10 +535,10 @@ h2 {
 .connection-card {
   display: grid;
   gap: 10px;
-  border: 1px solid #d8dee9;
+  border: 1px solid var(--zs-color-border);
   border-radius: 8px;
   padding: 12px;
-  background: #ffffff;
+  background: var(--zs-color-surface);
 }
 
 .event-card-head {
@@ -549,14 +549,14 @@ h2 {
 }
 
 .track-label {
-  color: #475569;
+  color: var(--zs-color-text-muted);
   font-size: 0.76rem;
   font-weight: 800;
 }
 
 .event-card h4 {
   margin: 2px 0 0;
-  color: #111827;
+  color: var(--zs-color-text);
   font-size: 0.95rem;
 }
 
@@ -564,8 +564,8 @@ h2 {
   flex: 0 0 auto;
   border-radius: 999px;
   padding: 4px 8px;
-  background: #eef2ff;
-  color: #3730a3;
+  background: var(--zs-color-info-soft);
+  color: var(--zs-color-info);
   font-size: 0.74rem;
   font-weight: 800;
   text-align: center;
@@ -580,51 +580,51 @@ h2 {
 .meta-grid div {
   display: grid;
   gap: 4px;
-  border: 1px solid #edf0f5;
+  border: 1px solid var(--zs-color-border-soft);
   border-radius: 8px;
   padding: 10px;
-  background: #fbfcfe;
+  background: var(--zs-color-bg);
 }
 
 .field-label {
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.76rem;
   font-weight: 800;
 }
 
 .meta-grid strong {
-  color: #111827;
+  color: var(--zs-color-text);
   font-size: 0.88rem;
 }
 
 .event-meta {
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.78rem;
   font-weight: 800;
 }
 
 .event-description {
-  color: #334155;
+  color: var(--zs-color-text);
   font-size: 0.83rem;
   line-height: 1.7;
   white-space: pre-wrap;
 }
 
 .sequence-title {
-  color: #111827;
+  color: var(--zs-color-text);
   font-size: 0.9rem;
   font-weight: 800;
 }
 
 .sequence-line {
-  color: #475569;
+  color: var(--zs-color-text-muted);
   font-size: 0.8rem;
   line-height: 1.6;
 }
 
 .sequence-line span {
   margin-right: 8px;
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-weight: 800;
 }
 
@@ -645,28 +645,28 @@ h2 {
 }
 
 .edge-label {
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: var(--zs-color-primary-soft);
+  color: var(--zs-color-info);
 }
 
 .temporal-pill {
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--zs-color-warning-soft);
+  color: var(--zs-color-warning);
 }
 
 .visibility-pill {
-  background: #f8fafc;
-  color: #475569;
+  background: var(--zs-color-surface-soft);
+  color: var(--zs-color-text-muted);
 }
 
 .connection-title {
-  color: #111827;
+  color: var(--zs-color-text);
   font-size: 0.88rem;
   font-weight: 800;
 }
 
 .connection-note {
-  color: #475569;
+  color: var(--zs-color-text-muted);
   font-size: 0.78rem;
   line-height: 1.6;
   white-space: pre-wrap;

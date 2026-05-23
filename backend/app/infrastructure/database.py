@@ -262,6 +262,72 @@ def _backfill_timeline_event_position_ratios() -> None:
         db.close()
 
 
+def _ensure_setting_tree_columns() -> None:
+    inspector = inspect(engine)
+    if "setting_items" not in inspector.get_table_names():
+        return
+
+    existing_columns = {column["name"] for column in inspector.get_columns("setting_items")}
+    with engine.begin() as connection:
+        if "node_kind" not in existing_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE setting_items ADD COLUMN node_kind VARCHAR(16) NOT NULL DEFAULT 'page'"
+                )
+            )
+        if "folder_key" not in existing_columns:
+            connection.execute(
+                text("ALTER TABLE setting_items ADD COLUMN folder_key VARCHAR(64)")
+            )
+        if "folder_default_item_type" not in existing_columns:
+            connection.execute(
+                text("ALTER TABLE setting_items ADD COLUMN folder_default_item_type VARCHAR(32)")
+            )
+        if "is_system" not in existing_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE setting_items ADD COLUMN is_system BOOLEAN NOT NULL DEFAULT 0"
+                )
+            )
+
+
+def _ensure_project_book_columns() -> None:
+    inspector = inspect(engine)
+    if "projects" not in inspector.get_table_names():
+        return
+
+    existing_columns = {column["name"] for column in inspector.get_columns("projects")}
+    with engine.begin() as connection:
+        if "author" not in existing_columns:
+            connection.execute(
+                text("ALTER TABLE projects ADD COLUMN author VARCHAR(128)")
+            )
+        if "tags" not in existing_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE projects ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'"
+                )
+            )
+        if "cover_image_path" not in existing_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE projects ADD COLUMN cover_image_path VARCHAR(500)"
+                )
+            )
+        if "status" not in existing_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE projects ADD COLUMN status VARCHAR(32) NOT NULL DEFAULT 'planning'"
+                )
+            )
+        if "target_word_count" not in existing_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE projects ADD COLUMN target_word_count INTEGER"
+                )
+            )
+
+
 def init_database() -> None:
     from app.models import project  # noqa: F401
     from app.models import volume  # noqa: F401
@@ -294,6 +360,8 @@ def init_database() -> None:
 
     ensure_database_directory()
     Base.metadata.create_all(bind=engine)
+    _ensure_project_book_columns()
+    _ensure_setting_tree_columns()
     _ensure_graph_node_size_columns()
     added_position_ratio = _ensure_timeline_event_columns()
     _ensure_timeline_edge_columns()

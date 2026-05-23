@@ -130,9 +130,9 @@ function getStatusLabel(status: ChapterStatus): string {
 
 .dialog {
   width: min(520px, 100%);
-  border: 1px solid #d8dee9;
+  border: 1px solid var(--zs-color-border);
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--zs-color-surface);
   box-shadow: 0 24px 80px rgb(20 24 31 / 22%);
 }
 
@@ -146,12 +146,12 @@ function getStatusLabel(status: ChapterStatus): string {
 }
 
 .dialog-header {
-  border-bottom: 1px solid #edf0f5;
+  border-bottom: 1px solid var(--zs-color-border-soft);
 }
 
 h2 {
   margin: 0;
-  color: #1f2937;
+  color: var(--zs-color-text);
   font-size: 1.25rem;
 }
 
@@ -164,7 +164,7 @@ h2 {
 label {
   display: grid;
   gap: 8px;
-  color: #4b5563;
+  color: var(--zs-color-text-muted);
   font-size: 0.9rem;
   font-weight: 700;
 }
@@ -173,22 +173,22 @@ input,
 select {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid #cfd7e3;
+  border: 1px solid var(--zs-color-border);
   border-radius: 6px;
   padding: 10px 12px;
-  color: #111827;
+  color: var(--zs-color-text);
   font: inherit;
 }
 
 input:focus,
 select:focus {
-  border-color: #2563eb;
+  border-color: var(--zs-color-primary);
   outline: 3px solid rgb(37 99 235 / 15%);
 }
 
 .field-error {
   margin: -8px 0 0;
-  color: #b42318;
+  color: var(--zs-color-danger);
   font-size: 0.9rem;
 }
 
@@ -210,19 +210,19 @@ button {
   width: 36px;
   min-height: 36px;
   padding: 0;
-  border-color: #d8dee9;
-  background: #ffffff;
-  color: #374151;
+  border-color: var(--zs-color-border);
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
 }
 
 .primary-button {
-  background: #2563eb;
-  color: #ffffff;
+  background: var(--zs-color-primary);
+  color: var(--zs-color-on-primary);
 }
 
 .secondary-button {
-  border-color: #cfd7e3;
-  background: #ffffff;
-  color: #374151;
+  border-color: var(--zs-color-border);
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
 }
 </style>

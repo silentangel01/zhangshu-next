@@ -30,7 +30,7 @@ defineProps<{
 
 h3 {
   margin: 0;
-  color: #111827;
+  color: var(--zs-color-text);
   font-size: 0.92rem;
 }
 
@@ -38,8 +38,8 @@ h3 {
   min-width: 24px;
   border-radius: 999px;
   padding: 2px 8px;
-  background: #eef2ff;
-  color: #3730a3;
+  background: var(--zs-color-info-soft);
+  color: var(--zs-color-info);
   font-size: 0.74rem;
   font-weight: 800;
   text-align: center;

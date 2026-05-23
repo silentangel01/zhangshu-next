@@ -10,6 +10,7 @@ from app.schemas.setting import (
     SettingCreate,
     SettingImportance,
     SettingItemType,
+    SettingNodeKind,
     SettingRead,
     SettingUpdate,
 )
@@ -21,11 +22,16 @@ from app.services.chapter_setting_service import (
     ChapterSettingService,
 )
 from app.services.setting_service import (
+    SettingFolderNotEmptyError,
+    SettingInvalidNodeKindError,
+    SettingInvalidParentError,
     SettingNotFoundError,
+    SettingParentCycleError,
     SettingParentNotFoundError,
     SettingParentProjectMismatchError,
     SettingProjectNotFoundError,
     SettingService,
+    SettingSystemFolderProtectedError,
 )
 
 
@@ -47,6 +53,7 @@ def list_project_settings(
     canon_status: SettingCanonStatus | None = Query(default=None),
     importance: SettingImportance | None = Query(default=None),
     keyword: str | None = Query(default=None),
+    node_kind: SettingNodeKind | None = Query(default=None),
     service: SettingService = Depends(get_setting_service),
 ):
     try:
@@ -56,6 +63,7 @@ def list_project_settings(
             canon_status=canon_status,
             importance=importance,
             keyword=keyword,
+            node_kind=node_kind,
         )
     except SettingProjectNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Project not found") from exc
@@ -79,6 +87,10 @@ def create_setting(
         raise HTTPException(status_code=404, detail="Parent setting not found") from exc
     except SettingParentProjectMismatchError as exc:
         raise HTTPException(status_code=400, detail="Parent setting does not belong to project") from exc
+    except SettingInvalidParentError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except SettingParentCycleError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/api/settings/{setting_id}", response_model=SettingRead)
@@ -106,6 +118,12 @@ def update_setting(
         raise HTTPException(status_code=404, detail="Parent setting not found") from exc
     except SettingParentProjectMismatchError as exc:
         raise HTTPException(status_code=400, detail="Parent setting does not belong to project") from exc
+    except SettingInvalidNodeKindError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except SettingInvalidParentError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except SettingParentCycleError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.delete("/api/settings/{setting_id}", response_model=SettingRead)
@@ -117,6 +135,10 @@ def delete_setting(
         return service.delete_setting(setting_id)
     except SettingNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Setting not found") from exc
+    except SettingSystemFolderProtectedError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except SettingFolderNotEmptyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/api/chapters/{chapter_id}/settings", response_model=list[ChapterSettingRead])

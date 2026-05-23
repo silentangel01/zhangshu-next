@@ -413,28 +413,28 @@ p {
 }
 
 .eyebrow {
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.75rem;
   font-weight: 800;
 }
 
 h2 {
-  color: #111827;
+  color: var(--zs-color-text);
   font-size: 1rem;
 }
 
 h3 {
-  color: #111827;
+  color: var(--zs-color-text);
   font-size: 0.95rem;
 }
 
 h4 {
-  color: #111827;
+  color: var(--zs-color-text);
   font-size: 0.92rem;
 }
 
 .graph-link {
-  color: #2563eb;
+  color: var(--zs-color-primary);
   font-size: 0.8rem;
   font-weight: 800;
   text-decoration: none;
@@ -442,17 +442,17 @@ h4 {
 }
 
 .helper-note {
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.78rem;
   line-height: 1.6;
 }
 
 .state-message,
 .error-message {
-  border: 1px dashed #cbd5e1;
+  border: 1px dashed var(--zs-color-border);
   border-radius: 8px;
   padding: 14px;
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   line-height: 1.6;
   text-align: center;
 }
@@ -462,8 +462,8 @@ h4 {
 }
 
 .error-message {
-  border-color: #fecaca;
-  color: #b42318;
+  border-color: var(--zs-color-danger);
+  color: var(--zs-color-danger);
 }
 
 .section-block {
@@ -482,8 +482,8 @@ h4 {
   min-width: 28px;
   border-radius: 999px;
   padding: 3px 8px;
-  background: #eef2ff;
-  color: #3730a3;
+  background: var(--zs-color-info-soft);
+  color: var(--zs-color-info);
   font-size: 0.75rem;
   font-weight: 800;
   text-align: center;
@@ -501,17 +501,17 @@ h4 {
 .related-node-card {
   display: grid;
   gap: 8px;
-  border: 1px solid #d8dee9;
+  border: 1px solid var(--zs-color-border);
   border-radius: 8px;
   padding: 12px;
-  background: #ffffff;
+  background: var(--zs-color-surface);
 }
 
 .node-card.subtle,
 .edge-card.subtle,
 .related-node-card.subtle {
   opacity: 0.78;
-  background: #fbfcfe;
+  background: var(--zs-color-bg);
 }
 
 .node-card-head,
@@ -527,13 +527,13 @@ h4 {
 .node-meta,
 .related-node-meta,
 .edge-meta {
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.78rem;
   line-height: 1.55;
 }
 
 .node-summary {
-  color: #334155;
+  color: var(--zs-color-text);
   font-size: 0.82rem;
   line-height: 1.65;
   white-space: pre-wrap;
@@ -545,31 +545,31 @@ h4 {
 .edge-visibility {
   border-radius: 999px;
   padding: 3px 8px;
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: var(--zs-color-primary-soft);
+  color: var(--zs-color-info);
   font-size: 0.72rem;
   font-weight: 800;
 }
 
 .edge-direction {
-  background: #eef2ff;
-  color: #4338ca;
+  background: var(--zs-color-info-soft);
+  color: var(--zs-color-info);
 }
 
 .edge-visibility {
-  background: #f8fafc;
-  color: #475569;
+  background: var(--zs-color-surface-soft);
+  color: var(--zs-color-text-muted);
 }
 
 .edge-line {
-  color: #111827;
+  color: var(--zs-color-text);
   font-size: 0.84rem;
   line-height: 1.6;
 }
 
 .edge-line span {
   margin: 0 8px;
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-weight: 800;
 }
 

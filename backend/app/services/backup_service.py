@@ -30,6 +30,10 @@ from app.models.timeline_event import TimelineEvent
 from app.models.timeline_track import TimelineTrack
 from app.models.volume import Volume
 from app.schemas.backup import RestoreCounts, RestoreReport
+from app.infrastructure.project_cover_storage import (
+    COVERS_ROOT,
+    resolve_project_cover_path,
+)
 
 
 BACKUP_FORMAT = "zhangshu.project_backup"
@@ -218,6 +222,14 @@ class BackupService:
                     json.dumps(payload[entity_name], ensure_ascii=False, indent=2),
                 )
 
+            cover_path = resolve_project_cover_path(project.cover_image_path)
+            if cover_path is not None:
+                backup_zip.writestr(
+                    f"assets/project_cover/{cover_path.name}",
+                    cover_path.read_bytes(),
+                )
+                manifest["assets"] = {"project_cover": f"assets/project_cover/{cover_path.name}"}
+
         buffer.seek(0)
         safe_title = "".join(
             char if char.isascii() and (char.isalnum() or char in ("-", "_")) else "_"
@@ -261,6 +273,15 @@ class BackupService:
                         continue
                     self.db.add(ENTITY_MODELS[entity_name](**restored_row))
                 self.db.flush()
+
+            # Restore cover asset if present.
+            new_cover_path = self._restore_cover(
+                new_project_id, payload, project_data, warnings
+            )
+            if new_cover_path:
+                restored_project = self.db.get(Project, new_project_id)
+                if restored_project is not None:
+                    restored_project.cover_image_path = new_cover_path
 
             self.db.commit()
         except Exception as exc:
@@ -334,6 +355,13 @@ class BackupService:
                         if path in backup_zip.namelist()
                         else []
                     )
+
+                # Extract cover asset if present.
+                cover_asset_path = manifest.get("assets", {}).get("project_cover")
+                if cover_asset_path and cover_asset_path in backup_zip.namelist():
+                    payload["_cover_bytes"] = backup_zip.read(cover_asset_path)
+                    payload["_cover_filename"] = cover_asset_path.rsplit("/", 1)[-1]
+
                 return payload
         except (BadZipFile, KeyError, json.JSONDecodeError) as exc:
             raise BackupInvalidError() from exc
@@ -425,3 +453,24 @@ class BackupService:
             len(id_maps.get(entity_name, {}))
             for entity_name in ("characters", "settings", "clues", "outlines")
         )
+
+    def _restore_cover(
+        self,
+        new_project_id: str,
+        payload: dict[str, Any],
+        project_data: dict[str, Any],
+        warnings: list[str],
+    ) -> str | None:
+        cover_bytes = payload.get("_cover_bytes")
+        cover_filename = payload.get("_cover_filename")
+        if not cover_bytes or not cover_filename:
+            # Old backup without cover: clear cover_image_path.
+            project_data["cover_image_path"] = None
+            return None
+
+        cover_dir = COVERS_ROOT / new_project_id
+        cover_dir.mkdir(parents=True, exist_ok=True)
+        target = cover_dir / str(cover_filename)
+        target.write_bytes(cover_bytes)
+        relative_path = f"project_covers/{new_project_id}/{target.name}"
+        return relative_path

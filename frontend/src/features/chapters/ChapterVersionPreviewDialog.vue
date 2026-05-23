@@ -86,10 +86,10 @@ function formatDateTime(value: string): string {
   max-height: min(820px, calc(100vh - 48px));
   box-sizing: border-box;
   overflow: auto;
-  border: 1px solid #d8dee9;
+  border: 1px solid var(--zs-color-border);
   border-radius: 8px;
   padding: 24px;
-  background: #ffffff;
+  background: var(--zs-color-surface);
   box-shadow: 0 24px 80px rgb(20 24 31 / 22%);
 }
 
@@ -103,7 +103,7 @@ function formatDateTime(value: string): string {
 
 .eyebrow {
   margin: 0 0 6px;
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.78rem;
   font-weight: 800;
   text-transform: uppercase;
@@ -111,7 +111,7 @@ function formatDateTime(value: string): string {
 
 h2 {
   margin: 0;
-  color: #111827;
+  color: var(--zs-color-text);
   font-size: 1.25rem;
 }
 
@@ -123,15 +123,15 @@ h2 {
 }
 
 .metadata-grid div {
-  border: 1px solid #edf0f5;
+  border: 1px solid var(--zs-color-border-soft);
   border-radius: 8px;
   padding: 12px;
-  background: #fbfcfe;
+  background: var(--zs-color-bg);
 }
 
 dt {
   margin: 0 0 4px;
-  color: #64748b;
+  color: var(--zs-color-text-muted);
   font-size: 0.78rem;
   font-weight: 800;
 }
@@ -139,19 +139,19 @@ dt {
 dd,
 .note {
   margin: 0;
-  color: #111827;
+  color: var(--zs-color-text);
   font-weight: 700;
 }
 
 .content-preview {
   min-height: 280px;
   margin: 0;
-  border: 1px solid #edf0f5;
+  border: 1px solid var(--zs-color-border-soft);
   border-radius: 8px;
   padding: 16px;
   overflow: auto;
-  background: #fbfcfe;
-  color: #111827;
+  background: var(--zs-color-bg);
+  color: var(--zs-color-text);
   font: inherit;
   line-height: 1.8;
   white-space: pre-wrap;
@@ -171,19 +171,19 @@ button {
   width: 36px;
   min-height: 36px;
   padding: 0;
-  border-color: #d8dee9;
-  background: #ffffff;
-  color: #374151;
+  border-color: var(--zs-color-border);
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
 }
 
 .primary-button {
-  background: #2563eb;
-  color: #ffffff;
+  background: var(--zs-color-primary);
+  color: var(--zs-color-on-primary);
 }
 
 .secondary-button {
-  border-color: #cfd7e3;
-  background: #ffffff;
-  color: #374151;
+  border-color: var(--zs-color-border);
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
 }
 </style>

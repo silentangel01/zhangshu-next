@@ -266,11 +266,11 @@ function formatDateForFilename(date: Date): string {
   <main class="review-page">
     <header class="page-header">
       <div>
-        <RouterLink class="back-link" to="/projects">返回项目列表</RouterLink>
+        <RouterLink class="back-link" :to="`/projects/${projectId}`">返回写作页</RouterLink>
         <p class="eyebrow">检查</p>
         <h1>违禁词 / 敏感词检查</h1>
       </div>
-      <RouterLink class="secondary-link" :to="`/projects/${projectId}`">返回写作页</RouterLink>
+      <RouterLink class="secondary-link" to="/projects">项目列表</RouterLink>
     </header>
 
     <section v-if="errorMessage" class="error-banner" role="alert">

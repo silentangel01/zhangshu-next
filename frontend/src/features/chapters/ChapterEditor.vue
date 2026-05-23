@@ -170,7 +170,6 @@ const editorStyle = computed(() => ({
   lineHeight: appearanceSettings.value.lineHeight,
   textIndent: appearanceSettings.value.firstLineIndent === '2em' ? '2em' : '0',
   paddingBlock: appearanceSettings.value.paragraphSpacing === 'comfortable' ? '22px' : '16px',
-  ...getEditorThemeStyle(appearanceSettings.value.theme),
 }))
 const editorShellStyle = computed(() => ({
   maxWidth: getEditorMaxWidth(appearanceSettings.value.editorWidth),
@@ -684,27 +683,6 @@ function getEditorMaxWidth(width: EditorWidth) {
   }
   return widths[width]
 }
-
-function getEditorThemeStyle(theme: EditorTheme) {
-  const themes: Record<EditorTheme, Record<string, string>> = {
-    plain: {
-      background: 'var(--zs-color-surface)',
-      borderColor: 'var(--zs-color-border)',
-      color: 'var(--zs-color-text)',
-    },
-    eye: {
-      background: '#fff9ef',
-      borderColor: '#e0d2bc',
-      color: '#2d261f',
-    },
-    dark: {
-      background: '#182225',
-      borderColor: '#2b3a3f',
-      color: '#e7ecea',
-    },
-  }
-  return themes[theme]
-}
 </script>
 
 <template>
@@ -823,14 +801,6 @@ function getEditorThemeStyle(theme: EditorTheme) {
               <select v-model="appearanceSettings.paragraphSpacing">
                 <option value="normal">普通</option>
                 <option value="comfortable">舒展</option>
-              </select>
-            </label>
-            <label>
-              <span>显示模式</span>
-              <select v-model="appearanceSettings.theme">
-                <option value="plain">默认</option>
-                <option value="eye">护眼</option>
-                <option value="dark">深色</option>
               </select>
             </label>
           </div>
