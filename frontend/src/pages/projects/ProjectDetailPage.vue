@@ -560,6 +560,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
             <RouterLink :to="`/projects/${projectId}/outlines`">完整大纲</RouterLink>
             <RouterLink :to="`/projects/${projectId}/graph`">关系图</RouterLink>
             <RouterLink :to="`/projects/${projectId}/timeline`">时间轴</RouterLink>
+            <RouterLink :to="`/projects/${projectId}/knowledge`">知识库</RouterLink>
             <RouterLink to="/imports">导入导出</RouterLink>
             <RouterLink :to="`/projects/${projectId}/backup`">备份恢复</RouterLink>
           </div>

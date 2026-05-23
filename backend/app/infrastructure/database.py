@@ -357,6 +357,10 @@ def init_database() -> None:
     from app.models import timeline_edge  # noqa: F401
     from app.models import timeline_track  # noqa: F401
     from app.models import setting_item  # noqa: F401
+    from app.models import knowledge_source  # noqa: F401
+    from app.models import knowledge_chunk  # noqa: F401
+    from app.models import knowledge_link  # noqa: F401
+    from app.models import knowledge_embedding  # noqa: F401
 
     ensure_database_directory()
     Base.metadata.create_all(bind=engine)

@@ -15,6 +15,10 @@ from app.api.creative_reminders import router as creative_reminders_router
 from app.api.exports import router as exports_router
 from app.api.graphs import router as graphs_router
 from app.api.imports import projects_import_router, router as imports_router
+from app.api.knowledge import router as knowledge_router
+from app.api.knowledge_embedding import router as knowledge_embedding_router
+from app.api.knowledge_retrieval import router as knowledge_retrieval_router
+from app.api.rag import router as rag_router
 from app.api.material_links import router as material_links_router
 from app.api.outlines import router as outlines_router
 from app.api.projects import router as projects_router
@@ -68,6 +72,10 @@ app.include_router(characters_router)
 app.include_router(settings_router)
 app.include_router(clues_router)
 app.include_router(creative_reminders_router)
+app.include_router(knowledge_router)
+app.include_router(knowledge_embedding_router)
+app.include_router(knowledge_retrieval_router)
+app.include_router(rag_router)
 app.include_router(material_links_router)
 app.include_router(graphs_router)
 app.include_router(timeline_router)

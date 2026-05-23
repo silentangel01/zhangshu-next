@@ -522,3 +522,76 @@ def io_bytes(content: bytes):
     import io
 
     return io.BytesIO(content)
+
+
+# ---------------------------------------------------------------------------
+# Knowledge Base Import Helpers
+# ---------------------------------------------------------------------------
+
+
+def parse_knowledge_files(
+    file_entries: list[tuple[str, bytes]],
+) -> dict[str, Any]:
+    """Parse uploaded files into knowledge source entries.
+
+    Returns a preview dict with:
+    - documents: list of {title, content, source_type, source_uri, filename}
+    - warnings, failed_files, empty_files, unsupported_files
+    """
+    warnings: list[str] = []
+    failed_files: list[str] = []
+    empty_files: list[str] = []
+    unsupported_files: list[str] = []
+    documents: list[dict[str, Any]] = []
+
+    for filename, content in file_entries:
+        path = PurePosixPath(filename)
+        if should_ignore_zip_path(path) or not path.name:
+            continue
+        if path.suffix.lower() not in SUPPORTED_TEXT_SUFFIXES:
+            unsupported_files.append(filename)
+            continue
+
+        text = parse_supported_file(content, filename, failed_files)
+        if text is None:
+            continue
+
+        if not text.strip():
+            empty_files.append(filename)
+            continue
+
+        source_type = _suffix_to_source_type(path.suffix.lower())
+        documents.append({
+            "title": strip_extension(path.name),
+            "content": text,
+            "source_type": source_type,
+            "source_uri": filename,
+            "filename": filename,
+            "word_count": calculate_word_count(text),
+        })
+
+    if not documents and not failed_files:
+        warnings.append("未找到可导入的 .txt、.md 或 .docx 文件。")
+
+    if empty_files:
+        warnings.append(f"发现 {len(empty_files)} 个空文件，已跳过。")
+
+    return {
+        "documents": documents,
+        "document_count": len(documents),
+        "total_word_count": sum(doc["word_count"] for doc in documents),
+        "warnings": warnings,
+        "failed_files": failed_files,
+        "empty_files": empty_files,
+        "unsupported_files": unsupported_files,
+        "can_import": len(documents) > 0,
+    }
+
+
+def _suffix_to_source_type(suffix: str) -> str:
+    mapping = {
+        ".txt": "file",
+        ".md": "file",
+        ".docx": "file",
+    }
+    return mapping.get(suffix, "file")

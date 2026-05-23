@@ -5,6 +5,7 @@ import ProjectCluesPage from '@/pages/clues/ProjectCluesPage.vue'
 import ImportPage from '@/pages/imports/ImportPage.vue'
 import ProjectBackupPage from '@/pages/imports/ProjectBackupPage.vue'
 import ProjectGraphPage from '@/pages/graph/ProjectGraphPage.vue'
+import ProjectKnowledgePage from '@/pages/knowledge/ProjectKnowledgePage.vue'
 import ProjectOutlinePage from '@/pages/outlines/ProjectOutlinePage.vue'
 import ProjectDetailPage from '@/pages/projects/ProjectDetailPage.vue'
 import ProjectsPage from '@/pages/projects/ProjectsPage.vue'
@@ -74,6 +75,11 @@ const router = createRouter({
       path: '/projects/:projectId/review',
       name: 'project-review',
       component: ReviewCheckPage,
+    },
+    {
+      path: '/projects/:projectId/knowledge',
+      name: 'project-knowledge',
+      component: ProjectKnowledgePage,
     },
     {
       path: '/backup',
