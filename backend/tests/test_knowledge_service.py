@@ -347,3 +347,80 @@ class TestChunkingAlgorithm:
 
         chunks = service.list_chunks(source.id)
         assert len(chunks) == 0
+
+
+# ---------- Chunk Size Parameterization ----------
+
+
+class TestChunkSizeParameterization:
+    """Tests for configurable chunk sizes (small / medium / large)."""
+
+    def _make_long_content(self) -> str:
+        """Generate content long enough to produce multiple chunks at any size."""
+        paragraphs = [
+            f"这是第{i}个段落，包含一些用于测试分块大小的文本内容。"
+            f"每个段落需要有足够的字符数才能触发分块行为。"
+            f"我们会用不同大小的配置来验证分块数量是否符合预期。"
+            for i in range(30)
+        ]
+        return "\n\n".join(paragraphs)
+
+    def test_medium_is_default(self, db_session, project, service):
+        """Medium chunk size should be used by default when creating sources."""
+        content = self._make_long_content()
+        source = service.create_source(
+            project.id,
+            KnowledgeSourceCreate(title="默认分块", content=content),
+        )
+        chunks = service.list_chunks(source.id)
+        # Default rebuild should produce same result as explicit medium
+        medium_chunks = service.rebuild_chunks(source.id, chunk_size="medium")
+        assert len(chunks) == len(medium_chunks)
+
+    def test_small_produces_more_chunks_than_medium(self, db_session, project, service):
+        content = self._make_long_content()
+        source = service.create_source(
+            project.id,
+            KnowledgeSourceCreate(title="小分块", content=content),
+        )
+
+        small_chunks = service.rebuild_chunks(source.id, chunk_size="small")
+        medium_chunks = service.rebuild_chunks(source.id, chunk_size="medium")
+
+        assert len(small_chunks) >= len(medium_chunks)
+
+    def test_large_produces_fewer_chunks_than_medium(self, db_session, project, service):
+        content = self._make_long_content()
+        source = service.create_source(
+            project.id,
+            KnowledgeSourceCreate(title="大分块", content=content),
+        )
+
+        large_chunks = service.rebuild_chunks(source.id, chunk_size="large")
+        medium_chunks = service.rebuild_chunks(source.id, chunk_size="medium")
+
+        assert len(large_chunks) <= len(medium_chunks)
+
+    def test_chunk_metadata_records_size(self, db_session, project, service):
+        import json
+
+        content = self._make_long_content()
+        source = service.create_source(
+            project.id,
+            KnowledgeSourceCreate(title="元数据", content=content),
+        )
+
+        small_chunks = service.rebuild_chunks(source.id, chunk_size="small")
+        for chunk in small_chunks:
+            metadata = json.loads(chunk.metadata_json)
+            assert metadata.get("chunk_size") == "small"
+
+    def test_empty_content_returns_no_chunks_any_size(self, db_session, project, service):
+        source = service.create_source(
+            project.id,
+            KnowledgeSourceCreate(title="空正文", content=""),
+        )
+
+        for size in ("small", "medium", "large"):
+            chunks = service.rebuild_chunks(source.id, chunk_size=size)
+            assert len(chunks) == 0

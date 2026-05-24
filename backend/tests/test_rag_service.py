@@ -115,11 +115,11 @@ class TestAsk:
 
     def test_ask_answer_contains_stub_marker(self, db_session, project, service):
         source, chunks = _create_source_with_chunks(
-            db_session, project.id, "魔法体系", "魔法体系包括元素魔法。"
+            db_session, project.id, "魔法体系", "魔法体系包括元素魔法和咒语魔法，是战斗的基础。"
         )
         _index_source(db_session, source)
 
-        response = service.ask(project.id, "什么是魔法？", mode="keyword")
+        response = service.ask(project.id, "魔法", mode="keyword")
 
         assert "[AI 模型尚未接入]" in response.answer
 

@@ -63,6 +63,8 @@ class VectorStore(Protocol):
         project_id: str,
         filters: dict | None = None,
         top_k: int = 20,
+        model_name: str | None = None,
+        vector_dim: int | None = None,
     ) -> list[VectorSearchResult]:
         """Search for similar chunks by vector similarity."""
         ...
@@ -140,6 +142,8 @@ class SqliteVectorStore:
         project_id: str,
         filters: dict | None = None,
         top_k: int = 20,
+        model_name: str | None = None,
+        vector_dim: int | None = None,
     ) -> list[VectorSearchResult]:
         """Search for similar chunks by cosine similarity.
 
@@ -148,6 +152,8 @@ class SqliteVectorStore:
             project_id: Project to search within.
             filters: Optional metadata filters (source_type, credibility, tag).
             top_k: Maximum number of results to return.
+            model_name: If set, only search embeddings with this model name.
+            vector_dim: If set, only search embeddings with this dimension.
 
         Returns:
             List of VectorSearchResult sorted by similarity score descending.
@@ -173,6 +179,12 @@ class SqliteVectorStore:
             .where(KnowledgeChunk.deleted_at.is_(None))
             .where(KnowledgeSource.deleted_at.is_(None))
         )
+
+        # Filter by embedding model to avoid mixing vectors from different providers
+        if model_name is not None:
+            stmt = stmt.where(KnowledgeEmbedding.model_name == model_name)
+        if vector_dim is not None:
+            stmt = stmt.where(KnowledgeEmbedding.vector_dim == vector_dim)
 
         # Apply metadata filters
         if filters:

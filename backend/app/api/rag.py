@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.infrastructure.database import get_db
+from app.infrastructure.llm_provider import LLMProvider
+from app.infrastructure.llm_provider_factory import LLMProviderFactory
 from app.schemas.rag import (
     KnowledgeAskRequest,
     KnowledgeAskResponse,
@@ -15,6 +17,7 @@ from app.services.ai_summary_service import (
     SummaryInvalidModeError,
     SummaryProjectNotFoundError,
 )
+from app.services.app_config_service import AppConfigService
 from app.services.rag_service import (
     RagInvalidModeError,
     RagProjectNotFoundError,
@@ -25,12 +28,25 @@ from app.services.rag_service import (
 router = APIRouter(tags=["knowledge-rag"])
 
 
-def get_rag_service(db: Session = Depends(get_db)) -> RagService:
-    return RagService(db)
+def get_llm_provider(db: Session = Depends(get_db)) -> LLMProvider:
+    """Create LLM provider based on app config (stub or DashScope)."""
+    config_service = AppConfigService(db)
+    factory = LLMProviderFactory(config_service)
+    return factory.create()
 
 
-def get_summary_service(db: Session = Depends(get_db)) -> AISummaryService:
-    return AISummaryService(db)
+def get_rag_service(
+    db: Session = Depends(get_db),
+    llm: LLMProvider = Depends(get_llm_provider),
+) -> RagService:
+    return RagService(db, llm_provider=llm)
+
+
+def get_summary_service(
+    db: Session = Depends(get_db),
+    llm: LLMProvider = Depends(get_llm_provider),
+) -> AISummaryService:
+    return AISummaryService(db, llm_provider=llm)
 
 
 @router.post(
@@ -45,7 +61,7 @@ def ask_knowledge_base(
     """Ask a question using RAG (Retrieval-Augmented Generation).
 
     Retrieves relevant knowledge chunks and generates an answer with citations.
-    Currently uses stub LLM provider — answers are template placeholders.
+    Uses stub LLM when cloud LLM is not configured, DashScope when enabled.
     """
     try:
         return service.ask(
@@ -55,6 +71,7 @@ def ask_knowledge_base(
             source_type=request.source_type,
             credibility=request.credibility,
             top_k=request.top_k,
+            strictness=request.strictness,
         )
     except RagProjectNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Project not found") from exc
@@ -75,7 +92,7 @@ def summarize_knowledge(
 
     Can summarize specific sources or search by topic.
     Result is always marked as a draft (is_draft=true).
-    Currently uses stub LLM provider — summaries are template placeholders.
+    Uses stub LLM when cloud LLM is not configured, DashScope when enabled.
     """
     try:
         return service.summarize(

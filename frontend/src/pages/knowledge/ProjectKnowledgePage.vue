@@ -3,18 +3,16 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 import {
-  buildSourceEmbeddings,
   createKnowledgeLink,
   createKnowledgeSource,
   deleteKnowledgeLink,
   deleteKnowledgeSource,
+  getKnowledgeIndexProfile,
   getKnowledgeIndexStatus,
   getKnowledgeSource,
   listKnowledgeChunks,
   listKnowledgeLinks,
   listKnowledgeSources,
-  rebuildKnowledgeChunks,
-  rebuildKnowledgeIndex,
   updateKnowledgeSource,
 } from '@/entities/knowledge/api'
 import type {
@@ -22,6 +20,7 @@ import type {
   CreateKnowledgeSourcePayload,
   KnowledgeChunk,
   KnowledgeCredibility,
+  IndexProfile,
   KnowledgeIndexStatus,
   KnowledgeLink,
   KnowledgeLinkRelationType,
@@ -39,6 +38,7 @@ import {
 } from '@/entities/knowledge/types'
 import KnowledgeAskPanel from '@/features/knowledge/KnowledgeAskPanel.vue'
 import KnowledgeImportDialog from '@/features/knowledge/KnowledgeImportDialog.vue'
+import KnowledgeIndexRefreshDialog from '@/features/knowledge/KnowledgeIndexRefreshDialog.vue'
 import KnowledgeSearchPanel from '@/features/knowledge/KnowledgeSearchPanel.vue'
 import KnowledgeSummaryPanel from '@/features/knowledge/KnowledgeSummaryPanel.vue'
 
@@ -91,9 +91,10 @@ const isImportDialogOpen = ref(false)
 const rightTab = ref<'chunks' | 'links'>('chunks')
 const viewMode = ref<'browse' | 'search' | 'ask' | 'summary'>('browse')
 const indexStatus = ref<KnowledgeIndexStatus | null>(null)
-const isIndexing = ref(false)
+const indexProfile = ref<IndexProfile | null>(null)
+const isRefreshDialogOpen = ref(false)
 
-const sourceTypes: KnowledgeSourceType[] = ['note', 'file', 'webpage', 'book', 'quote', 'custom']
+const sourceTypes: KnowledgeSourceType[] = ['file', 'note', 'book', 'webpage', 'quote', 'custom']
 const statuses: KnowledgeSourceStatus[] = ['active', 'archived']
 const credibilities: KnowledgeCredibility[] = ['low', 'normal', 'high']
 const targetTypes: KnowledgeLinkTargetType[] = [
@@ -124,6 +125,22 @@ const activeFilterCount = computed(() => {
   if (filters.tag) count++
   if (filters.credibility) count++
   return count
+})
+
+const hasSourceFormDirty = computed(() => {
+  const source = selectedSource.value
+  if (!source || isCreating.value) return false
+  return (
+    form.title !== source.title ||
+    form.source_type !== source.source_type ||
+    form.source_uri !== source.source_uri ||
+    form.author !== (source.author || '') ||
+    form.summary !== source.summary ||
+    form.content !== source.content ||
+    form.tags !== source.tags ||
+    form.status !== source.status ||
+    form.credibility !== source.credibility
+  )
 })
 
 watch(
@@ -307,18 +324,12 @@ async function handleDelete() {
   }
 }
 
-async function handleRebuildChunks() {
-  if (!selectedSource.value) return
-  isSaving.value = true
-  errorMessage.value = ''
-  try {
-    chunks.value = await rebuildKnowledgeChunks(selectedSource.value.id)
-    successMessage.value = `已重新生成 ${chunks.value.length} 个分块`
-  } catch {
-    errorMessage.value = '重建分块失败，请稍后重试。'
-  } finally {
-    isSaving.value = false
+async function handleRefreshed() {
+  await loadIndexStatus()
+  if (selectedSource.value) {
+    await loadChunks()
   }
+  void loadSources()
 }
 
 async function handleCreateLink() {
@@ -367,38 +378,14 @@ async function handleDeleteLink(link: KnowledgeLink) {
 async function loadIndexStatus() {
   if (!projectId.value) return
   try {
-    indexStatus.value = await getKnowledgeIndexStatus(projectId.value)
+    const [status, profile] = await Promise.all([
+      getKnowledgeIndexStatus(projectId.value),
+      getKnowledgeIndexProfile(projectId.value),
+    ])
+    indexStatus.value = status
+    indexProfile.value = profile
   } catch {
     // Silently fail - index status is optional display
-  }
-}
-
-async function handleRebuildIndex() {
-  isIndexing.value = true
-  errorMessage.value = ''
-  try {
-    const result = await rebuildKnowledgeIndex(projectId.value)
-    successMessage.value = `已重建 ${result.indexed_count} 个向量索引（${result.model_name}）`
-    await loadIndexStatus()
-  } catch {
-    errorMessage.value = '重建向量索引失败，请稍后重试。'
-  } finally {
-    isIndexing.value = false
-  }
-}
-
-async function handleBuildSourceEmbeddings() {
-  if (!selectedSource.value) return
-  isIndexing.value = true
-  errorMessage.value = ''
-  try {
-    const result = await buildSourceEmbeddings(selectedSource.value.id)
-    successMessage.value = `已为当前资料生成 ${result.indexed_count} 个向量索引`
-    await loadIndexStatus()
-  } catch {
-    errorMessage.value = '生成向量索引失败，请稍后重试。'
-  } finally {
-    isIndexing.value = false
   }
 }
 
@@ -421,20 +408,18 @@ onMounted(() => {
         <p class="eyebrow">外部参考资料</p>
         <h1>知识库</h1>
         <p class="page-note">
-          知识库用于保存外部参考资料，不会自动写入本书设定。
+          知识库用于保存外部参考资料。推荐批量导入文件，也可以手动新建少量笔记。
         </p>
       </div>
       <div class="header-actions">
-        <button
-          class="secondary-button"
-          type="button"
-          :disabled="isSaving"
-          @click="isImportDialogOpen = true"
-        >
-          导入
+        <button class="primary-button" type="button" :disabled="isSaving" @click="isImportDialogOpen = true">
+          批量导入
         </button>
-        <button class="primary-button" type="button" :disabled="isSaving" @click="handleNewSource">
-          新建资料
+        <button class="secondary-button" type="button" :disabled="isSaving" @click="handleNewSource">
+          新建空白资料
+        </button>
+        <button class="secondary-button" type="button" @click="isRefreshDialogOpen = true">
+          刷新知识索引
         </button>
       </div>
     </header>
@@ -553,32 +538,50 @@ onMounted(() => {
     <section v-if="errorMessage" class="error-banner" role="alert">{{ errorMessage }}</section>
     <section v-if="successMessage" class="success-banner" role="status">{{ successMessage }}</section>
 
-    <KnowledgeSearchPanel
-      v-if="viewMode === 'search'"
-      :project-id="projectId"
-      @select-source="handleSearchSelectSource"
-    />
+    <section v-if="viewMode !== 'browse'" class="knowledge-mode-panel">
+      <div class="view-back">
+        <button class="secondary-button" type="button" @click="viewMode = 'browse'">
+          ← 返回资料列表
+        </button>
+      </div>
 
-    <KnowledgeAskPanel
-      v-else-if="viewMode === 'ask'"
-      :project-id="projectId"
-      @select-source="handleSearchSelectSource"
-    />
+      <KnowledgeSearchPanel
+        v-if="viewMode === 'search'"
+        :project-id="projectId"
+        @select-source="handleSearchSelectSource"
+      />
 
-    <KnowledgeSummaryPanel
-      v-else-if="viewMode === 'summary'"
-      :project-id="projectId"
-      @select-source="handleSearchSelectSource"
-    />
+      <KnowledgeAskPanel
+        v-else-if="viewMode === 'ask'"
+        :project-id="projectId"
+        @select-source="handleSearchSelectSource"
+      />
+
+      <KnowledgeSummaryPanel
+        v-else-if="viewMode === 'summary'"
+        :project-id="projectId"
+        @select-source="handleSearchSelectSource"
+      />
+    </section>
 
     <template v-else>
       <section v-if="isLoading" class="state-message">正在加载知识库…</section>
 
     <section v-else class="knowledge-layout material-layout">
       <aside class="list-panel material-list-panel">
-        <p v-if="sources.length === 0" class="empty-state">
-          暂无知识资料，点击"新建资料"开始收集。
-        </p>
+        <div class="list-header">
+          <span class="list-title">资料</span>
+          <button class="secondary-button" type="button" :disabled="isSaving" @click="handleNewSource">
+            新建
+          </button>
+        </div>
+        <div v-if="sources.length === 0" class="empty-state">
+          <p>暂无知识资料</p>
+          <div class="empty-state-actions">
+            <button class="primary-button" type="button" @click="isImportDialogOpen = true">批量导入文件</button>
+            <button class="secondary-button" type="button" @click="handleNewSource">新建空白资料</button>
+          </div>
+        </div>
         <ul v-else class="source-list">
           <li
             v-for="source in sources"
@@ -605,7 +608,11 @@ onMounted(() => {
 
       <section class="detail-panel material-detail-panel">
         <div v-if="!selectedSource && !isCreating" class="empty-detail">
-          <p>选择左侧资料查看详情，或点击"新建资料"创建。</p>
+          <p>选择左侧资料查看详情</p>
+          <div class="empty-state-actions">
+            <button class="secondary-button" type="button" @click="isImportDialogOpen = true">批量导入文件</button>
+            <button class="secondary-button" type="button" @click="handleNewSource">或新建资料</button>
+          </div>
         </div>
 
         <form
@@ -622,57 +629,61 @@ onMounted(() => {
             <input v-model="form.title" type="text" required placeholder="资料标题" />
           </label>
 
-          <div class="form-row">
-            <label class="zs-field">
-              <span class="zs-field-label">类型</span>
-              <select v-model="form.source_type">
-                <option v-for="st in sourceTypes" :key="st" :value="st">
-                  {{ knowledgeSourceTypeLabels[st] }}
-                </option>
-              </select>
-            </label>
-            <label class="zs-field">
-              <span class="zs-field-label">状态</span>
-              <select v-model="form.status">
-                <option v-for="s in statuses" :key="s" :value="s">
-                  {{ knowledgeSourceStatusLabels[s] }}
-                </option>
-              </select>
-            </label>
-            <label class="zs-field">
-              <span class="zs-field-label">可信度</span>
-              <select v-model="form.credibility">
-                <option v-for="c in credibilities" :key="c" :value="c">
-                  {{ knowledgeCredibilityLabels[c] }}
-                </option>
-              </select>
-            </label>
-          </div>
-
-          <label class="zs-field">
-            <span class="zs-field-label">来源</span>
-            <input v-model="form.source_uri" type="text" placeholder="URL / 书名 / 出处" />
-          </label>
-
-          <label class="zs-field">
-            <span class="zs-field-label">作者</span>
-            <input v-model="form.author" type="text" placeholder="作者或出处" />
-          </label>
-
-          <label class="zs-field">
-            <span class="zs-field-label">摘要</span>
-            <textarea v-model="form.summary" rows="3" placeholder="资料概要" />
-          </label>
-
           <label class="zs-field">
             <span class="zs-field-label">正文</span>
-            <textarea v-model="form.content" rows="12" placeholder="资料正文内容" />
+            <textarea
+              v-model="form.content"
+              rows="18"
+              class="knowledge-content-textarea"
+              placeholder="资料正文内容"
+            />
           </label>
 
-          <label class="zs-field">
-            <span class="zs-field-label">标签</span>
-            <input v-model="form.tags" type="text" placeholder="多个标签用逗号分隔" />
-          </label>
+          <details class="source-extra-fields" :open="isCreating || undefined">
+            <summary>资料信息</summary>
+            <div class="source-extra-grid">
+              <label class="zs-field">
+                <span class="zs-field-label">类型</span>
+                <select v-model="form.source_type">
+                  <option v-for="st in sourceTypes" :key="st" :value="st">
+                    {{ knowledgeSourceTypeLabels[st] }}
+                  </option>
+                </select>
+              </label>
+              <label class="zs-field">
+                <span class="zs-field-label">状态</span>
+                <select v-model="form.status">
+                  <option v-for="s in statuses" :key="s" :value="s">
+                    {{ knowledgeSourceStatusLabels[s] }}
+                  </option>
+                </select>
+              </label>
+              <label class="zs-field">
+                <span class="zs-field-label">可信度</span>
+                <select v-model="form.credibility">
+                  <option v-for="c in credibilities" :key="c" :value="c">
+                    {{ knowledgeCredibilityLabels[c] }}
+                  </option>
+                </select>
+              </label>
+              <label class="zs-field">
+                <span class="zs-field-label">来源 / 原路径 / URL</span>
+                <input v-model="form.source_uri" type="text" placeholder="文件路径、网页链接、书名或出处" />
+              </label>
+              <label class="zs-field">
+                <span class="zs-field-label">作者</span>
+                <input v-model="form.author" type="text" placeholder="作者或出处" />
+              </label>
+              <label class="zs-field">
+                <span class="zs-field-label">摘要</span>
+                <textarea v-model="form.summary" rows="3" placeholder="资料概要" />
+              </label>
+              <label class="zs-field">
+                <span class="zs-field-label">标签</span>
+                <input v-model="form.tags" type="text" placeholder="多个标签用逗号分隔" />
+              </label>
+            </div>
+          </details>
 
           <div class="form-actions">
             <button class="primary-button" type="submit" :disabled="isSaving">
@@ -693,7 +704,7 @@ onMounted(() => {
 
       <aside class="right-panel material-side-panel">
         <div v-if="!selectedSource" class="empty-side">
-          <p>选择资料后查看分块和关联</p>
+          <p>选择资料后查看索引片段和关联</p>
         </div>
         <template v-else>
           <div class="tab-bar">
@@ -702,7 +713,7 @@ onMounted(() => {
               :class="{ active: rightTab === 'chunks' }"
               @click="rightTab = 'chunks'"
             >
-              分块预览（{{ chunks.length }}）
+              索引片段（{{ chunks.length }}）
             </button>
             <button
               type="button"
@@ -714,44 +725,42 @@ onMounted(() => {
           </div>
 
           <div v-if="rightTab === 'chunks'" class="tab-content">
-            <div class="tab-actions">
-              <button
-                class="secondary-button"
-                type="button"
-                :disabled="isSaving"
-                @click="handleRebuildChunks"
-              >
-                重建分块
-              </button>
-              <button
-                class="secondary-button"
-                type="button"
-                :disabled="isIndexing || !selectedSource"
-                @click="handleBuildSourceEmbeddings"
-              >
-                {{ isIndexing ? '索引中...' : '生成向量' }}
-              </button>
-            </div>
             <p v-if="indexStatus" class="index-status">
-              向量索引：{{ indexStatus.indexed_chunks }} / {{ indexStatus.total_chunks }}
-              <button
-                class="link-button"
-                type="button"
-                :disabled="isIndexing"
-                @click="handleRebuildIndex"
+              索引状态：已准备 {{ indexStatus.indexed_chunks }} / {{ indexStatus.total_chunks }} 个片段
+              <span v-if="indexProfile?.model_name" class="index-model-badge">
+                {{ indexProfile.model_name }}
+              </span>
+              <span
+                v-if="indexStatus.profile_status === 'error'"
+                class="index-status-badge error"
               >
-                重建全部索引
-              </button>
+                错误
+              </span>
+              <span
+                v-else-if="indexStatus.profile_status === 'stale'"
+                class="index-status-badge stale"
+              >
+                需刷新
+              </span>
+              <span
+                v-else-if="indexStatus.profile_status === 'not_configured'"
+                class="index-status-badge not-configured"
+              >
+                未配置
+              </span>
+            </p>
+            <p v-if="indexStatus?.last_error" class="index-error-hint">
+              {{ indexStatus.last_error }}
             </p>
             <p v-if="chunks.length === 0" class="empty-hint">
-              暂无分块。填写正文内容后点击"重建分块"自动生成。
+              暂无索引片段。保存或导入资料后系统会自动整理；如果搜索不到新内容，可以刷新知识索引。
             </p>
             <ul v-else class="chunk-list">
               <li v-for="chunk in chunks" :key="chunk.id" class="chunk-item">
                 <div class="chunk-head">
                   <span class="chunk-index">#{{ chunk.chunk_index + 1 }}</span>
                   <span v-if="chunk.heading" class="chunk-heading">{{ chunk.heading }}</span>
-                  <span class="chunk-size">{{ chunk.token_count }} 字</span>
+                  <span class="chunk-size">约 {{ chunk.token_count }} 字</span>
                 </div>
                 <p class="chunk-content">{{ chunk.content }}</p>
               </li>
@@ -841,34 +850,60 @@ onMounted(() => {
       @close="isImportDialogOpen = false"
       @imported="handleImported"
     />
+
+    <KnowledgeIndexRefreshDialog
+      v-if="isRefreshDialogOpen"
+      :project-id="projectId"
+      :selected-source-id="selectedSource?.id ?? null"
+      :selected-source-title="selectedSource?.title ?? null"
+      :has-unsaved-changes="hasSourceFormDirty"
+      :current-provider-id="indexProfile?.provider_id ?? null"
+      @close="isRefreshDialogOpen = false"
+      @refreshed="handleRefreshed"
+    />
   </main>
 </template>
 
 <style scoped>
 .knowledge-page {
-  display: grid;
-  gap: 14px;
-  padding: 20px;
   min-height: 100vh;
-  background: var(--zs-canvas-bg, var(--zs-color-bg));
+  box-sizing: border-box;
+  overflow-x: hidden;
+  padding: var(--zs-space-6);
+  background: var(--zs-color-bg);
+  color: var(--zs-color-text);
+}
+
+.page-header,
+.error-banner,
+.success-banner,
+.state-message,
+.knowledge-toolbar,
+.knowledge-layout {
+  max-width: 1480px;
+  margin-right: auto;
+  margin-left: auto;
 }
 
 .page-header {
   display: flex;
-  align-items: flex-start;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--zs-space-4);
+  margin-bottom: var(--zs-space-4);
 }
 
 .header-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--zs-space-2);
   align-items: center;
 }
 
 .back-link {
+  display: inline-flex;
+  margin-bottom: var(--zs-space-2);
   color: var(--zs-color-primary);
-  font-size: 0.82rem;
+  font-weight: 800;
   text-decoration: none;
 }
 
@@ -878,33 +913,35 @@ onMounted(() => {
 
 .eyebrow {
   color: var(--zs-color-text-muted);
-  font-size: 0.75rem;
+  font-size: 0.78rem;
   font-weight: 800;
-  margin: 0;
+  margin: 0 0 var(--zs-space-1);
 }
 
 h1 {
   color: var(--zs-color-text);
-  font-size: 1.25rem;
-  margin: 2px 0 0;
+  font-size: 1.6rem;
+  margin: 0 0 var(--zs-space-1);
+  line-height: 1.15;
 }
 
 .page-note {
   color: var(--zs-color-text-muted);
   font-size: 0.8rem;
   line-height: 1.6;
-  margin: 4px 0 0;
+  margin: 0;
 }
 
 .primary-button {
   background: var(--zs-color-primary);
   border: 1px solid var(--zs-color-primary);
-  border-radius: 6px;
+  border-radius: var(--zs-radius-sm);
   color: var(--zs-color-on-primary);
   cursor: pointer;
   font-size: 0.84rem;
   font-weight: 700;
-  padding: 6px 14px;
+  min-height: 36px;
+  padding: 0 var(--zs-space-4);
 }
 
 .primary-button:disabled {
@@ -915,11 +952,12 @@ h1 {
 .secondary-button {
   background: var(--zs-color-surface);
   border: 1px solid var(--zs-color-border);
-  border-radius: 6px;
+  border-radius: var(--zs-radius-sm);
   color: var(--zs-color-text);
   cursor: pointer;
   font-size: 0.82rem;
-  padding: 5px 12px;
+  min-height: 36px;
+  padding: 0 var(--zs-space-3);
 }
 
 .secondary-button:hover {
@@ -933,6 +971,7 @@ h1 {
 
 .danger-button {
   border-color: var(--zs-color-danger);
+  background: var(--zs-color-danger-soft);
   color: var(--zs-color-danger);
 }
 
@@ -942,16 +981,29 @@ h1 {
 
 .knowledge-toolbar {
   display: flex;
-  gap: 10px;
+  gap: var(--zs-space-2);
   flex-wrap: wrap;
   align-items: flex-start;
+  margin-bottom: var(--zs-space-4);
+}
+
+.view-back {
+  margin-bottom: var(--zs-space-2);
+}
+
+.knowledge-mode-panel {
+  max-width: 1480px;
+  width: 100%;
+  margin-right: auto;
+  margin-left: auto;
+  box-sizing: border-box;
 }
 
 .view-mode-toggle {
   display: flex;
   gap: 0;
   border: 1px solid var(--zs-color-border);
-  border-radius: 6px;
+  border-radius: var(--zs-radius-sm);
   overflow: hidden;
 }
 
@@ -963,7 +1015,7 @@ h1 {
   font-weight: 600;
   padding: 5px 14px;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background var(--zs-duration-fast), color var(--zs-duration-fast);
 }
 
 .mode-button + .mode-button {
@@ -981,7 +1033,7 @@ h1 {
 
 .search-group {
   display: flex;
-  gap: 6px;
+  gap: var(--zs-space-1);
   flex: 1;
   min-width: 200px;
 }
@@ -989,8 +1041,8 @@ h1 {
 .search-group input {
   flex: 1;
   border: 1px solid var(--zs-color-border);
-  border-radius: 6px;
-  padding: 6px 10px;
+  border-radius: var(--zs-radius-sm);
+  padding: var(--zs-space-1) var(--zs-space-3);
   font-size: 0.84rem;
   background: var(--zs-color-surface);
   color: var(--zs-color-text);
@@ -1006,14 +1058,14 @@ h1 {
   right: 0;
   z-index: 20;
   display: grid;
-  gap: 8px;
-  padding: 12px;
+  gap: var(--zs-space-2);
+  padding: var(--zs-space-3);
   border: 1px solid var(--zs-color-border);
-  border-radius: 8px;
+  border-radius: var(--zs-radius-md);
   background: var(--zs-color-surface);
   min-width: 220px;
-  margin-top: 4px;
-  box-shadow: var(--zs-shadow-card, 0 4px 16px rgb(0 0 0 / 8%));
+  margin-top: var(--zs-space-1);
+  box-shadow: var(--zs-shadow-md);
 }
 
 .filter-panel label {
@@ -1039,16 +1091,17 @@ h1 {
 
 .filter-actions {
   display: flex;
-  gap: 6px;
+  gap: var(--zs-space-1);
   justify-content: flex-end;
-  padding-top: 4px;
+  padding-top: var(--zs-space-1);
 }
 
 .error-banner,
 .success-banner {
-  border-radius: 6px;
-  padding: 8px 12px;
+  border-radius: var(--zs-radius-sm);
+  padding: var(--zs-space-2) var(--zs-space-3);
   font-size: 0.82rem;
+  margin-bottom: var(--zs-space-4);
 }
 
 .error-banner {
@@ -1058,39 +1111,77 @@ h1 {
 }
 
 .success-banner {
-  background: var(--zs-color-success-soft, #f0fdf4);
-  border: 1px solid var(--zs-color-success, #22c55e);
-  color: var(--zs-color-success, #166534);
+  background: var(--zs-color-success-soft);
+  border: 1px solid var(--zs-color-success);
+  color: var(--zs-color-success);
 }
 
 .state-message {
   text-align: center;
   color: var(--zs-color-text-muted);
-  padding: 40px 20px;
+  padding: 40px var(--zs-space-5);
 }
 
 .knowledge-layout {
   display: grid;
-  grid-template-columns: 260px 1fr 300px;
-  gap: 14px;
-  min-height: 500px;
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr) minmax(260px, 320px);
+  gap: var(--zs-space-4);
+  align-items: start;
 }
 
-.list-panel {
+.list-panel,
+.detail-panel,
+.right-panel {
+  min-width: 0;
   border: 1px solid var(--zs-color-border);
-  border-radius: 8px;
+  border-radius: var(--zs-radius-md);
+  padding: var(--zs-space-4);
   background: var(--zs-color-surface);
-  padding: 10px;
-  overflow-y: auto;
-  max-height: calc(100vh - 260px);
+  box-shadow: var(--zs-shadow-sm);
 }
 
-.empty-state,
+.list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--zs-space-3);
+}
+
+.list-title {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: var(--zs-color-text-muted);
+}
+
+.empty-state {
+  display: grid;
+  place-items: center;
+  gap: var(--zs-space-3);
+  min-height: 160px;
+  border: 1px dashed var(--zs-color-border);
+  border-radius: var(--zs-radius-md);
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text-muted);
+  text-align: center;
+  padding: var(--zs-space-4);
+}
+
+.empty-state p {
+  margin: 0;
+  font-size: 0.84rem;
+}
+
+.empty-state-actions {
+  display: flex;
+  gap: var(--zs-space-2);
+  align-items: center;
+}
+
 .empty-hint {
   color: var(--zs-color-text-muted);
   font-size: 0.82rem;
   text-align: center;
-  padding: 20px 8px;
+  padding: var(--zs-space-4) var(--zs-space-2);
 }
 
 .source-list {
@@ -1098,7 +1189,7 @@ h1 {
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 4px;
+  gap: var(--zs-space-1);
 }
 
 .source-item button {
@@ -1106,8 +1197,8 @@ h1 {
   gap: 3px;
   width: 100%;
   border: 1px solid transparent;
-  border-radius: 6px;
-  padding: 8px;
+  border-radius: var(--zs-radius-sm);
+  padding: var(--zs-space-2);
   background: transparent;
   color: var(--zs-color-text);
   cursor: pointer;
@@ -1137,7 +1228,7 @@ h1 {
 .type-badge,
 .status-badge,
 .credibility-badge {
-  border-radius: 999px;
+  border-radius: var(--zs-radius-pill);
   padding: 1px 6px;
   font-size: 0.68rem;
   font-weight: 700;
@@ -1146,13 +1237,13 @@ h1 {
 }
 
 .status-badge.archived {
-  background: var(--zs-color-text-faint-bg, #f1f5f9);
+  background: var(--zs-color-surface-muted);
   color: var(--zs-color-text-muted);
 }
 
 .credibility-badge.high {
-  background: var(--zs-color-success-soft, #f0fdf4);
-  color: var(--zs-color-success, #166534);
+  background: var(--zs-color-success-soft);
+  color: var(--zs-color-success);
 }
 
 .credibility-badge.low {
@@ -1168,28 +1259,34 @@ h1 {
   white-space: nowrap;
 }
 
-.detail-panel {
-  border: 1px solid var(--zs-color-border);
-  border-radius: 8px;
-  background: var(--zs-color-surface);
-  padding: 16px;
-  overflow-y: auto;
-  max-height: calc(100vh - 260px);
+.empty-detail {
+  display: grid;
+  place-items: center;
+  gap: var(--zs-space-3);
+  min-height: 200px;
+  border: 1px dashed var(--zs-color-border);
+  border-radius: var(--zs-radius-md);
+  color: var(--zs-color-text-muted);
+  font-size: 0.84rem;
+  text-align: center;
 }
 
-.empty-detail,
+.empty-detail p {
+  margin: 0;
+}
+
 .empty-side {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 100%;
+  min-height: 120px;
   color: var(--zs-color-text-muted);
   font-size: 0.84rem;
 }
 
 .detail-form {
   display: grid;
-  gap: 10px;
+  gap: var(--zs-space-3);
 }
 
 .form-head h2 {
@@ -1198,10 +1295,38 @@ h1 {
   color: var(--zs-color-text);
 }
 
-.form-row {
+.knowledge-content-textarea {
+  min-height: clamp(360px, 52vh, 720px);
+}
+
+.source-extra-fields {
+  border: 1px solid var(--zs-color-border-soft);
+  border-radius: var(--zs-radius-sm);
+  padding: var(--zs-space-2) var(--zs-space-3);
+}
+
+.source-extra-fields > summary {
+  cursor: pointer;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--zs-color-text-muted);
+  padding: var(--zs-space-1) 0;
+  user-select: none;
+}
+
+.source-extra-fields > summary:hover {
+  color: var(--zs-color-text);
+}
+
+.source-extra-fields[open] > summary {
+  margin-bottom: var(--zs-space-2);
+  border-bottom: 1px solid var(--zs-color-border-soft);
+  padding-bottom: var(--zs-space-2);
+}
+
+.source-extra-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
+  gap: var(--zs-space-3);
 }
 
 .zs-field {
@@ -1219,8 +1344,8 @@ h1 {
 .zs-field select,
 .zs-field textarea {
   border: 1px solid var(--zs-color-border);
-  border-radius: 6px;
-  padding: 6px 10px;
+  border-radius: var(--zs-radius-sm);
+  padding: var(--zs-space-1) var(--zs-space-3);
   font-size: 0.84rem;
   background: var(--zs-color-bg);
   color: var(--zs-color-text);
@@ -1234,27 +1359,21 @@ h1 {
 
 .form-actions {
   display: flex;
-  gap: 8px;
-  padding-top: 6px;
+  gap: var(--zs-space-2);
+  padding-top: var(--zs-space-2);
 }
 
 .right-panel {
-  border: 1px solid var(--zs-color-border);
-  border-radius: 8px;
-  background: var(--zs-color-surface);
-  padding: 10px;
-  overflow-y: auto;
-  max-height: calc(100vh - 260px);
   display: grid;
-  gap: 8px;
+  gap: var(--zs-space-2);
   align-content: start;
 }
 
 .tab-bar {
   display: flex;
-  gap: 4px;
-  border-bottom: 1px solid var(--zs-color-border-soft, var(--zs-color-border));
-  padding-bottom: 6px;
+  gap: var(--zs-space-1);
+  border-bottom: 1px solid var(--zs-color-border-soft);
+  padding-bottom: var(--zs-space-2);
 }
 
 .tab-bar button {
@@ -1264,7 +1383,7 @@ h1 {
   font-size: 0.8rem;
   font-weight: 700;
   cursor: pointer;
-  padding: 4px 8px;
+  padding: var(--zs-space-1) var(--zs-space-2);
   border-radius: 4px;
 }
 
@@ -1275,12 +1394,12 @@ h1 {
 
 .tab-content {
   display: grid;
-  gap: 8px;
+  gap: var(--zs-space-2);
 }
 
 .tab-actions {
   display: flex;
-  gap: 6px;
+  gap: var(--zs-space-2);
 }
 
 .index-status {
@@ -1289,26 +1408,45 @@ h1 {
   margin: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--zs-space-2);
 }
 
-.link-button {
-  border: none;
-  background: none;
+.index-model-badge {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--zs-color-primary) 12%, transparent);
   color: var(--zs-color-primary);
-  font-size: 0.78rem;
-  cursor: pointer;
-  padding: 0;
-  text-decoration: underline;
 }
 
-.link-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.index-status-badge {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
 }
 
-.link-button:hover:not(:disabled) {
-  color: var(--zs-color-primary-hover);
+.index-status-badge.error {
+  background: var(--zs-color-danger-soft);
+  color: var(--zs-color-danger);
+}
+
+.index-status-badge.stale {
+  background: var(--zs-color-warning-soft, #fff8e1);
+  color: var(--zs-color-warning, #f59e0b);
+}
+
+.index-status-badge.not-configured {
+  background: var(--zs-color-surface-soft);
+  color: var(--zs-color-text-muted);
+}
+
+.index-error-hint {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--zs-color-danger, #ef4444);
+  line-height: 1.4;
 }
 
 .chunk-list,
@@ -1317,20 +1455,20 @@ h1 {
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 6px;
+  gap: var(--zs-space-2);
 }
 
 .chunk-item {
-  border: 1px solid var(--zs-color-border-soft, var(--zs-color-border));
-  border-radius: 6px;
-  padding: 8px;
+  border: 1px solid var(--zs-color-border-soft);
+  border-radius: var(--zs-radius-sm);
+  padding: var(--zs-space-2);
   display: grid;
-  gap: 4px;
+  gap: var(--zs-space-1);
 }
 
 .chunk-head {
   display: flex;
-  gap: 6px;
+  gap: var(--zs-space-2);
   align-items: center;
   flex-wrap: wrap;
 }
@@ -1366,23 +1504,23 @@ h1 {
 
 .link-form {
   display: grid;
-  gap: 6px;
+  gap: var(--zs-space-2);
   border: 1px dashed var(--zs-color-border);
-  border-radius: 6px;
-  padding: 10px;
+  border-radius: var(--zs-radius-sm);
+  padding: var(--zs-space-3);
 }
 
 .link-item {
-  border: 1px solid var(--zs-color-border-soft, var(--zs-color-border));
-  border-radius: 6px;
-  padding: 8px;
+  border: 1px solid var(--zs-color-border-soft);
+  border-radius: var(--zs-radius-sm);
+  padding: var(--zs-space-2);
   display: grid;
   gap: 3px;
 }
 
 .link-info {
   display: flex;
-  gap: 4px;
+  gap: var(--zs-space-1);
   align-items: center;
   flex-wrap: wrap;
 }
@@ -1390,7 +1528,7 @@ h1 {
 .link-type {
   background: var(--zs-color-info-soft);
   color: var(--zs-color-info);
-  border-radius: 999px;
+  border-radius: var(--zs-radius-pill);
   padding: 1px 6px;
   font-size: 0.68rem;
   font-weight: 700;
@@ -1428,31 +1566,31 @@ h1 {
   text-decoration: underline;
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1366px) {
+  .knowledge-page {
+    padding: var(--zs-space-4);
+  }
+
   .knowledge-layout {
-    grid-template-columns: 220px 1fr;
+    grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
   }
 
   .right-panel {
     grid-column: 1 / -1;
-    max-height: none;
   }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 900px) {
   .knowledge-layout {
     grid-template-columns: 1fr;
   }
 
   .list-panel {
-    max-height: 240px;
+    max-height: 280px;
+    overflow-y: auto;
   }
 
-  .detail-panel {
-    max-height: none;
-  }
-
-  .form-row {
+  .source-extra-grid {
     grid-template-columns: 1fr;
   }
 }

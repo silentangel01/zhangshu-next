@@ -11,6 +11,7 @@ class KnowledgeAskRequest(BaseModel):
     source_type: str | None = None
     credibility: str | None = None
     top_k: int = 10
+    strictness: str = "balanced"
 
 
 class RagCitation(BaseModel):
@@ -22,6 +23,7 @@ class RagCitation(BaseModel):
     chunk_heading: str
     chunk_content: str
     relevance_score: float | None = None
+    match_quality: str | None = None
 
 
 class KnowledgeAskResponse(BaseModel):
@@ -32,6 +34,7 @@ class KnowledgeAskResponse(BaseModel):
     citations: list[RagCitation]
     model: str
     retrieval_mode: str
+    retrieval_warning: str | None = None
 
 
 class KnowledgeSummaryRequest(BaseModel):
@@ -50,3 +53,4 @@ class KnowledgeSummaryResponse(BaseModel):
     source_titles: list[str]
     model: str
     is_draft: bool = True
+    warnings: list[str] = []

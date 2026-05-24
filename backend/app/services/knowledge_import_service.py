@@ -1,7 +1,7 @@
 """Knowledge base import service.
 
-Supports importing .txt, .md, and .docx files into the knowledge base.
-Each file becomes a KnowledgeSource with auto-generated chunks.
+Supports importing .txt, .md, .docx, .pdf files and .zip archives into the
+knowledge base. Each file becomes a KnowledgeSource with auto-generated chunks.
 """
 
 from uuid import uuid4
@@ -12,7 +12,12 @@ from app.models.knowledge_source import KnowledgeSource
 from app.repositories.knowledge_repo import KnowledgeRepository
 from app.repositories.project_repo import ProjectRepository
 from app.services.knowledge_service import KnowledgeService
-from app.utils.import_parsers import parse_knowledge_files
+from app.utils.import_parsers import (
+    KNOWLEDGE_MAX_FILE_COUNT,
+    KNOWLEDGE_MAX_FILE_SIZE,
+    KNOWLEDGE_MAX_TOTAL_SIZE,
+    parse_knowledge_files,
+)
 
 
 class KnowledgeImportProjectNotFoundError(Exception):
@@ -21,6 +26,34 @@ class KnowledgeImportProjectNotFoundError(Exception):
 
 class KnowledgeImportEmptyError(Exception):
     pass
+
+
+class KnowledgeImportLimitError(Exception):
+    pass
+
+
+def validate_upload_limits(file_entries: list[tuple[str, bytes]]) -> None:
+    """Validate file count and size limits before processing."""
+    if len(file_entries) > KNOWLEDGE_MAX_FILE_COUNT:
+        raise KnowledgeImportLimitError(
+            f"单次最多上传 {KNOWLEDGE_MAX_FILE_COUNT} 个文件，当前选择了 {len(file_entries)} 个。"
+        )
+
+    total_size = sum(len(content) for _, content in file_entries)
+    if total_size > KNOWLEDGE_MAX_TOTAL_SIZE:
+        total_mb = total_size / (1024 * 1024)
+        limit_mb = KNOWLEDGE_MAX_TOTAL_SIZE / (1024 * 1024)
+        raise KnowledgeImportLimitError(
+            f"文件总大小 {total_mb:.1f} MB 超过限制（最大 {limit_mb:.0f} MB）。"
+        )
+
+    for filename, content in file_entries:
+        if len(content) > KNOWLEDGE_MAX_FILE_SIZE:
+            file_mb = len(content) / (1024 * 1024)
+            limit_mb = KNOWLEDGE_MAX_FILE_SIZE / (1024 * 1024)
+            raise KnowledgeImportLimitError(
+                f"文件 {filename} 大小 {file_mb:.1f} MB 超过单文件限制（最大 {limit_mb:.0f} MB）。"
+            )
 
 
 class KnowledgeImportService:
@@ -33,20 +66,8 @@ class KnowledgeImportService:
     def preview_import(
         self, file_entries: list[tuple[str, bytes]]
     ) -> dict:
-        """Parse files and return a preview without persisting anything.
-
-        Returns:
-            {
-                "documents": [...],
-                "document_count": int,
-                "total_word_count": int,
-                "warnings": [...],
-                "failed_files": [...],
-                "empty_files": [...],
-                "unsupported_files": [...],
-                "can_import": bool,
-            }
-        """
+        """Parse files and return a preview without persisting anything."""
+        validate_upload_limits(file_entries)
         return parse_knowledge_files(file_entries)
 
     def confirm_import(
@@ -58,18 +79,9 @@ class KnowledgeImportService:
         credibility: str = "normal",
         tags: str = "",
     ) -> dict:
-        """Parse files and persist them as KnowledgeSource entries.
+        """Parse files and persist them as KnowledgeSource entries."""
+        validate_upload_limits(file_entries)
 
-        Returns:
-            {
-                "imported_count": int,
-                "imported_sources": [{id, title, source_type, chunk_count}],
-                "warnings": [...],
-                "failed_files": [...],
-                "empty_files": [...],
-                "unsupported_files": [...],
-            }
-        """
         project = self.project_repo.get_active(project_id)
         if project is None:
             raise KnowledgeImportProjectNotFoundError
@@ -102,6 +114,7 @@ class KnowledgeImportService:
                 "id": source.id,
                 "title": source.title,
                 "source_type": source.source_type,
+                "source_uri": source.source_uri,
                 "chunk_count": len(chunks),
             })
 

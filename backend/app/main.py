@@ -1,11 +1,17 @@
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+# Load .env from backend/ directory (development) or exe directory (packaged)
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+load_dotenv()  # also try CWD
+
+from app.api.app_config import router as app_config_router
 from app.api.backups import router as backups_router
 from app.api.chapter_versions import router as chapter_versions_router
 from app.api.chapters import router as chapters_router
@@ -79,6 +85,7 @@ app.include_router(rag_router)
 app.include_router(material_links_router)
 app.include_router(graphs_router)
 app.include_router(timeline_router)
+app.include_router(app_config_router)
 
 
 def _mount_frontend_static() -> None:

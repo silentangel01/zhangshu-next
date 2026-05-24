@@ -328,6 +328,58 @@ def _ensure_project_book_columns() -> None:
             )
 
 
+def _ensure_knowledge_index_profile_columns() -> None:
+    inspector = inspect(engine)
+    if "knowledge_index_profiles" not in inspector.get_table_names():
+        return
+
+    existing_columns = {
+        column["name"] for column in inspector.get_columns("knowledge_index_profiles")
+    }
+    with engine.begin() as connection:
+        if "provider_type" not in existing_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE knowledge_index_profiles "
+                    "ADD COLUMN provider_type VARCHAR(32) NOT NULL DEFAULT 'compat'"
+                )
+            )
+        if "display_name" not in existing_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE knowledge_index_profiles "
+                    "ADD COLUMN display_name VARCHAR(128) NOT NULL DEFAULT ''"
+                )
+            )
+        if "chunk_size" not in existing_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE knowledge_index_profiles "
+                    "ADD COLUMN chunk_size VARCHAR(16) NOT NULL DEFAULT 'medium'"
+                )
+            )
+        if "status" not in existing_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE knowledge_index_profiles "
+                    "ADD COLUMN status VARCHAR(32) NOT NULL DEFAULT 'ready'"
+                )
+            )
+        if "last_refreshed_at" not in existing_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE knowledge_index_profiles "
+                    "ADD COLUMN last_refreshed_at DATETIME"
+                )
+            )
+        if "last_error" not in existing_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE knowledge_index_profiles ADD COLUMN last_error TEXT"
+                )
+            )
+
+
 def init_database() -> None:
     from app.models import project  # noqa: F401
     from app.models import volume  # noqa: F401
@@ -361,6 +413,8 @@ def init_database() -> None:
     from app.models import knowledge_chunk  # noqa: F401
     from app.models import knowledge_link  # noqa: F401
     from app.models import knowledge_embedding  # noqa: F401
+    from app.models import knowledge_index_profile  # noqa: F401
+    from app.models import app_config  # noqa: F401
 
     ensure_database_directory()
     Base.metadata.create_all(bind=engine)
@@ -369,6 +423,7 @@ def init_database() -> None:
     _ensure_graph_node_size_columns()
     added_position_ratio = _ensure_timeline_event_columns()
     _ensure_timeline_edge_columns()
+    _ensure_knowledge_index_profile_columns()
     _backfill_timeline_tracks()
     if added_position_ratio:
         _backfill_timeline_event_position_ratios()

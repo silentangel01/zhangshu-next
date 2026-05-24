@@ -147,13 +147,19 @@ export interface KnowledgeImportDocument {
   source_type: KnowledgeSourceType
   source_uri: string
   filename: string
+  relative_path: string
+  extension: string
   word_count: number
+  size: number
 }
 
 export interface KnowledgeImportPreview {
   documents: KnowledgeImportDocument[]
   document_count: number
+  supported_count: number
+  unsupported_count: number
   total_word_count: number
+  total_size: number
   warnings: string[]
   failed_files: string[]
   empty_files: string[]
@@ -181,6 +187,14 @@ export interface KnowledgeImportResult {
 
 export type KnowledgeSearchMode = 'keyword' | 'semantic' | 'hybrid'
 
+export type KnowledgeRetrievalStrictness = 'strict' | 'balanced' | 'broad'
+
+export const knowledgeRetrievalStrictnessLabels: Record<KnowledgeRetrievalStrictness, string> = {
+  strict: '精准',
+  balanced: '均衡',
+  broad: '宽泛',
+}
+
 export interface KnowledgeRetrievalFilters {
   source_type?: KnowledgeSourceType
   credibility?: KnowledgeCredibility
@@ -188,6 +202,7 @@ export interface KnowledgeRetrievalFilters {
   source_id?: string
   limit?: number
   mode?: KnowledgeSearchMode
+  strictness?: KnowledgeRetrievalStrictness
 }
 
 export interface KnowledgeRetrievalChunkResult {
@@ -203,6 +218,11 @@ export interface KnowledgeRetrievalChunkResult {
   source_type: KnowledgeSourceType
   source_credibility: KnowledgeCredibility
   relevance_score?: number | null
+  vector_score?: number | null
+  keyword_score?: number | null
+  final_score?: number | null
+  match_quality?: string | null
+  match_reason?: string | null
 }
 
 export interface KnowledgeRetrievalResponse {
@@ -210,6 +230,10 @@ export interface KnowledgeRetrievalResponse {
   total: number
   results: KnowledgeRetrievalChunkResult[]
   mode: string
+  strictness?: string
+  candidate_count?: number
+  filtered_count?: number
+  warnings?: string[]
 }
 
 // --- Knowledge Embedding Index ---
@@ -219,6 +243,14 @@ export interface KnowledgeIndexStatus {
   indexed_chunks: number
   unindexed_chunks: number
   model_name: string
+  provider_id: string | null
+  provider_type: string | null
+  display_name: string | null
+  vector_dim: number | null
+  chunk_size: string | null
+  profile_status: string
+  last_refreshed_at: string | null
+  last_error: string | null
 }
 
 export interface KnowledgeRebuildIndexResponse {
@@ -232,6 +264,77 @@ export interface KnowledgeBuildSourceEmbeddingsResponse {
   model_name: string
 }
 
+// --- Knowledge Index Refresh ---
+
+export type KnowledgeChunkSize = 'small' | 'medium' | 'large'
+
+export type KnowledgeIndexRefreshScope = 'project' | 'source'
+
+export interface RefreshKnowledgeIndexPayload {
+  scope: KnowledgeIndexRefreshScope
+  source_id?: string | null
+  chunk_size: KnowledgeChunkSize
+  provider_id?: string | null
+  privacy_confirmed?: boolean
+}
+
+export interface RefreshKnowledgeIndexResponse {
+  source_count: number
+  chunk_count: number
+  indexed_count: number
+  chunk_size: KnowledgeChunkSize
+  model_name: string
+  provider_id: string
+  warnings: string[]
+}
+
+export const knowledgeChunkSizeLabels: Record<KnowledgeChunkSize, string> = {
+  small: '小',
+  medium: '中',
+  large: '大',
+}
+
+export const knowledgeChunkSizeDescriptions: Record<KnowledgeChunkSize, string> = {
+  small: '更容易命中细节，但内容会被切得更碎，搜索结果可能重复，刷新耗时和索引占用会增加。',
+  medium: '适合大多数小说资料，兼顾细节命中和上下文完整度。',
+  large: '能保留更完整上下文，但细节命中可能下降，问答时可能带入较长无关内容。',
+}
+
+// --- Embedding Provider ---
+
+export type EmbeddingProviderType = 'local' | 'cloud' | 'compat'
+
+export interface EmbeddingProviderInfo {
+  id: string
+  display_name: string
+  provider_type: EmbeddingProviderType
+  model_name: string
+  vector_dim: number
+  available: boolean
+  reason: string
+  requires_privacy_confirm: boolean
+  requires_network: boolean
+  quality_label: string
+  description: string
+}
+
+export interface EmbeddingProviderListResponse {
+  providers: EmbeddingProviderInfo[]
+  default_provider_id: string
+}
+
+export interface IndexProfile {
+  provider_id: string | null
+  provider_type: string | null
+  display_name: string | null
+  model_name: string | null
+  vector_dim: number | null
+  chunk_size: string | null
+  status: string | null
+  last_refreshed_at: string | null
+  last_error: string | null
+}
+
 // --- RAG (Ask & Summary) ---
 
 export interface KnowledgeAskRequest {
@@ -240,6 +343,7 @@ export interface KnowledgeAskRequest {
   source_type?: KnowledgeSourceType
   credibility?: KnowledgeCredibility
   top_k?: number
+  strictness?: KnowledgeRetrievalStrictness
 }
 
 export interface RagCitation {
@@ -249,6 +353,7 @@ export interface RagCitation {
   chunk_heading: string
   chunk_content: string
   relevance_score?: number | null
+  match_quality?: string | null
 }
 
 export interface KnowledgeAskResponse {
@@ -257,6 +362,7 @@ export interface KnowledgeAskResponse {
   citations: RagCitation[]
   model: string
   retrieval_mode: string
+  retrieval_warning?: string | null
 }
 
 export interface KnowledgeSummaryRequest {
@@ -271,4 +377,5 @@ export interface KnowledgeSummaryResponse {
   source_titles: string[]
   model: string
   is_draft: boolean
+  warnings?: string[]
 }

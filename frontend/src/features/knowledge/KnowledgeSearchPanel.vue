@@ -6,10 +6,15 @@ import type {
   KnowledgeCredibility,
   KnowledgeRetrievalChunkResult,
   KnowledgeRetrievalResponse,
+  KnowledgeRetrievalStrictness,
   KnowledgeSearchMode,
   KnowledgeSourceType,
 } from '@/entities/knowledge/types'
-import { knowledgeCredibilityLabels, knowledgeSourceTypeLabels } from '@/entities/knowledge/types'
+import {
+  knowledgeCredibilityLabels,
+  knowledgeRetrievalStrictnessLabels,
+  knowledgeSourceTypeLabels,
+} from '@/entities/knowledge/types'
 
 const props = defineProps<{
   projectId: string
@@ -24,6 +29,9 @@ const isSearching = ref(false)
 const errorMessage = ref('')
 const searchResult = ref<KnowledgeRetrievalResponse | null>(null)
 const searchMode = ref<KnowledgeSearchMode>('keyword')
+const strictness = ref<KnowledgeRetrievalStrictness>('balanced')
+
+const strictnessOptions: KnowledgeRetrievalStrictness[] = ['strict', 'balanced', 'broad']
 
 const filters = reactive({
   source_type: '' as KnowledgeSourceType | '',
@@ -54,6 +62,7 @@ async function handleSearch() {
       credibility: filters.credibility || undefined,
       tag: filters.tag || undefined,
       mode: searchMode.value,
+      strictness: strictness.value,
     })
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '搜索失败，请稍后重试。'
@@ -73,7 +82,7 @@ function handleSelectResult(result: KnowledgeRetrievalChunkResult) {
 }
 
 function handleCopyCitation(result: KnowledgeRetrievalChunkResult) {
-  const citation = `${result.source_title} · ${result.chunk_heading || `分块 #${result.chunk_index + 1}`}`
+  const citation = `${result.source_title} · ${result.chunk_heading || `片段 #${result.chunk_index + 1}`}`
   navigator.clipboard.writeText(citation).catch(() => {
     // Fallback: ignore if clipboard not available
   })
@@ -83,6 +92,18 @@ function formatScore(score: number | null | undefined): string {
   if (score == null) return ''
   return `${(score * 100).toFixed(0)}%`
 }
+
+const matchQualityLabels: Record<string, string> = {
+  high: '高相关',
+  medium: '中相关',
+  low: '弱相关',
+}
+
+const matchQualityClass: Record<string, string> = {
+  high: 'quality-high',
+  medium: 'quality-medium',
+  low: 'quality-low',
+}
 </script>
 
 <template>
@@ -90,7 +111,7 @@ function formatScore(score: number | null | undefined): string {
     <header class="search-header">
       <h2>知识库检索</h2>
       <p class="search-description">
-        在知识分块中搜索关键词或语义检索，查看命中片段和上下文，复制引用。
+        在知识库中搜索关键词或语义检索，查看命中片段和上下文，复制引用。
       </p>
     </header>
 
@@ -120,6 +141,22 @@ function formatScore(score: number | null | undefined): string {
         >
           混合
         </button>
+      </div>
+
+      <div class="strictness-control">
+        <span class="strictness-label">匹配范围</span>
+        <div class="strictness-segments">
+          <button
+            v-for="opt in strictnessOptions"
+            :key="opt"
+            type="button"
+            class="strictness-button"
+            :class="{ active: strictness === opt }"
+            @click="strictness = opt"
+          >
+            {{ knowledgeRetrievalStrictnessLabels[opt] }}
+          </button>
+        </div>
       </div>
 
       <div class="search-input-group">
@@ -173,15 +210,26 @@ function formatScore(score: number | null | undefined): string {
 
     <div v-if="searchResult" class="search-results">
       <p class="results-summary">
-        找到 <strong>{{ totalResults }}</strong> 个匹配分块
+        找到 <strong>{{ totalResults }}</strong> 个匹配结果
         <span v-if="isSemanticMode" class="mode-indicator">（{{ searchMode === 'semantic' ? '语义' : '混合' }}模式）</span>
       </p>
 
+      <div
+        v-if="searchResult.filtered_count && searchResult.filtered_count > 0"
+        class="filtered-notice"
+      >
+        已隐藏 {{ searchResult.filtered_count }} 个低相关片段
+      </div>
+
+      <div v-if="searchResult.warnings && searchResult.warnings.length > 0" class="retrieval-warnings">
+        <p v-for="(warning, idx) in searchResult.warnings" :key="idx">{{ warning }}</p>
+      </div>
+
       <div v-if="!hasResults" class="empty-results">
         <p v-if="searchMode === 'semantic'">
-          未找到匹配结果。请确保已为知识库建立向量索引。
+          未找到匹配结果。请确保已刷新知识索引。
         </p>
-        <p v-else>未找到匹配的知识分块。</p>
+        <p v-else>未找到匹配的知识片段。</p>
       </div>
 
       <ul v-else class="results-list">
@@ -197,8 +245,15 @@ function formatScore(score: number | null | undefined): string {
               <span class="credibility-badge" :class="result.source_credibility">
                 {{ knowledgeCredibilityLabels[result.source_credibility] }}
               </span>
-              <span v-if="result.relevance_score != null" class="score-badge">
-                {{ formatScore(result.relevance_score) }}
+              <span
+                v-if="result.match_quality"
+                class="quality-badge"
+                :class="matchQualityClass[result.match_quality] || ''"
+              >
+                {{ matchQualityLabels[result.match_quality] || result.match_quality }}
+              </span>
+              <span v-if="result.final_score != null" class="score-badge">
+                {{ formatScore(result.final_score) }}
               </span>
             </span>
           </div>
@@ -208,7 +263,7 @@ function formatScore(score: number | null | undefined): string {
               <span v-if="result.chunk_heading" class="chunk-heading">
                 {{ result.chunk_heading }}
               </span>
-              <span class="chunk-index">分块 #{{ result.chunk_index + 1 }}</span>
+              <span class="chunk-index">片段 #{{ result.chunk_index + 1 }}</span>
             </div>
 
             <div v-if="searchMode === 'keyword'" class="chunk-context">
@@ -218,6 +273,9 @@ function formatScore(score: number | null | undefined): string {
             </div>
             <p v-else class="chunk-preview">
               {{ result.matched_snippet }}{{ result.context_after ? '...' : '' }}
+            </p>
+            <p v-if="result.match_reason" class="match-reason">
+              {{ result.match_reason }}
             </p>
           </div>
 
@@ -552,5 +610,100 @@ function formatScore(score: number | null | undefined): string {
 .citation-button {
   color: var(--zs-color-primary);
   border-color: var(--zs-color-primary);
+}
+
+.strictness-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.strictness-label {
+  font-size: 0.8rem;
+  color: var(--zs-color-text-muted);
+  white-space: nowrap;
+}
+
+.strictness-segments {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--zs-color-border);
+  border-radius: 6px;
+  overflow: hidden;
+  width: fit-content;
+}
+
+.strictness-button {
+  border: none;
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 4px 12px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.strictness-button + .strictness-button {
+  border-left: 1px solid var(--zs-color-border);
+}
+
+.strictness-button.active {
+  background: var(--zs-color-info);
+  color: #fff;
+}
+
+.strictness-button:hover:not(.active) {
+  background: var(--zs-color-bg);
+}
+
+.quality-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.quality-high {
+  background: var(--zs-color-success-soft);
+  color: var(--zs-color-success);
+}
+
+.quality-medium {
+  background: var(--zs-color-info-soft);
+  color: var(--zs-color-info);
+}
+
+.quality-low {
+  background: var(--zs-color-warning-soft);
+  color: var(--zs-color-warning);
+}
+
+.filtered-notice {
+  padding: 6px 12px;
+  background: var(--zs-color-info-soft);
+  border-radius: 4px;
+  font-size: 0.82rem;
+  color: var(--zs-color-info);
+}
+
+.retrieval-warnings {
+  padding: 8px 12px;
+  background: var(--zs-color-warning-soft);
+  border: 1px solid var(--zs-color-warning);
+  border-radius: 6px;
+}
+
+.retrieval-warnings p {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--zs-color-warning);
+}
+
+.match-reason {
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+  color: var(--zs-color-text-faint);
+  font-style: italic;
 }
 </style>

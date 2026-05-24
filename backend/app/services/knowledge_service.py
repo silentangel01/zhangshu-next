@@ -1,4 +1,6 @@
+import json
 import re
+from typing import Literal
 from uuid import uuid4
 
 from sqlalchemy.orm import Session
@@ -15,6 +17,19 @@ from app.schemas.knowledge import (
 )
 
 
+# --- Chunk size profiles ---
+
+KnowledgeChunkSize = Literal["small", "medium", "large"]
+
+CHUNK_SIZE_PROFILES: dict[str, dict[str, int]] = {
+    "small": {"min_chars": 350, "max_chars": 600},
+    "medium": {"min_chars": 800, "max_chars": 1200},
+    "large": {"min_chars": 1500, "max_chars": 2200},
+}
+
+DEFAULT_CHUNK_SIZE: KnowledgeChunkSize = "medium"
+
+# Legacy constants kept for backward compatibility
 CHUNK_MIN_CHARS = 800
 CHUNK_MAX_CHARS = 1200
 
@@ -116,9 +131,13 @@ class KnowledgeService:
         self.get_source(source_id)
         return self.repo.list_chunks_by_source(source_id)
 
-    def rebuild_chunks(self, source_id: str) -> list[KnowledgeChunk]:
+    def rebuild_chunks(
+        self,
+        source_id: str,
+        chunk_size: KnowledgeChunkSize = DEFAULT_CHUNK_SIZE,
+    ) -> list[KnowledgeChunk]:
         source = self.get_source(source_id)
-        return self._rebuild_chunks_for_source(source)
+        return self._rebuild_chunks_for_source(source, chunk_size=chunk_size)
 
     # --- Link ---
 
@@ -159,14 +178,23 @@ class KnowledgeService:
         if project is None:
             raise KnowledgeProjectNotFoundError
 
-    def _rebuild_chunks_for_source(self, source: KnowledgeSource) -> list[KnowledgeChunk]:
+    def _rebuild_chunks_for_source(
+        self,
+        source: KnowledgeSource,
+        chunk_size: KnowledgeChunkSize = DEFAULT_CHUNK_SIZE,
+    ) -> list[KnowledgeChunk]:
         self.repo.soft_delete_chunks_by_source(source.id)
         if not source.content.strip():
             return []
 
-        raw_chunks = self._split_content(source.content)
+        profile = CHUNK_SIZE_PROFILES[chunk_size]
+        min_chars = profile["min_chars"]
+        max_chars = profile["max_chars"]
+
+        raw_chunks = self._split_content(source.content, min_chars, max_chars)
         chunks: list[KnowledgeChunk] = []
         for index, (heading, text) in enumerate(raw_chunks):
+            metadata = {"chunk_size": chunk_size}
             chunk = KnowledgeChunk(
                 id=str(uuid4()),
                 project_id=source.project_id,
@@ -175,29 +203,31 @@ class KnowledgeService:
                 heading=heading,
                 content=text.strip(),
                 token_count=len(text.strip()),
-                metadata_json="{}",
+                metadata_json=json.dumps(metadata),
             )
             chunk = self.repo.create_chunk(chunk)
             chunks.append(chunk)
         return chunks
 
     @staticmethod
-    def _split_content(content: str) -> list[tuple[str, str]]:
+    def _split_content(
+        content: str, min_chars: int, max_chars: int
+    ) -> list[tuple[str, str]]:
         """Split content into (heading, text) chunks.
 
         Strategy:
         1. Split by markdown-style headings (# ... ## ... etc.) or double blank lines.
-        2. Merge small sections until they reach CHUNK_MIN_CHARS.
-        3. Split large sections at CHUNK_MAX_CHARS boundaries.
+        2. Merge small sections until they reach min_chars.
+        3. Split large sections at max_chars boundaries.
         """
         sections = _split_into_sections(content)
-        merged = _merge_small_sections(sections)
+        merged = _merge_small_sections(sections, min_chars, max_chars)
         result: list[tuple[str, str]] = []
         for heading, text in merged:
-            if len(text) <= CHUNK_MAX_CHARS:
+            if len(text) <= max_chars:
                 result.append((heading, text))
             else:
-                for part in _split_large_text(text):
+                for part in _split_large_text(text, max_chars):
                     result.append((heading, part))
         return result
 
@@ -240,8 +270,10 @@ def _split_into_sections(content: str) -> list[tuple[str, str]]:
 
 def _merge_small_sections(
     sections: list[tuple[str, str]],
+    min_chars: int,
+    max_chars: int,
 ) -> list[tuple[str, str]]:
-    """Merge consecutive small sections until they reach CHUNK_MIN_CHARS."""
+    """Merge consecutive small sections until they reach min_chars."""
     if not sections:
         return sections
 
@@ -250,8 +282,8 @@ def _merge_small_sections(
     current_text = sections[0][1]
 
     for heading, text in sections[1:]:
-        if len(current_text) + len(text) + 1 <= CHUNK_MAX_CHARS and (
-            len(current_text) < CHUNK_MIN_CHARS or not heading
+        if len(current_text) + len(text) + 1 <= max_chars and (
+            len(current_text) < min_chars or not heading
         ):
             current_text = current_text + "\n\n" + text
             if heading and not current_heading:
@@ -265,19 +297,19 @@ def _merge_small_sections(
     return merged
 
 
-def _split_large_text(text: str) -> list[str]:
-    """Split a large text block into pieces of at most CHUNK_MAX_CHARS."""
+def _split_large_text(text: str, max_chars: int) -> list[str]:
+    """Split a large text block into pieces of at most max_chars."""
     parts: list[str] = []
-    while len(text) > CHUNK_MAX_CHARS:
-        split_pos = text.rfind("\n", 0, CHUNK_MAX_CHARS)
+    while len(text) > max_chars:
+        split_pos = text.rfind("\n", 0, max_chars)
         if split_pos <= 0:
-            split_pos = text.rfind("。", 0, CHUNK_MAX_CHARS)
+            split_pos = text.rfind("。", 0, max_chars)
         if split_pos <= 0:
-            split_pos = text.rfind("！", 0, CHUNK_MAX_CHARS)
+            split_pos = text.rfind("！", 0, max_chars)
         if split_pos <= 0:
-            split_pos = text.rfind("？", 0, CHUNK_MAX_CHARS)
+            split_pos = text.rfind("？", 0, max_chars)
         if split_pos <= 0:
-            split_pos = CHUNK_MAX_CHARS
+            split_pos = max_chars
         parts.append(text[:split_pos].strip())
         text = text[split_pos:].strip()
     if text:

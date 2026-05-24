@@ -3,6 +3,8 @@ import { apiRequest, apiUpload } from '@/shared/api/client'
 import type {
   CreateKnowledgeLinkPayload,
   CreateKnowledgeSourcePayload,
+  EmbeddingProviderListResponse,
+  IndexProfile,
   KnowledgeAskRequest,
   KnowledgeAskResponse,
   KnowledgeBuildSourceEmbeddingsResponse,
@@ -21,6 +23,8 @@ import type {
   KnowledgeSourceType,
   KnowledgeSummaryRequest,
   KnowledgeSummaryResponse,
+  RefreshKnowledgeIndexPayload,
+  RefreshKnowledgeIndexResponse,
   UpdateKnowledgeSourcePayload,
 } from './types'
 
@@ -111,13 +115,17 @@ export function deleteKnowledgeLink(linkId: string): Promise<KnowledgeLink> {
 
 // --- Knowledge Import ---
 
+export function getUploadFilename(file: File): string {
+  return file.webkitRelativePath || file.name
+}
+
 export function previewKnowledgeImport(
   projectId: string,
   files: File[],
 ): Promise<KnowledgeImportPreview> {
   const formData = new FormData()
   for (const file of files) {
-    formData.append('files', file)
+    formData.append('files', file, getUploadFilename(file))
   }
   return apiUpload<KnowledgeImportPreview>(
     `/api/projects/${projectId}/knowledge/import/preview`,
@@ -142,7 +150,7 @@ export function confirmKnowledgeImport(
 
   const formData = new FormData()
   for (const file of files) {
-    formData.append('files', file)
+    formData.append('files', file, getUploadFilename(file))
   }
 
   const query = params.toString()
@@ -170,6 +178,7 @@ export function searchKnowledgeChunks(
   if (filters?.source_id) params.set('source_id', filters.source_id)
   if (filters?.limit) params.set('limit', String(filters.limit))
   if (filters?.mode) params.set('mode', filters.mode)
+  if (filters?.strictness) params.set('strictness', filters.strictness)
 
   const query = params.toString()
   return apiRequest<KnowledgeRetrievalResponse>(
@@ -202,6 +211,32 @@ export function buildSourceEmbeddings(
   return apiRequest<KnowledgeBuildSourceEmbeddingsResponse>(
     `/api/knowledge-sources/${sourceId}/embeddings`,
     { method: 'POST' },
+  )
+}
+
+export function refreshKnowledgeIndex(
+  projectId: string,
+  payload: RefreshKnowledgeIndexPayload,
+): Promise<RefreshKnowledgeIndexResponse> {
+  return apiRequest<RefreshKnowledgeIndexResponse>(
+    `/api/projects/${projectId}/knowledge/index/refresh`,
+    { method: 'POST', body: payload },
+  )
+}
+
+export function listEmbeddingProviders(
+  projectId: string,
+): Promise<EmbeddingProviderListResponse> {
+  return apiRequest<EmbeddingProviderListResponse>(
+    `/api/projects/${projectId}/knowledge/embedding-providers`,
+  )
+}
+
+export function getKnowledgeIndexProfile(
+  projectId: string,
+): Promise<IndexProfile> {
+  return apiRequest<IndexProfile>(
+    `/api/projects/${projectId}/knowledge/index-profile`,
   )
 }
 

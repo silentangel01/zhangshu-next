@@ -37,6 +37,7 @@ import ChapterVersionPreviewDialog from '@/features/chapters/ChapterVersionPrevi
 import CreateChapterDialog from '@/features/chapters/CreateChapterDialog.vue'
 import EditChapterDialog from '@/features/chapters/EditChapterDialog.vue'
 import { clearRecoveryDraft } from '@/features/chapters/recoveryDraft'
+import AppSettingsDialog from '@/features/app-config/AppSettingsDialog.vue'
 import CreateVolumeDialog from '@/features/volumes/CreateVolumeDialog.vue'
 import EditVolumeDialog from '@/features/volumes/EditVolumeDialog.vue'
 import WritingAidPanel from '@/features/writing/WritingAidPanel.vue'
@@ -67,6 +68,7 @@ const treeMessage = ref('')
 const treeMessageTone = ref<'success' | 'warning'>('success')
 const showCreateVolumeDialog = ref(false)
 const showCreateChapterDialog = ref(false)
+const showAppSettings = ref(false)
 const rightAidTab = ref<WritingAidTab | null>(null)
 const isLeftPanelCollapsed = ref(false)
 const isRightPanelCollapsed = ref(false)
@@ -563,6 +565,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
             <RouterLink :to="`/projects/${projectId}/knowledge`">知识库</RouterLink>
             <RouterLink to="/imports">导入导出</RouterLink>
             <RouterLink :to="`/projects/${projectId}/backup`">备份恢复</RouterLink>
+            <button type="button" @click="showAppSettings = true">应用设置</button>
           </div>
         </details>
       </div>
@@ -747,6 +750,11 @@ function getErrorMessage(error: unknown, fallback: string): string {
       @close="previewVersion = null"
       @restore="handleRestoreVersion"
     />
+
+    <AppSettingsDialog
+      v-if="showAppSettings"
+      @close="showAppSettings = false"
+    />
   </main>
 </template>
 
@@ -850,7 +858,8 @@ h2 {
   box-shadow: var(--zs-shadow-md);
 }
 
-.more-menu-list a {
+.more-menu-list a,
+.more-menu-list button {
   border-radius: 6px;
   padding: 9px 10px;
   color: var(--zs-color-text);
@@ -858,8 +867,19 @@ h2 {
   text-decoration: none;
 }
 
+.more-menu-list button {
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-size: inherit;
+  font-family: inherit;
+}
+
 .more-menu-list a:hover,
-.more-menu-list a:focus-visible {
+.more-menu-list a:focus-visible,
+.more-menu-list button:hover,
+.more-menu-list button:focus-visible {
   background: var(--zs-color-surface-soft);
   color: var(--zs-color-primary);
   outline: none;

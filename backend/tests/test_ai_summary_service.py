@@ -138,7 +138,7 @@ class TestSummarize:
 
     def test_summarize_with_topic(self, db_session, project, service):
         source, chunks = _create_source_with_chunks(
-            db_session, project.id, "资料", "魔法体系内容。"
+            db_session, project.id, "资料", "魔法体系包括元素魔法和咒语魔法，是战斗的基础能力。"
         )
         _index_source(db_session, source)
 
@@ -169,9 +169,9 @@ class TestSummarize:
     def test_summarize_empty_project_no_error(self, db_session, project, service):
         response = service.summarize(project.id)
 
-        assert response.summary
+        # Empty project has no chunks — correct behavior is empty summary
+        assert response.summary == ""
         assert response.sources_used == 0
-        assert "[AI 模型尚未接入]" in response.summary
 
     def test_summarize_project_not_found(self, service):
         with pytest.raises(SummaryProjectNotFoundError):

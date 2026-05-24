@@ -5,6 +5,8 @@ from app.infrastructure.database import get_db
 from app.schemas.knowledge import (
     KnowledgeChunkRead,
     KnowledgeCredibility,
+    KnowledgeImportPreviewResponse,
+    KnowledgeImportResultResponse,
     KnowledgeLinkCreate,
     KnowledgeLinkRead,
     KnowledgeSourceCreate,
@@ -16,6 +18,7 @@ from app.schemas.knowledge import (
 )
 from app.services.knowledge_import_service import (
     KnowledgeImportEmptyError,
+    KnowledgeImportLimitError,
     KnowledgeImportProjectNotFoundError,
     KnowledgeImportService,
 )
@@ -204,6 +207,7 @@ def delete_knowledge_link(
 
 @router.post(
     "/api/projects/{project_id}/knowledge/import/preview",
+    response_model=KnowledgeImportPreviewResponse,
 )
 def preview_knowledge_import(
     project_id: str,
@@ -217,12 +221,15 @@ def preview_knowledge_import(
 
     try:
         return service.preview_import(file_entries)
+    except KnowledgeImportLimitError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post(
     "/api/projects/{project_id}/knowledge/import/confirm",
+    response_model=KnowledgeImportResultResponse,
 )
 def confirm_knowledge_import(
     project_id: str,
@@ -249,5 +256,7 @@ def confirm_knowledge_import(
         raise HTTPException(status_code=404, detail="Project not found") from exc
     except KnowledgeImportEmptyError as exc:
         raise HTTPException(status_code=400, detail="没有可导入的文件") from exc
+    except KnowledgeImportLimitError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

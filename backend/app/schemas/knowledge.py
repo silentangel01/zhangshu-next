@@ -141,3 +141,49 @@ class KnowledgeSourceFilters(BaseModel):
     status: KnowledgeSourceStatus | None = None
     tag: str | None = None
     credibility: KnowledgeCredibility | None = None
+
+
+# --- Knowledge Import Response Schemas ---
+
+
+class KnowledgeImportDocumentRead(BaseModel):
+    title: str
+    content: str
+    source_type: str
+    source_uri: str
+    filename: str
+    relative_path: str
+    extension: str
+    word_count: int
+    size: int
+
+
+class KnowledgeImportPreviewResponse(BaseModel):
+    documents: list[KnowledgeImportDocumentRead]
+    document_count: int
+    supported_count: int
+    unsupported_count: int
+    total_word_count: int
+    total_size: int
+    warnings: list[str]
+    failed_files: list[str]
+    empty_files: list[str]
+    unsupported_files: list[str]
+    can_import: bool
+
+
+class KnowledgeImportedSourceRead(BaseModel):
+    id: str
+    title: str
+    source_type: str
+    source_uri: str
+    chunk_count: int
+
+
+class KnowledgeImportResultResponse(BaseModel):
+    imported_count: int
+    imported_sources: list[KnowledgeImportedSourceRead]
+    warnings: list[str]
+    failed_files: list[str]
+    empty_files: list[str]
+    unsupported_files: list[str]

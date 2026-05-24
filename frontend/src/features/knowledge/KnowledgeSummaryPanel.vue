@@ -96,7 +96,11 @@ async function handleSummarize() {
 
     <div v-if="summaryResult" class="summary-results">
       <div class="ai-warning">
-        ⚠ AI 摘要为草稿建议，不会自动写入设定或正文。
+        AI 摘要为草稿建议，不会自动写入设定或正文。
+      </div>
+
+      <div v-if="summaryResult.warnings && summaryResult.warnings.length > 0" class="summary-warnings">
+        <p v-for="(warning, idx) in summaryResult.warnings" :key="idx">{{ warning }}</p>
       </div>
 
       <div class="summary-section">
@@ -237,13 +241,13 @@ async function handleSummarize() {
 }
 
 .ai-warning {
-  padding: 10px 14px;
-  background: var(--zs-color-warning-soft);
+  padding: var(--zs-space-3) var(--zs-space-4);
   border: 1px solid var(--zs-color-warning);
-  border-radius: 6px;
+  border-radius: var(--zs-radius-sm);
+  background: var(--zs-color-warning-soft);
   color: var(--zs-color-warning);
   font-size: 0.85rem;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .summary-section {
@@ -339,5 +343,23 @@ async function handleSummarize() {
   border-radius: 4px;
   font-size: 0.85rem;
   color: var(--zs-color-text);
+}
+
+.summary-warnings {
+  padding: 8px 12px;
+  background: var(--zs-color-warning-soft);
+  border: 1px solid var(--zs-color-warning);
+  border-radius: 6px;
+}
+
+.summary-warnings p {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--zs-color-warning);
+  line-height: 1.5;
+}
+
+.summary-warnings p + p {
+  margin-top: 4px;
 }
 </style>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 
 import { confirmKnowledgeImport, previewKnowledgeImport } from '@/entities/knowledge/api'
 import type {
@@ -34,13 +34,13 @@ const options = reactive({
   tags: '',
 })
 
-const ACCEPTED_TYPES = '.txt,.md,.docx'
+const ACCEPTED_TYPES = '.txt,.md,.docx,.doc,.pdf,.zip'
 
 const sourceTypeOptions: { value: KnowledgeSourceType; label: string }[] = [
   { value: 'file', label: knowledgeSourceTypeLabels.file },
+  { value: 'note', label: knowledgeSourceTypeLabels.note },
   { value: 'book', label: knowledgeSourceTypeLabels.book },
   { value: 'webpage', label: knowledgeSourceTypeLabels.webpage },
-  { value: 'note', label: knowledgeSourceTypeLabels.note },
   { value: 'quote', label: knowledgeSourceTypeLabels.quote },
   { value: 'custom', label: knowledgeSourceTypeLabels.custom },
 ]
@@ -51,10 +51,67 @@ const credibilityOptions: { value: KnowledgeCredibility; label: string }[] = [
   { value: 'high', label: knowledgeCredibilityLabels.high },
 ]
 
+const supportedFileCount = computed(() => {
+  const supported = new Set(['.txt', '.md', '.docx', '.doc', '.pdf'])
+  return selectedFiles.value.filter((file) => {
+    const ext = getExtension(file.name)
+    return supported.has(ext) || ext === '.zip'
+  }).length
+})
+
+const totalFileSize = computed(() => {
+  return selectedFiles.value.reduce((sum, file) => sum + file.size, 0)
+})
+
+function getExtension(name: string): string {
+  const idx = name.lastIndexOf('.')
+  return idx >= 0 ? name.slice(idx).toLowerCase() : ''
+}
+
+function getDisplayName(file: File): string {
+  return file.webkitRelativePath || file.name
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function getExtensionLabel(ext: string): string {
+  const labels: Record<string, string> = {
+    '.txt': '文本',
+    '.md': 'Markdown',
+    '.docx': 'Word',
+    '.doc': '旧版 Word',
+    '.pdf': 'PDF',
+    '.zip': '压缩包',
+  }
+  return labels[ext] || ext
+}
+
 const canPreview = computed(() => selectedFiles.value.length > 0)
 const canImport = computed(() => preview.value?.can_import ?? false)
 
+const fileInput = ref<HTMLInputElement | null>(null)
+const folderInput = ref<HTMLInputElement | null>(null)
+
+onMounted(() => {
+  if (folderInput.value) {
+    folderInput.value.setAttribute('webkitdirectory', '')
+  }
+})
+
 function handleFileSelect(event: Event) {
+  const input = event.target as HTMLInputElement
+  if (!input.files) return
+
+  const newFiles = Array.from(input.files)
+  selectedFiles.value = [...selectedFiles.value, ...newFiles]
+  input.value = ''
+}
+
+function handleFolderSelect(event: Event) {
   const input = event.target as HTMLInputElement
   if (!input.files) return
 
@@ -119,7 +176,7 @@ function handleBackToSelect() {
 </script>
 
 <template>
-  <div class="zs-dialog" role="presentation">
+  <div class="zs-dialog" role="presentation" @click.self="emit('close')">
     <section
       class="zs-dialog-content import-dialog"
       role="dialog"
@@ -127,7 +184,7 @@ function handleBackToSelect() {
       aria-labelledby="knowledge-import-title"
     >
       <header class="zs-dialog-header">
-        <h2 id="knowledge-import-title">导入知识资料</h2>
+        <h2 id="knowledge-import-title">批量导入知识资料</h2>
         <button
           class="zs-icon-button"
           type="button"
@@ -138,9 +195,10 @@ function handleBackToSelect() {
         </button>
       </header>
 
-      <div class="dialog-body">
+      <div class="import-body">
         <p class="helper-note">
-          支持导入 .txt、.md、.docx 文件。导入后会自动生成知识资料和分块。
+          支持批量导入文件或选择文件夹。每个文件会生成一条知识资料，并自动分块。支持
+          .txt、.md、.docx、.doc、.pdf 格式，也支持 .zip 压缩包。
         </p>
 
         <section v-if="errorMessage" class="error-banner" role="alert">
@@ -149,35 +207,69 @@ function handleBackToSelect() {
 
         <!-- Step 1: Select files -->
         <div v-if="step === 'select'" class="step-select">
-          <label class="file-input-wrapper">
+          <div class="input-buttons">
+            <button
+              class="zs-button zs-button-primary"
+              type="button"
+              @click="fileInput?.click()"
+            >
+              选择文件
+            </button>
             <input
+              ref="fileInput"
               type="file"
               multiple
               :accept="ACCEPTED_TYPES"
+              style="display: none"
               @change="handleFileSelect"
             />
-            <span class="file-input-button">选择文件</span>
-          </label>
-
-          <div v-if="selectedFiles.length === 0" class="empty-files">
-            <p>尚未选择文件。点击"选择文件"添加 .txt、.md 或 .docx 文件。</p>
+            <button
+              class="zs-button zs-button-secondary"
+              type="button"
+              @click="folderInput?.click()"
+            >
+              选择文件夹
+            </button>
+            <input
+              ref="folderInput"
+              type="file"
+              multiple
+              :accept="ACCEPTED_TYPES"
+              style="display: none"
+              @change="handleFolderSelect"
+            />
           </div>
 
-          <ul v-else class="file-list">
-            <li v-for="(file, index) in selectedFiles" :key="index" class="file-item">
-              <span class="file-name">{{ file.name }}</span>
-              <span class="file-size">{{ (file.size / 1024).toFixed(1) }} KB</span>
-              <button
-                class="file-remove"
-                type="button"
-                @click="handleRemoveFile(index)"
-              >
-                移除
-              </button>
-            </li>
-          </ul>
+          <div v-if="selectedFiles.length === 0" class="empty-files">
+            <p>尚未选择文件。点击上方按钮添加文件。</p>
+            <p class="empty-files-hint">支持 .txt、.md、.docx、.doc、.pdf 和 .zip 格式</p>
+          </div>
 
-          <div v-if="selectedFiles.length > 0" class="select-actions">
+          <template v-else>
+            <div class="file-summary">
+              已选择 <strong>{{ selectedFiles.length }}</strong> 个文件（{{ formatSize(totalFileSize) }}），
+              预计导入 <strong>{{ supportedFileCount }}</strong> 个支持的文件
+            </div>
+
+            <ul class="file-list">
+              <li v-for="(file, index) in selectedFiles" :key="index" class="file-item">
+                <span class="file-name" :title="getDisplayName(file)">
+                  {{ getDisplayName(file) }}
+                </span>
+                <span class="file-ext-label">{{ getExtensionLabel(getExtension(file.name)) }}</span>
+                <span class="file-size">{{ formatSize(file.size) }}</span>
+                <button
+                  class="zs-button-ghost file-remove"
+                  type="button"
+                  @click="handleRemoveFile(index)"
+                >
+                  移除
+                </button>
+              </li>
+            </ul>
+          </template>
+
+          <div v-if="selectedFiles.length > 0" class="step-actions">
             <button class="zs-button zs-button-secondary" type="button" @click="handleClearFiles">
               清空
             </button>
@@ -196,9 +288,30 @@ function handleBackToSelect() {
         <div v-else-if="step === 'preview' && preview" class="step-preview">
           <div class="preview-summary">
             <p>
-              <strong>{{ preview.document_count }}</strong> 个文件可导入，
+              <strong>{{ preview.supported_count }}</strong> 个文件可导入，
               共 <strong>{{ preview.total_word_count }}</strong> 字。
             </p>
+            <p v-if="preview.unsupported_count > 0" class="preview-unsupported-note">
+              {{ preview.unsupported_count }} 个文件格式不支持，已跳过。
+            </p>
+            <p v-if="preview.empty_files.length > 0" class="preview-empty-note">
+              {{ preview.empty_files.length }} 个文件为空，已跳过。
+            </p>
+            <p v-if="preview.failed_files.length > 0" class="preview-failed-note">
+              {{ preview.failed_files.length }} 个文件解析失败。
+            </p>
+          </div>
+
+          <div v-if="preview.unsupported_files.length > 0" class="unsupported-section">
+            <p class="unsupported-title">不支持的文件：</p>
+            <ul class="unsupported-list">
+              <li v-for="(name, i) in preview.unsupported_files" :key="i" class="unsupported-item">
+                <span class="unsupported-name" :title="name">{{ name }}</span>
+                <span v-if="getExtension(name) === '.pdf'" class="unsupported-hint">
+                  扫描版 PDF 可能无法提取文字。
+                </span>
+              </li>
+            </ul>
           </div>
 
           <div v-if="preview.warnings.length > 0" class="preview-warnings">
@@ -209,16 +322,17 @@ function handleBackToSelect() {
           </div>
 
           <ul class="preview-documents">
-            <li v-for="doc in preview.documents" :key="doc.filename" class="preview-doc">
-              <span class="doc-title">{{ doc.title }}</span>
-              <span class="doc-meta">{{ doc.word_count }} 字</span>
+            <li v-for="doc in preview.documents" :key="doc.relative_path" class="preview-doc">
+              <span class="doc-title" :title="doc.relative_path">{{ doc.title }}</span>
+              <span class="doc-path" :title="doc.relative_path">{{ doc.relative_path }}</span>
+              <span class="doc-meta">{{ doc.word_count }} 字 · {{ formatSize(doc.size) }}</span>
             </li>
           </ul>
 
           <div class="import-options">
             <h3>导入选项</h3>
             <label class="zs-field">
-              <span>资料类型</span>
+              <span class="zs-field-label">资料类型</span>
               <select v-model="options.sourceType">
                 <option v-for="opt in sourceTypeOptions" :key="opt.value" :value="opt.value">
                   {{ opt.label }}
@@ -226,7 +340,7 @@ function handleBackToSelect() {
               </select>
             </label>
             <label class="zs-field">
-              <span>可信度</span>
+              <span class="zs-field-label">可信度</span>
               <select v-model="options.credibility">
                 <option v-for="opt in credibilityOptions" :key="opt.value" :value="opt.value">
                   {{ opt.label }}
@@ -234,12 +348,12 @@ function handleBackToSelect() {
               </select>
             </label>
             <label class="zs-field">
-              <span>标签（可选）</span>
+              <span class="zs-field-label">标签（可选）</span>
               <input v-model="options.tags" type="text" placeholder="多个标签用逗号分隔" />
             </label>
           </div>
 
-          <div class="preview-actions">
+          <div class="step-actions">
             <button class="zs-button zs-button-secondary" type="button" @click="handleBackToSelect">
               返回
             </button>
@@ -267,6 +381,20 @@ function handleBackToSelect() {
             </p>
           </div>
 
+          <div v-if="result.unsupported_files.length > 0" class="result-unsupported">
+            <p class="warning-title">未支持的文件（{{ result.unsupported_files.length }}）：</p>
+            <ul>
+              <li v-for="(name, i) in result.unsupported_files" :key="i">{{ name }}</li>
+            </ul>
+          </div>
+
+          <div v-if="result.failed_files.length > 0" class="result-failed">
+            <p class="warning-title">解析失败的文件（{{ result.failed_files.length }}）：</p>
+            <ul>
+              <li v-for="(name, i) in result.failed_files" :key="i">{{ name }}</li>
+            </ul>
+          </div>
+
           <div v-if="result.warnings.length > 0" class="result-warnings">
             <p class="warning-title">警告：</p>
             <ul>
@@ -284,7 +412,7 @@ function handleBackToSelect() {
             </li>
           </ul>
 
-          <div class="result-actions">
+          <div class="step-actions">
             <button class="zs-button zs-button-primary" type="button" @click="emit('close')">
               完成
             </button>
@@ -303,64 +431,61 @@ function handleBackToSelect() {
 
 <style scoped>
 .import-dialog {
-  width: min(600px, 90vw);
-  max-height: 80vh;
-  display: flex;
-  flex-direction: column;
+  max-width: min(640px, 90vw);
+  width: min(640px, 90vw);
+  margin-inline: auto;
 }
 
-.dialog-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 0 20px;
+.import-body {
+  padding: var(--zs-space-5) var(--zs-space-6);
   display: grid;
-  gap: 12px;
+  gap: var(--zs-space-4);
 }
 
 .helper-note {
   color: var(--zs-color-text-muted);
-  font-size: 0.82rem;
+  font-size: 0.84rem;
   margin: 0;
+  line-height: 1.7;
 }
 
 .error-banner {
   background: var(--zs-color-danger-soft);
   border: 1px solid var(--zs-color-danger);
-  border-radius: 6px;
+  border-radius: var(--zs-radius-sm);
   color: var(--zs-color-danger);
-  padding: 8px 12px;
+  padding: var(--zs-space-3) var(--zs-space-4);
   font-size: 0.82rem;
 }
 
-.file-input-wrapper {
-  display: inline-block;
-}
-
-.file-input-wrapper input[type='file'] {
-  display: none;
-}
-
-.file-input-button {
-  display: inline-block;
-  padding: 6px 14px;
-  border: 1px solid var(--zs-color-primary);
-  border-radius: 6px;
-  background: var(--zs-color-primary);
-  color: var(--zs-color-on-primary);
-  font-size: 0.84rem;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.file-input-button:hover {
-  opacity: 0.9;
+.input-buttons {
+  display: flex;
+  gap: var(--zs-space-3);
+  flex-wrap: wrap;
 }
 
 .empty-files {
   color: var(--zs-color-text-muted);
-  font-size: 0.82rem;
-  padding: 16px 0;
+  font-size: 0.84rem;
+  padding: var(--zs-space-6) 0;
   text-align: center;
+}
+
+.empty-files p {
+  margin: 0 0 var(--zs-space-1);
+}
+
+.empty-files-hint {
+  font-size: 0.78rem;
+  color: var(--zs-color-text-faint);
+}
+
+.file-summary {
+  background: var(--zs-color-info-soft);
+  border-radius: var(--zs-radius-sm);
+  padding: var(--zs-space-3) var(--zs-space-4);
+  font-size: 0.84rem;
+  line-height: 1.6;
 }
 
 .file-list {
@@ -368,16 +493,18 @@ function handleBackToSelect() {
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 4px;
+  gap: var(--zs-space-1);
+  max-height: 220px;
+  overflow-y: auto;
 }
 
 .file-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  border: 1px solid var(--zs-color-border);
-  border-radius: 6px;
+  gap: var(--zs-space-2);
+  padding: var(--zs-space-2) var(--zs-space-3);
+  border: 1px solid var(--zs-color-border-soft);
+  border-radius: var(--zs-radius-sm);
   font-size: 0.82rem;
 }
 
@@ -388,62 +515,128 @@ function handleBackToSelect() {
   white-space: nowrap;
 }
 
+.file-ext-label {
+  color: var(--zs-color-info);
+  background: var(--zs-color-info-soft);
+  border-radius: var(--zs-radius-pill);
+  padding: 1px 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .file-size {
   color: var(--zs-color-text-muted);
   font-size: 0.76rem;
+  white-space: nowrap;
 }
 
 .file-remove {
-  border: none;
-  background: transparent;
   color: var(--zs-color-danger);
   font-size: 0.76rem;
-  cursor: pointer;
-  padding: 0;
+  padding: 0 var(--zs-space-2);
+  min-height: auto;
 }
 
-.file-remove:hover {
-  text-decoration: underline;
-}
-
-.select-actions,
-.preview-actions,
-.result-actions {
+.step-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--zs-space-2);
   justify-content: flex-end;
-  padding-top: 8px;
+  padding-top: var(--zs-space-3);
+  border-top: 1px solid var(--zs-color-border-soft);
 }
 
 .preview-summary {
   background: var(--zs-color-info-soft);
-  border-radius: 6px;
-  padding: 10px 14px;
+  border-radius: var(--zs-radius-sm);
+  padding: var(--zs-space-3) var(--zs-space-4);
   font-size: 0.84rem;
 }
 
 .preview-summary p {
+  margin: 0 0 var(--zs-space-1);
+}
+
+.preview-summary p:last-child {
+  margin-bottom: 0;
+}
+
+.preview-unsupported-note {
+  color: var(--zs-color-warning);
+}
+
+.preview-empty-note,
+.preview-failed-note {
+  color: var(--zs-color-text-muted);
+  font-size: 0.8rem;
+}
+
+.unsupported-section {
+  background: var(--zs-color-warning-soft);
+  border: 1px solid var(--zs-color-warning);
+  border-radius: var(--zs-radius-sm);
+  padding: var(--zs-space-3) var(--zs-space-4);
+  font-size: 0.82rem;
+}
+
+.unsupported-title {
+  font-weight: 700;
+  margin: 0 0 var(--zs-space-1);
+}
+
+.unsupported-list {
   margin: 0;
+  padding-left: var(--zs-space-5);
+}
+
+.unsupported-item {
+  margin-bottom: var(--zs-space-1);
+}
+
+.unsupported-name {
+  font-weight: 600;
+}
+
+.unsupported-hint {
+  display: block;
+  font-size: 0.76rem;
+  color: var(--zs-color-text-muted);
+  margin-top: 1px;
 }
 
 .preview-warnings,
 .result-warnings {
   background: var(--zs-color-warning-soft);
   border: 1px solid var(--zs-color-warning);
-  border-radius: 6px;
-  padding: 10px 14px;
+  border-radius: var(--zs-radius-sm);
+  padding: var(--zs-space-3) var(--zs-space-4);
   font-size: 0.82rem;
 }
 
 .warning-title {
   font-weight: 700;
-  margin: 0 0 4px;
+  margin: 0 0 var(--zs-space-1);
 }
 
 .preview-warnings ul,
 .result-warnings ul {
   margin: 0;
-  padding-left: 18px;
+  padding-left: var(--zs-space-5);
+}
+
+.result-unsupported,
+.result-failed {
+  background: var(--zs-color-warning-soft);
+  border: 1px solid var(--zs-color-warning);
+  border-radius: var(--zs-radius-sm);
+  padding: var(--zs-space-3) var(--zs-space-4);
+  font-size: 0.82rem;
+}
+
+.result-unsupported ul,
+.result-failed ul {
+  margin: 0;
+  padding-left: var(--zs-space-5);
 }
 
 .preview-documents,
@@ -452,25 +645,32 @@ function handleBackToSelect() {
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 4px;
-  max-height: 200px;
+  gap: var(--zs-space-1);
+  max-height: 220px;
   overflow-y: auto;
 }
 
 .preview-doc,
 .result-source {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  border: 1px solid var(--zs-color-border-soft, var(--zs-color-border));
-  border-radius: 6px;
+  display: grid;
+  gap: 2px;
+  padding: var(--zs-space-2) var(--zs-space-3);
+  border: 1px solid var(--zs-color-border-soft);
+  border-radius: var(--zs-radius-sm);
   font-size: 0.82rem;
 }
 
 .doc-title,
 .source-title {
-  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.doc-path {
+  color: var(--zs-color-text-faint);
+  font-size: 0.72rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -484,9 +684,9 @@ function handleBackToSelect() {
 
 .import-options {
   display: grid;
-  gap: 8px;
-  border-top: 1px solid var(--zs-color-border-soft, var(--zs-color-border));
-  padding-top: 12px;
+  gap: var(--zs-space-3);
+  border-top: 1px solid var(--zs-color-border-soft);
+  padding-top: var(--zs-space-4);
 }
 
 .import-options h3 {
@@ -494,30 +694,30 @@ function handleBackToSelect() {
   font-size: 0.9rem;
 }
 
-.zs-field {
+.import-options .zs-field {
   display: grid;
-  gap: 3px;
+  gap: var(--zs-space-1);
 }
 
-.zs-field span {
-  font-size: 0.76rem;
+.import-options .zs-field .zs-field-label {
+  font-size: 0.78rem;
   color: var(--zs-color-text-muted);
   font-weight: 700;
 }
 
-.zs-field select,
-.zs-field input {
+.import-options .zs-field select,
+.import-options .zs-field input {
   border: 1px solid var(--zs-color-border);
-  border-radius: 6px;
-  padding: 6px 10px;
-  font-size: 0.82rem;
+  border-radius: var(--zs-radius-sm);
+  padding: var(--zs-space-2) var(--zs-space-3);
+  font-size: 0.84rem;
   background: var(--zs-color-bg);
   color: var(--zs-color-text);
 }
 
 .step-importing {
   text-align: center;
-  padding: 40px 0;
+  padding: var(--zs-space-8) 0;
 }
 
 .importing-message {
@@ -526,10 +726,10 @@ function handleBackToSelect() {
 }
 
 .result-success {
-  background: var(--zs-color-success-soft, #f0fdf4);
-  border: 1px solid var(--zs-color-success, #22c55e);
-  border-radius: 6px;
-  padding: 10px 14px;
+  background: var(--zs-color-success-soft);
+  border: 1px solid var(--zs-color-success);
+  border-radius: var(--zs-radius-sm);
+  padding: var(--zs-space-3) var(--zs-space-4);
   font-size: 0.84rem;
 }
 
@@ -537,10 +737,10 @@ function handleBackToSelect() {
   margin: 0;
 }
 
-.zs-dialog-footer {
-  border-top: 1px solid var(--zs-color-border-soft, var(--zs-color-border));
-  padding: 12px 20px;
-  display: flex;
-  justify-content: flex-end;
+.step-select,
+.step-preview,
+.step-result {
+  display: grid;
+  gap: var(--zs-space-4);
 }
 </style>

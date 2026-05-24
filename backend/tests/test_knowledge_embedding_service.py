@@ -277,3 +277,110 @@ class TestRemoveSourceEmbeddings:
     def test_remove_nonexistent_source_no_error(self, db_session, project, service):
         # Should not raise
         service.remove_source_embeddings(str(uuid4()))
+
+
+# ---------- Index Status Filtering ----------
+
+
+class TestIndexStatusFiltering:
+    def _create_source_with_embedding(
+        self, db_session, project_id, title, content, model_name, vector_dim
+    ):
+        """Create a source with one chunk and one embedding."""
+        source_id = str(uuid4())
+        source = KnowledgeSource(
+            id=source_id,
+            project_id=project_id,
+            title=title,
+            source_type="note",
+            source_uri="",
+            author=None,
+            summary="",
+            content=content,
+            tags="",
+            status="active",
+            credibility="normal",
+        )
+        db_session.add(source)
+
+        chunk_id = str(uuid4())
+        chunk = KnowledgeChunk(
+            id=chunk_id,
+            project_id=project_id,
+            source_id=source_id,
+            chunk_index=0,
+            heading="",
+            content=content,
+            token_count=len(content),
+            metadata_json="{}",
+        )
+        db_session.add(chunk)
+        db_session.commit()
+
+        embedding = KnowledgeEmbedding(
+            id=str(uuid4()),
+            chunk_id=chunk_id,
+            source_id=source_id,
+            project_id=project_id,
+            model_name=model_name,
+            vector_dim=vector_dim,
+            vector_json="[]",
+        )
+        db_session.add(embedding)
+        db_session.commit()
+        return source, chunk
+
+    def test_index_status_filters_by_profile_model(self, db_session, project, service):
+        """When profile exists, indexed count should only count matching model."""
+        self._create_source_with_embedding(
+            db_session, project.id, "资料1", "内容1",
+            model_name="bigram-hash-v1", vector_dim=256,
+        )
+        self._create_source_with_embedding(
+            db_session, project.id, "资料2", "内容2",
+            model_name="text-embedding-v4", vector_dim=1024,
+        )
+
+        # Create profile pointing to bigram-hash-v1
+        service.profile_repo.upsert(
+            project.id, "local_basic_hash", "bigram-hash-v1", 256
+        )
+
+        status = service.get_index_status(project.id)
+        assert status.indexed_chunks == 1
+        assert status.profile_status == "ready"
+        assert status.provider_id == "local_basic_hash"
+
+    def test_index_status_not_configured_without_profile(self, db_session, project, service):
+        """Without profile, status should be not_configured."""
+        self._create_source_with_embedding(
+            db_session, project.id, "资料", "内容",
+            model_name="bigram-hash-v1", vector_dim=256,
+        )
+
+        status = service.get_index_status(project.id)
+        assert status.profile_status == "not_configured"
+        assert status.provider_id is None
+
+    def test_index_status_includes_profile_fields(self, db_session, project, service):
+        """Status should include full profile fields when profile exists."""
+        self._create_source_with_embedding(
+            db_session, project.id, "资料", "内容",
+            model_name="bigram-hash-v1", vector_dim=256,
+        )
+        service.profile_repo.upsert(
+            project.id,
+            "local_basic_hash",
+            "bigram-hash-v1",
+            256,
+            provider_type="compat",
+            display_name="本地基础索引",
+            chunk_size="medium",
+            status="ready",
+        )
+
+        status = service.get_index_status(project.id)
+        assert status.provider_type == "compat"
+        assert status.display_name == "本地基础索引"
+        assert status.chunk_size == "medium"
+        assert status.profile_status == "ready"

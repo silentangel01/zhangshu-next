@@ -5,11 +5,16 @@ import { askKnowledgeBase } from '@/entities/knowledge/api'
 import type {
   KnowledgeAskResponse,
   KnowledgeCredibility,
+  KnowledgeRetrievalStrictness,
   KnowledgeSearchMode,
   KnowledgeSourceType,
   RagCitation,
 } from '@/entities/knowledge/types'
-import { knowledgeCredibilityLabels, knowledgeSourceTypeLabels } from '@/entities/knowledge/types'
+import {
+  knowledgeCredibilityLabels,
+  knowledgeRetrievalStrictnessLabels,
+  knowledgeSourceTypeLabels,
+} from '@/entities/knowledge/types'
 
 const props = defineProps<{
   projectId: string
@@ -24,6 +29,9 @@ const isAsking = ref(false)
 const errorMessage = ref('')
 const askResult = ref<KnowledgeAskResponse | null>(null)
 const searchMode = ref<KnowledgeSearchMode>('hybrid')
+const strictness = ref<KnowledgeRetrievalStrictness>('balanced')
+
+const strictnessOptions: KnowledgeRetrievalStrictness[] = ['strict', 'balanced', 'broad']
 
 const filters = reactive({
   source_type: '' as KnowledgeSourceType | '',
@@ -51,6 +59,7 @@ async function handleAsk() {
       source_type: filters.source_type || undefined,
       credibility: filters.credibility || undefined,
       top_k: filters.top_k,
+      strictness: strictness.value,
     })
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '问答请求失败，请稍后重试。'
@@ -78,6 +87,12 @@ function truncateContent(content: string, maxLength: number = 200): string {
   if (content.length <= maxLength) return content
   return `${content.slice(0, maxLength)}...`
 }
+
+const matchQualityLabels: Record<string, string> = {
+  high: '高相关',
+  medium: '中相关',
+  low: '弱相关',
+}
 </script>
 
 <template>
@@ -85,7 +100,7 @@ function truncateContent(content: string, maxLength: number = 200): string {
     <header class="search-header">
       <h2>知识库问答</h2>
       <p class="search-description">
-        基于知识库内容回答问题。系统会检索相关分块并生成回答（含引用来源）。
+        基于知识库内容回答问题。系统会检索相关片段并生成回答（含引用来源）。
       </p>
     </header>
 
@@ -115,6 +130,22 @@ function truncateContent(content: string, maxLength: number = 200): string {
         >
           混合
         </button>
+      </div>
+
+      <div class="strictness-control">
+        <span class="strictness-label">匹配范围</span>
+        <div class="strictness-segments">
+          <button
+            v-for="opt in strictnessOptions"
+            :key="opt"
+            type="button"
+            class="strictness-button"
+            :class="{ active: strictness === opt }"
+            @click="strictness = opt"
+          >
+            {{ knowledgeRetrievalStrictnessLabels[opt] }}
+          </button>
+        </div>
       </div>
 
       <div class="search-input-group">
@@ -172,7 +203,11 @@ function truncateContent(content: string, maxLength: number = 200): string {
 
     <div v-if="askResult" class="ask-results">
       <div class="ai-warning">
-        ⚠ AI 回答仅供参考，不会自动修改任何内容。
+        AI 回答仅供参考，不会自动修改任何内容。
+      </div>
+
+      <div v-if="askResult.retrieval_warning" class="retrieval-warning" role="alert">
+        {{ askResult.retrieval_warning }}
       </div>
 
       <div class="answer-section">
@@ -198,6 +233,13 @@ function truncateContent(content: string, maxLength: number = 200): string {
           >
             <div class="citation-source">
               <span class="source-title">{{ citation.source_title }}</span>
+              <span
+                v-if="citation.match_quality"
+                class="quality-badge"
+                :class="`quality-${citation.match_quality}`"
+              >
+                {{ matchQualityLabels[citation.match_quality] || citation.match_quality }}
+              </span>
               <span v-if="citation.relevance_score != null" class="score-badge">
                 {{ formatScore(citation.relevance_score) }}
               </span>
@@ -377,13 +419,13 @@ function truncateContent(content: string, maxLength: number = 200): string {
 }
 
 .ai-warning {
-  padding: 10px 14px;
-  background: var(--zs-color-warning-soft);
+  padding: var(--zs-space-3) var(--zs-space-4);
   border: 1px solid var(--zs-color-warning);
-  border-radius: 6px;
+  border-radius: var(--zs-radius-sm);
+  background: var(--zs-color-warning-soft);
   color: var(--zs-color-warning);
   font-size: 0.85rem;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .answer-section {
@@ -523,5 +565,82 @@ function truncateContent(content: string, maxLength: number = 200): string {
   background: var(--zs-color-bg);
   border-color: var(--zs-color-primary);
   color: var(--zs-color-primary);
+}
+
+.retrieval-warning {
+  padding: var(--zs-space-3) var(--zs-space-4);
+  border: 1px solid var(--zs-color-warning);
+  border-radius: var(--zs-radius-sm);
+  background: var(--zs-color-warning-soft);
+  color: var(--zs-color-warning);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.quality-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.quality-high {
+  background: var(--zs-color-success-soft);
+  color: var(--zs-color-success);
+}
+
+.quality-medium {
+  background: var(--zs-color-info-soft);
+  color: var(--zs-color-info);
+}
+
+.quality-low {
+  background: var(--zs-color-warning-soft);
+  color: var(--zs-color-warning);
+}
+
+.strictness-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.strictness-label {
+  font-size: 0.8rem;
+  color: var(--zs-color-text-muted);
+  white-space: nowrap;
+}
+
+.strictness-segments {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--zs-color-border);
+  border-radius: 6px;
+  overflow: hidden;
+  width: fit-content;
+}
+
+.strictness-button {
+  border: none;
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 4px 12px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.strictness-button + .strictness-button {
+  border-left: 1px solid var(--zs-color-border);
+}
+
+.strictness-button.active {
+  background: var(--zs-color-info);
+  color: #fff;
+}
+
+.strictness-button:hover:not(.active) {
+  background: var(--zs-color-bg);
 }
 </style>

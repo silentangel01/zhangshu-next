@@ -255,3 +255,56 @@ class TestUpsertIdempotency:
         results = store.search([0.0, 1.0], project.id, top_k=5)
         assert len(results) == 1
         assert abs(results[0].score - 1.0) < 1e-6
+
+
+# ---------- Model Filter ----------
+
+
+class TestModelFilter:
+    def test_search_filters_by_model_name(self, db_session, project, store):
+        s1, c1 = _create_source_with_chunk(
+            db_session, project.id, "资料1", "内容1"
+        )
+        s2, c2 = _create_source_with_chunk(
+            db_session, project.id, "资料2", "内容2"
+        )
+
+        store.upsert(c1.id, s1.id, project.id, [1.0, 0.0], "model-a", 2)
+        store.upsert(c2.id, s2.id, project.id, [0.0, 1.0], "model-b", 2)
+
+        results = store.search(
+            [1.0, 0.0], project.id, model_name="model-a", top_k=10
+        )
+        assert len(results) == 1
+        assert results[0].chunk_id == c1.id
+
+    def test_search_filters_by_vector_dim(self, db_session, project, store):
+        s1, c1 = _create_source_with_chunk(
+            db_session, project.id, "资料1", "内容1"
+        )
+        s2, c2 = _create_source_with_chunk(
+            db_session, project.id, "资料2", "内容2"
+        )
+
+        store.upsert(c1.id, s1.id, project.id, [1.0, 0.0], "test", 2)
+        store.upsert(c2.id, s2.id, project.id, [0.0, 1.0, 0.0], "test", 3)
+
+        results = store.search(
+            [1.0, 0.0], project.id, vector_dim=2, top_k=10
+        )
+        assert len(results) == 1
+        assert results[0].chunk_id == c1.id
+
+    def test_search_without_filter_returns_all(self, db_session, project, store):
+        s1, c1 = _create_source_with_chunk(
+            db_session, project.id, "资料1", "内容1"
+        )
+        s2, c2 = _create_source_with_chunk(
+            db_session, project.id, "资料2", "内容2"
+        )
+
+        store.upsert(c1.id, s1.id, project.id, [1.0, 0.0], "model-a", 2)
+        store.upsert(c2.id, s2.id, project.id, [0.0, 1.0], "model-b", 2)
+
+        results = store.search([1.0, 0.0], project.id, top_k=10)
+        assert len(results) == 2

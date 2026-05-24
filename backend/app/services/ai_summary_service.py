@@ -53,13 +53,16 @@ class AISummaryService:
         """
         self._ensure_project_exists(project_id)
 
+        warnings: list[str] = []
+
         # Gather chunks and source titles
         if source_ids:
             chunks, source_titles = self._gather_from_sources(source_ids)
         elif topic.strip():
-            chunks, source_titles = self._gather_from_search(
+            chunks, source_titles, search_warnings = self._gather_from_search(
                 project_id, topic, mode
             )
+            warnings.extend(search_warnings)
         else:
             # No source_ids and no topic — summarize all active chunks
             chunks, source_titles = self._gather_all(project_id)
@@ -67,13 +70,21 @@ class AISummaryService:
         # Extract text segments
         texts = [chunk.content for chunk in chunks if chunk.content.strip()]
 
+        if not texts and topic.strip():
+            warnings.append(
+                f"未找到与「{topic}」相关的知识库片段，无法生成摘要。"
+            )
+
         # Build instruction
         instruction = "总结以下知识库内容"
         if topic.strip():
             instruction += f"，聚焦主题：{topic}"
 
         # Generate summary
-        summary = self.llm.summarize(texts, instruction)
+        if texts:
+            summary = self.llm.summarize(texts, instruction)
+        else:
+            summary = ""
 
         return KnowledgeSummaryResponse(
             summary=summary,
@@ -81,6 +92,7 @@ class AISummaryService:
             source_titles=source_titles,
             model=self.llm.model_name,
             is_draft=True,
+            warnings=warnings,
         )
 
     def _gather_from_sources(
@@ -110,21 +122,37 @@ class AISummaryService:
 
     def _gather_from_search(
         self, project_id: str, topic: str, mode: str
-    ) -> tuple[list[KnowledgeChunk], list[str]]:
-        """Gather chunks by searching for a topic."""
+    ) -> tuple[list[KnowledgeChunk], list[str], list[str]]:
+        """Gather chunks by searching for a topic with balanced strictness.
+
+        Returns (chunks, source_titles, warnings).
+        """
+        warnings: list[str] = []
         try:
             result = self.retrieval.search(
-                project_id, topic, mode=mode, limit=20
+                project_id,
+                topic,
+                mode=mode,
+                limit=20,
+                strictness="balanced",
             )
         except RetrievalProjectNotFoundError:
             raise SummaryProjectNotFoundError
         except RetrievalInvalidModeError as e:
             raise SummaryInvalidModeError(str(e))
 
+        # Collect warnings from retrieval
+        if result.warnings:
+            warnings.extend(result.warnings)
+        if result.filtered_count > 0 and not result.results:
+            warnings.append(
+                f"搜索「{topic}」的相关片段均被质量过滤，建议补充资料或调整关键词。"
+            )
+
         # Load full chunks from retrieval results
         chunk_ids = [r.chunk_id for r in result.results]
         if not chunk_ids:
-            return [], []
+            return [], [], warnings
 
         stmt = (
             select(KnowledgeChunk, KnowledgeSource)
@@ -146,7 +174,7 @@ class AISummaryService:
                 chunks.append(chunk)
                 source_titles.add(source.title)
 
-        return chunks, list(source_titles)
+        return chunks, list(source_titles), warnings
 
     def _gather_all(
         self, project_id: str

@@ -528,15 +528,131 @@ def io_bytes(content: bytes):
 # Knowledge Base Import Helpers
 # ---------------------------------------------------------------------------
 
+# Knowledge import supports a broader set of formats than work import.
+KNOWLEDGE_SUPPORTED_SUFFIXES = {".txt", ".md", ".docx", ".pdf", ".doc"}
+# .zip is also recognized and expanded before per-file parsing.
+KNOWLEDGE_RECOGNIZED_SUFFIXES = KNOWLEDGE_SUPPORTED_SUFFIXES | {".zip"}
+
+# Upload limits for knowledge import
+KNOWLEDGE_MAX_FILE_SIZE = 25 * 1024 * 1024  # 25 MB per file
+KNOWLEDGE_MAX_TOTAL_SIZE = 200 * 1024 * 1024  # 200 MB total
+KNOWLEDGE_MAX_FILE_COUNT = 200  # 200 files per import
+
+
+def _extract_zip_entries(
+    content: bytes, filename: str, failed_files: list[str]
+) -> list[tuple[str, bytes]] | None:
+    """Extract entries from a zip archive, returning (relative_path, bytes) pairs.
+
+    Returns None if the zip is unreadable.
+    """
+    import io
+
+    entries: list[tuple[str, bytes]] = []
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            for info in archive.infolist():
+                if info.is_dir():
+                    continue
+                path = PurePosixPath(info.filename)
+                # Prevent path traversal (check before ignore-filter)
+                if any(part == ".." for part in path.parts) or path.is_absolute():
+                    failed_files.append(info.filename)
+                    continue
+                # Skip system / hidden files
+                if should_ignore_zip_path(path) or not path.name:
+                    continue
+                data = archive.read(info)
+                entries.append((info.filename, data))
+    except zipfile.BadZipFile:
+        failed_files.append(filename)
+        return None
+    return entries
+
+
+def _parse_single_knowledge_file(
+    filename: str,
+    content: bytes,
+    *,
+    documents: list[dict[str, Any]],
+    warnings: list[str],
+    failed_files: list[str],
+    empty_files: list[str],
+    unsupported_files: list[str],
+) -> None:
+    """Process a single file for knowledge import."""
+    path = PurePosixPath(filename)
+    suffix = path.suffix.lower()
+
+    if should_ignore_zip_path(path) or not path.name:
+        return
+
+    if suffix not in KNOWLEDGE_SUPPORTED_SUFFIXES:
+        unsupported_files.append(filename)
+        return
+
+    # Parse based on file type
+    text: str | None = None
+    if suffix == ".pdf":
+        from app.utils.document_text_extractors import extract_pdf_text
+
+        text = extract_pdf_text(content, filename, failed_files)
+        if text is None:
+            warnings.append(
+                f"PDF 文本提取失败，可能是扫描版或加密文件：{filename}"
+            )
+            return
+    elif suffix == ".doc":
+        from app.utils.document_text_extractors import extract_doc_text
+
+        text = extract_doc_text(content, filename, failed_files)
+        if text is None:
+            warnings.append(
+                f".doc 文本提取失败，文件可能已损坏或格式异常：{filename}"
+            )
+            return
+    elif suffix == ".docx":
+        text = parse_docx_text(content, filename, failed_files)
+        if text is None:
+            return
+    else:
+        # .txt, .md
+        text = decode_text(content, filename, failed_files)
+        if text is None:
+            return
+
+    if not text.strip():
+        empty_files.append(filename)
+        return
+
+    source_type = _suffix_to_source_type(suffix)
+    documents.append({
+        "title": strip_extension(path.name),
+        "content": text,
+        "source_type": source_type,
+        "source_uri": filename,
+        "filename": path.name,
+        "relative_path": filename,
+        "extension": suffix,
+        "word_count": calculate_word_count(text),
+        "size": len(content),
+    })
+
 
 def parse_knowledge_files(
     file_entries: list[tuple[str, bytes]],
 ) -> dict[str, Any]:
     """Parse uploaded files into knowledge source entries.
 
+    Supports .txt, .md, .docx, .pdf, and .zip (containing supported formats).
+    .doc files are recognized but reported as unsupported.
+
     Returns a preview dict with:
-    - documents: list of {title, content, source_type, source_uri, filename}
+    - documents: list of parsed document dicts
+    - document_count, supported_count, unsupported_count
+    - total_word_count, total_size
     - warnings, failed_files, empty_files, unsupported_files
+    - can_import
     """
     warnings: list[str] = []
     failed_files: list[str] = []
@@ -544,43 +660,58 @@ def parse_knowledge_files(
     unsupported_files: list[str] = []
     documents: list[dict[str, Any]] = []
 
+    # Expand zip entries first
+    expanded_entries: list[tuple[str, bytes]] = []
     for filename, content in file_entries:
         path = PurePosixPath(filename)
-        if should_ignore_zip_path(path) or not path.name:
-            continue
-        if path.suffix.lower() not in SUPPORTED_TEXT_SUFFIXES:
-            unsupported_files.append(filename)
-            continue
+        suffix = path.suffix.lower()
+        if suffix == ".zip":
+            entries = _extract_zip_entries(content, filename, failed_files)
+            if entries is not None:
+                if not entries:
+                    warnings.append(f"ZIP 文件中未找到可导入的文件：{filename}")
+                else:
+                    # Prefix zip internal paths with the zip name for context
+                    for inner_name, inner_content in entries:
+                        expanded_entries.append((inner_name, inner_content))
+        else:
+            expanded_entries.append((filename, content))
 
-        text = parse_supported_file(content, filename, failed_files)
-        if text is None:
-            continue
+    for filename, content in expanded_entries:
+        _parse_single_knowledge_file(
+            filename,
+            content,
+            documents=documents,
+            warnings=warnings,
+            failed_files=failed_files,
+            empty_files=empty_files,
+            unsupported_files=unsupported_files,
+        )
 
-        if not text.strip():
-            empty_files.append(filename)
-            continue
+    # Deduplicate warnings (same message may appear multiple times)
+    seen_warnings: set[str] = set()
+    unique_warnings: list[str] = []
+    for warning in warnings:
+        if warning not in seen_warnings:
+            seen_warnings.add(warning)
+            unique_warnings.append(warning)
 
-        source_type = _suffix_to_source_type(path.suffix.lower())
-        documents.append({
-            "title": strip_extension(path.name),
-            "content": text,
-            "source_type": source_type,
-            "source_uri": filename,
-            "filename": filename,
-            "word_count": calculate_word_count(text),
-        })
-
-    if not documents and not failed_files:
-        warnings.append("未找到可导入的 .txt、.md 或 .docx 文件。")
+    if not documents and not failed_files and not unsupported_files:
+        unique_warnings.append("未找到可导入的文件。支持 .txt、.md、.docx、.doc、.pdf 格式。")
 
     if empty_files:
-        warnings.append(f"发现 {len(empty_files)} 个空文件，已跳过。")
+        unique_warnings.append(f"发现 {len(empty_files)} 个空文件，已跳过。")
+
+    total_size = sum(doc["size"] for doc in documents)
 
     return {
         "documents": documents,
         "document_count": len(documents),
+        "supported_count": len(documents),
+        "unsupported_count": len(unsupported_files),
         "total_word_count": sum(doc["word_count"] for doc in documents),
-        "warnings": warnings,
+        "total_size": total_size,
+        "warnings": unique_warnings,
         "failed_files": failed_files,
         "empty_files": empty_files,
         "unsupported_files": unsupported_files,
@@ -593,5 +724,7 @@ def _suffix_to_source_type(suffix: str) -> str:
         ".txt": "file",
         ".md": "file",
         ".docx": "file",
+        ".pdf": "file",
+        ".doc": "file",
     }
     return mapping.get(suffix, "file")
