@@ -551,11 +551,11 @@ function getErrorMessage(error: unknown, fallback: string): string {
       <div>
         <RouterLink class="back-link" to="/projects">返回项目列表</RouterLink>
         <p class="eyebrow">写作工作区</p>
-        <h1>{{ project?.title || '正在加载项目……' }}</h1>
       </div>
       <div class="header-actions">
         <RouterLink class="toolbar-link" :to="`/projects/${projectId}/search`">搜索</RouterLink>
         <RouterLink class="toolbar-link" :to="`/projects/${projectId}/review`">检查</RouterLink>
+        <RouterLink class="toolbar-link" :to="`/projects/${projectId}/stats`">统计</RouterLink>
         <details class="more-menu">
           <summary>更多</summary>
           <div class="more-menu-list">
@@ -794,14 +794,9 @@ function getErrorMessage(error: unknown, fallback: string): string {
   text-transform: uppercase;
 }
 
-h1,
 h2 {
   margin: 0;
   line-height: 1.15;
-}
-
-h1 {
-  font-size: 1.55rem;
 }
 
 h2 {
@@ -847,7 +842,7 @@ h2 {
 .more-menu-list {
   position: absolute;
   top: calc(100% + 8px);
-  right: 0;
+  left: 0;
   z-index: 20;
   display: grid;
   min-width: 150px;
@@ -1268,7 +1263,7 @@ button:disabled {
 
   .page-header,
   .header-actions {
-    align-items: stretch;
+    align-items: flex-start;
     flex-direction: column;
   }
 

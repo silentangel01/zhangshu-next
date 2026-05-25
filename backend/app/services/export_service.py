@@ -54,18 +54,37 @@ class ExportService:
         project_id: str,
         request: ManuscriptExportRequest,
     ) -> ExportFile:
-        if request.format == ExportFormat.docx:
-            raise ExportUnsupportedFormatError()
-
         project = self._get_project(project_id)
         document = self._build_document(project, request)
-        text = self._render_txt(document) if request.format == ExportFormat.txt else self._render_md(document)
-        encoded = text.encode("utf-8-sig" if request.format == ExportFormat.txt else "utf-8")
-        content = BytesIO(encoded)
-        content.seek(0)
 
-        extension = request.format.value
-        media_type = "text/plain; charset=utf-8" if request.format == ExportFormat.txt else "text/markdown; charset=utf-8"
+        if request.format == ExportFormat.docx:
+            from app.infrastructure.docx_exporter import render_manuscript_docx
+
+            raw = render_manuscript_docx(document)
+            content = BytesIO(raw)
+            content.seek(0)
+            media_type = (
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
+            extension = "docx"
+        else:
+            text = (
+                self._render_txt(document)
+                if request.format == ExportFormat.txt
+                else self._render_md(document)
+            )
+            encoded = text.encode(
+                "utf-8-sig" if request.format == ExportFormat.txt else "utf-8"
+            )
+            content = BytesIO(encoded)
+            content.seek(0)
+            media_type = (
+                "text/plain; charset=utf-8"
+                if request.format == ExportFormat.txt
+                else "text/markdown; charset=utf-8"
+            )
+            extension = request.format.value
+
         return ExportFile(
             filename=f"{self._safe_filename(project.title)}_{request.scope.value}.{extension}",
             media_type=media_type,

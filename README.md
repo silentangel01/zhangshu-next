@@ -7,7 +7,7 @@
 - Frontend: Vue 3 + TypeScript + Vite
 - Backend: Python + FastAPI + SQLAlchemy + SQLite
 - Local Database: SQLite
-- Desktop Shell: Tauri，后续阶段规划
+- Desktop Shell: Tauri v2（已实现 V1）
 - Search: SQLite FTS5，后续阶段规划
 - AI/RAG: 后续阶段规划
 
@@ -198,3 +198,53 @@ http://localhost:5173/projects
 - 当前阶段的图谱仍然基于显式创建和显式绑定，不做 AI 自动抽取、语义匹配或章节内容推断。
 - 写作页右侧“关系图”Tab 会显示当前章节的关系图卡片，只抽取与本章人物、设定、伏笔、时间轴事件显式绑定的本章相关节点、直接关系和关联节点。
 - 右侧关系图卡片目前不做 AI / 语义匹配，后续如果需要扩展，可以再叠加关键词、共现或 AI 候选匹配，但这一阶段不做。
+
+## 桌面版（Tauri）
+
+章枢支持通过 Tauri v2 作为 Windows 桌面应用运行。桌面版会自动启动 FastAPI 后端作为 sidecar，并加载 Vue 前端。
+
+### Web 开发与桌面开发的区别
+
+| | Web 开发 | 桌面开发 |
+|---|---|---|
+| 启动方式 | 分别启动前后端 | `npm run tauri:dev` 一键启动 |
+| 数据目录 | 仓库内 `data/` | `%LOCALAPPDATA%/com.zhangshu.desktop/data/` |
+| 后端端口 | 8000 | 8765（固定） |
+| 前端端口 | 5180 | 由 Tauri 加载静态资源 |
+
+注意：Web 开发和桌面版使用不同的数据库，同一项目在两种模式下数据不互通。
+
+### 环境要求
+
+- Node.js ≥ 20.19.0
+- Rust stable（MSVC 工具链）
+- Python 3.x + PyInstaller（用于打包 sidecar）
+
+### 桌面开发
+
+```powershell
+cd frontend
+npm run tauri:dev
+```
+
+该命令会启动 Vite 开发服务器和 Tauri 桌面窗口，后端 sidecar 会自动启动。
+
+### 桌面打包
+
+```powershell
+cd frontend
+npm run tauri:build
+```
+
+打包输出位于 `frontend/src-tauri/target/release/bundle/`。
+
+### 数据目录
+
+桌面版数据存储在系统应用数据目录：
+
+```text
+%LOCALAPPDATA%\com.zhangshu.desktop\
+├── data/
+│   └── zhangshu.sqlite3
+└── logs/
+```

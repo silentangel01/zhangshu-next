@@ -35,6 +35,7 @@ from app.api.search import router as search_router
 from app.api.timeline import router as timeline_router
 from app.api.settings import router as settings_router
 from app.api.volumes import router as volumes_router
+from app.api.writing_stats import router as writing_stats_router
 from app.infrastructure.database import init_database
 
 app = FastAPI(title="Zhangshu Local API", version="0.1.0")
@@ -44,6 +45,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "http://localhost:5180",
+        "http://127.0.0.1:5180",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -86,6 +89,7 @@ app.include_router(material_links_router)
 app.include_router(graphs_router)
 app.include_router(timeline_router)
 app.include_router(app_config_router)
+app.include_router(writing_stats_router)
 
 
 def _mount_frontend_static() -> None:

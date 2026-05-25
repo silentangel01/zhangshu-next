@@ -11,6 +11,7 @@ import ProjectDetailPage from '@/pages/projects/ProjectDetailPage.vue'
 import ProjectsPage from '@/pages/projects/ProjectsPage.vue'
 import ProjectTimelinePage from '@/pages/timeline/ProjectTimelinePage.vue'
 import ProjectSettingsPage from '@/pages/settings/ProjectSettingsPage.vue'
+import ProjectWritingStatsPage from '@/pages/stats/ProjectWritingStatsPage.vue'
 import ReviewCheckPage from '@/pages/review/ReviewCheckPage.vue'
 import SearchPage from '@/pages/search/SearchPage.vue'
 
@@ -80,6 +81,11 @@ const router = createRouter({
       path: '/projects/:projectId/knowledge',
       name: 'project-knowledge',
       component: ProjectKnowledgePage,
+    },
+    {
+      path: '/projects/:projectId/stats',
+      name: 'project-stats',
+      component: ProjectWritingStatsPage,
     },
     {
       path: '/backup',

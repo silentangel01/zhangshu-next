@@ -13,7 +13,11 @@
     "lint": "run-s lint:*",
     "lint:oxlint": "oxlint . --fix",
     "lint:eslint": "eslint . --fix --cache",
-    "format": "prettier --write --experimental-cli src/"
+    "format": "prettier --write --experimental-cli src/",
+    "tauri:dev": "cross-env VITE_API_BASE_URL=http://127.0.0.1:8765 tauri dev",
+    "tauri:build:frontend": "cross-env VITE_API_BASE_URL=http://127.0.0.1:8765 npm run build",
+    "tauri:build": "npm run tauri:build:frontend && tauri build",
+    "tauri:build:backend": "cd .. && backend\\.venv\\Scripts\\python.exe -m PyInstaller --noconfirm --clean --onefile --name zhangshu-backend --distpath frontend/src-tauri/binaries --workpath build/pyinstaller-sidecar --specpath build/spec-sidecar backend/tauri_sidecar_main.py && node -e \"require('fs').copyFileSync('src-tauri/binaries/zhangshu-backend.exe','src-tauri/binaries/zhangshu-backend-x86_64-pc-windows-msvc.exe')\""
   },
   "dependencies": {
     "pinia": "^3.0.4",
@@ -21,6 +25,7 @@
     "vue-router": "^5.0.4"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.5.0",
     "@tsconfig/node24": "^24.0.4",
     "@types/jsdom": "^28.0.1",
     "@types/node": "^24.12.2",
@@ -29,6 +34,7 @@
     "@vue/eslint-config-typescript": "^14.7.0",
     "@vue/test-utils": "^2.4.6",
     "@vue/tsconfig": "^0.9.1",
+    "cross-env": "^7.0.3",
     "eslint": "^10.2.1",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-oxlint": "~1.60.0",

@@ -77,3 +77,17 @@ class OutlineItemRead(BaseModel):
     updated_at: datetime
     deleted_at: datetime | None
     version: int
+
+
+class OutlineReorderItem(BaseModel):
+    outline_id: str
+    parent_id: str | None = None
+    order_index: int = Field(..., ge=0)
+
+
+class OutlineReorderRequest(BaseModel):
+    items: list[OutlineReorderItem]
+
+
+class OutlineReorderResponse(BaseModel):
+    updated_count: int

@@ -5,6 +5,8 @@ import type {
   OutlineItem,
   OutlineItemCreatePayload,
   OutlineItemUpdatePayload,
+  OutlineReorderItem,
+  OutlineReorderResponse,
 } from './types'
 
 function buildQuery(filters?: OutlineFilters): string {
@@ -62,4 +64,17 @@ export function deleteOutline(outlineId: string): Promise<OutlineItem | void> {
 
 export function listChapterOutlines(chapterId: string): Promise<OutlineItem[]> {
   return apiRequest<OutlineItem[]>(`/api/chapters/${chapterId}/outlines`)
+}
+
+export function reorderOutlines(
+  projectId: string,
+  items: OutlineReorderItem[],
+): Promise<OutlineReorderResponse> {
+  return apiRequest<OutlineReorderResponse>(
+    `/api/projects/${projectId}/outlines/reorder`,
+    {
+      method: 'PATCH',
+      body: { items },
+    },
+  )
 }

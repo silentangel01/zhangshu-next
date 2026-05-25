@@ -380,6 +380,35 @@ def _ensure_knowledge_index_profile_columns() -> None:
             )
 
 
+def _ensure_writing_stat_event_columns() -> None:
+    """Ensure the writing_stat_events table matches the current model schema.
+
+    If the table exists with an incompatible schema (legacy columns from an
+    earlier version), drop it and let create_all() rebuild it. The old table
+    contains no useful historical data since writing stats events are only
+    meaningful from the point the feature was enabled.
+    """
+    inspector = inspect(engine)
+    if "writing_stat_events" not in inspector.get_table_names():
+        return
+
+    existing_columns = {
+        column["name"] for column in inspector.get_columns("writing_stat_events")
+    }
+    required_columns = {
+        "id", "project_id", "chapter_id", "volume_id", "source",
+        "old_word_count", "new_word_count", "delta_words",
+        "added_words", "deleted_words", "occurred_at",
+        "local_date", "local_hour",
+    }
+
+    if required_columns.issubset(existing_columns):
+        return
+
+    with engine.begin() as connection:
+        connection.execute(text("DROP TABLE writing_stat_events"))
+
+
 def init_database() -> None:
     from app.models import project  # noqa: F401
     from app.models import volume  # noqa: F401
@@ -415,8 +444,10 @@ def init_database() -> None:
     from app.models import knowledge_embedding  # noqa: F401
     from app.models import knowledge_index_profile  # noqa: F401
     from app.models import app_config  # noqa: F401
+    from app.models import writing_stat_event  # noqa: F401
 
     ensure_database_directory()
+    _ensure_writing_stat_event_columns()
     Base.metadata.create_all(bind=engine)
     _ensure_project_book_columns()
     _ensure_setting_tree_columns()

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 import {
@@ -93,6 +93,11 @@ const viewMode = ref<'browse' | 'search' | 'ask' | 'summary'>('browse')
 const indexStatus = ref<KnowledgeIndexStatus | null>(null)
 const indexProfile = ref<IndexProfile | null>(null)
 const isRefreshDialogOpen = ref(false)
+const showMoreMenu = ref(false)
+
+function closeMoreMenu() {
+  showMoreMenu.value = false
+}
 
 const sourceTypes: KnowledgeSourceType[] = ['file', 'note', 'book', 'webpage', 'quote', 'custom']
 const statuses: KnowledgeSourceStatus[] = ['active', 'archived']
@@ -397,154 +402,122 @@ function handleImported() {
 onMounted(() => {
   void loadSources()
   void loadIndexStatus()
+  document.addEventListener('click', closeMoreMenu)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', closeMoreMenu)
 })
 </script>
 
 <template>
   <main class="knowledge-page material-page">
     <header class="page-header">
-      <div>
-        <RouterLink class="back-link" :to="`/projects/${projectId}`">返回写作页</RouterLink>
-        <p class="eyebrow">外部参考资料</p>
-        <h1>知识库</h1>
-        <p class="page-note">
-          知识库用于保存外部参考资料。推荐批量导入文件，也可以手动新建少量笔记。
-        </p>
-      </div>
-      <div class="header-actions">
-        <button class="primary-button" type="button" :disabled="isSaving" @click="isImportDialogOpen = true">
-          批量导入
-        </button>
-        <button class="secondary-button" type="button" :disabled="isSaving" @click="handleNewSource">
-          新建空白资料
-        </button>
-        <button class="secondary-button" type="button" @click="isRefreshDialogOpen = true">
-          刷新知识索引
-        </button>
-      </div>
-    </header>
+      <RouterLink class="back-link" :to="`/projects/${projectId}`">返回写作页</RouterLink>
+      <p class="eyebrow">外部参考资料</p>
 
-    <div class="knowledge-toolbar">
-      <div class="view-mode-toggle">
-        <button
-          type="button"
-          class="mode-button"
-          :class="{ active: viewMode === 'browse' }"
-          @click="viewMode = 'browse'"
-        >
-          浏览
-        </button>
-        <button
-          type="button"
-          class="mode-button"
-          :class="{ active: viewMode === 'search' }"
-          @click="viewMode = 'search'"
-        >
-          检索
-        </button>
-        <button
-          type="button"
-          class="mode-button"
-          :class="{ active: viewMode === 'ask' }"
-          @click="viewMode = 'ask'"
-        >
-          问答
-        </button>
-        <button
-          type="button"
-          class="mode-button"
-          :class="{ active: viewMode === 'summary' }"
-          @click="viewMode = 'summary'"
-        >
-          摘要
-        </button>
-      </div>
-
-      <template v-if="viewMode === 'browse'">
-        <div class="search-group">
-          <input
-            v-model="filters.keyword"
-            type="search"
-            placeholder="搜索标题、正文、标签、摘要"
-            @keyup.enter="handleApplyFilters"
-          />
-          <button
-            class="secondary-button"
-            type="button"
-            :disabled="isSaving"
-            @click="handleApplyFilters"
-          >
-            搜索
-          </button>
+      <div class="actions-row">
+        <div class="view-mode-toggle">
+          <button type="button" class="mode-button" :class="{ active: viewMode === 'browse' }" @click="viewMode = 'browse'">浏览</button>
+          <button type="button" class="mode-button" :class="{ active: viewMode === 'search' }" @click="viewMode = 'search'">检索</button>
+          <button type="button" class="mode-button" :class="{ active: viewMode === 'ask' }" @click="viewMode = 'ask'">问答</button>
+          <button type="button" class="mode-button" :class="{ active: viewMode === 'summary' }" @click="viewMode = 'summary'">摘要</button>
         </div>
-        <div class="filter-menu">
-          <button
-            class="secondary-button"
-            type="button"
-            :class="{ active: isFilterPanelOpen || hasActiveFilter }"
-            @click="isFilterPanelOpen = !isFilterPanelOpen"
-          >
-            筛选{{ activeFilterCount > 0 ? `（${activeFilterCount}）` : '' }}
-          </button>
-          <div v-if="isFilterPanelOpen" class="filter-panel">
-            <label>
-              <span>资料类型</span>
-              <select v-model="filters.source_type">
-                <option value="">全部类型</option>
-                <option v-for="st in sourceTypes" :key="st" :value="st">
-                  {{ knowledgeSourceTypeLabels[st] }}
-                </option>
-              </select>
-            </label>
-            <label>
-              <span>状态</span>
-              <select v-model="filters.status">
-                <option value="">全部状态</option>
-                <option v-for="s in statuses" :key="s" :value="s">
-                  {{ knowledgeSourceStatusLabels[s] }}
-                </option>
-              </select>
-            </label>
-            <label>
-              <span>可信度</span>
-              <select v-model="filters.credibility">
-                <option value="">全部可信度</option>
-                <option v-for="c in credibilities" :key="c" :value="c">
-                  {{ knowledgeCredibilityLabels[c] }}
-                </option>
-              </select>
-            </label>
-            <label>
-              <span>标签</span>
-              <input v-model="filters.tag" type="text" placeholder="输入标签关键词" />
-            </label>
-            <div class="filter-actions">
-              <button class="secondary-button" type="button" @click="handleClearFilters">
-                清空筛选
-              </button>
-              <button
-                class="primary-button"
-                type="button"
-                @click="isFilterPanelOpen = false; handleApplyFilters()"
-              >
-                应用筛选
-              </button>
+        <div class="header-right-actions">
+          <button class="primary-button" type="button" :disabled="isSaving" @click="isImportDialogOpen = true">批量导入</button>
+          <div class="overflow-menu" @click.stop>
+            <button class="secondary-button more-button" type="button" @click="showMoreMenu = !showMoreMenu">更多 &#x25BE;</button>
+            <div v-if="showMoreMenu" class="dropdown-menu">
+              <button type="button" class="dropdown-item" @click="showMoreMenu = false; handleNewSource()">新建空白资料</button>
+              <button type="button" class="dropdown-item" @click="showMoreMenu = false; isRefreshDialogOpen = true">刷新知识索引</button>
             </div>
           </div>
         </div>
-      </template>
+      </div>
+
+      <p class="page-note">
+        知识库用于保存外部参考资料。推荐批量导入文件，也可以手动新建少量笔记。
+      </p>
+    </header>
+
+    <div v-if="viewMode === 'browse'" class="knowledge-toolbar">
+      <div class="search-group">
+        <input
+          v-model="filters.keyword"
+          type="search"
+          placeholder="搜索标题、正文、标签、摘要"
+          @keyup.enter="handleApplyFilters"
+        />
+        <button
+          class="secondary-button"
+          type="button"
+          :disabled="isSaving"
+          @click="handleApplyFilters"
+        >
+          搜索
+        </button>
+      </div>
+      <div class="filter-menu">
+        <button
+          class="secondary-button"
+          type="button"
+          :class="{ active: isFilterPanelOpen || hasActiveFilter }"
+          @click="isFilterPanelOpen = !isFilterPanelOpen"
+        >
+          筛选{{ activeFilterCount > 0 ? `（${activeFilterCount}）` : '' }}
+        </button>
+        <div v-if="isFilterPanelOpen" class="filter-panel">
+          <label>
+            <span>资料类型</span>
+            <select v-model="filters.source_type">
+              <option value="">全部类型</option>
+              <option v-for="st in sourceTypes" :key="st" :value="st">
+                {{ knowledgeSourceTypeLabels[st] }}
+              </option>
+            </select>
+          </label>
+          <label>
+            <span>状态</span>
+            <select v-model="filters.status">
+              <option value="">全部状态</option>
+              <option v-for="s in statuses" :key="s" :value="s">
+                {{ knowledgeSourceStatusLabels[s] }}
+              </option>
+            </select>
+          </label>
+          <label>
+            <span>可信度</span>
+            <select v-model="filters.credibility">
+              <option value="">全部可信度</option>
+              <option v-for="c in credibilities" :key="c" :value="c">
+                {{ knowledgeCredibilityLabels[c] }}
+              </option>
+            </select>
+          </label>
+          <label>
+            <span>标签</span>
+            <input v-model="filters.tag" type="text" placeholder="输入标签关键词" />
+          </label>
+          <div class="filter-actions">
+            <button class="secondary-button" type="button" @click="handleClearFilters">
+              清空筛选
+            </button>
+            <button
+              class="primary-button"
+              type="button"
+              @click="isFilterPanelOpen = false; handleApplyFilters()"
+            >
+              应用筛选
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <section v-if="errorMessage" class="error-banner" role="alert">{{ errorMessage }}</section>
     <section v-if="successMessage" class="success-banner" role="status">{{ successMessage }}</section>
 
     <section v-if="viewMode !== 'browse'" class="knowledge-mode-panel">
-      <div class="view-back">
-        <button class="secondary-button" type="button" @click="viewMode = 'browse'">
-          ← 返回资料列表
-        </button>
-      </div>
-
       <KnowledgeSearchPanel
         v-if="viewMode === 'search'"
         :project-id="projectId"
@@ -567,7 +540,7 @@ onMounted(() => {
     <template v-else>
       <section v-if="isLoading" class="state-message">正在加载知识库…</section>
 
-    <section v-else class="knowledge-layout material-layout">
+    <section v-else class="knowledge-layout material-layout" :class="{ 'no-right-panel': !selectedSource }">
       <aside class="list-panel material-list-panel">
         <div class="list-header">
           <span class="list-title">资料</span>
@@ -702,12 +675,8 @@ onMounted(() => {
         </form>
       </section>
 
-      <aside class="right-panel material-side-panel">
-        <div v-if="!selectedSource" class="empty-side">
-          <p>选择资料后查看索引片段和关联</p>
-        </div>
-        <template v-else>
-          <div class="tab-bar">
+      <aside v-if="selectedSource" class="right-panel material-side-panel">
+        <div class="tab-bar">
             <button
               type="button"
               :class="{ active: rightTab === 'chunks' }"
@@ -839,7 +808,6 @@ onMounted(() => {
               </li>
             </ul>
           </div>
-        </template>
       </aside>
     </section>
     </template>
@@ -886,17 +854,63 @@ onMounted(() => {
 }
 
 .page-header {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: var(--zs-space-4);
+  display: grid;
+  gap: var(--zs-space-1);
   margin-bottom: var(--zs-space-4);
 }
 
-.header-actions {
+.actions-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--zs-space-3);
+  margin-top: var(--zs-space-2);
+}
+
+.header-right-actions {
   display: flex;
   gap: var(--zs-space-2);
   align-items: center;
+}
+
+.overflow-menu {
+  position: relative;
+}
+
+.more-button {
+  white-space: nowrap;
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  display: grid;
+  gap: 2px;
+  min-width: 160px;
+  padding: var(--zs-space-1);
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-sm);
+  background: var(--zs-color-surface);
+  box-shadow: var(--zs-shadow-md);
+}
+
+.dropdown-item {
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--zs-color-text);
+  font-size: 0.82rem;
+  padding: var(--zs-space-2) var(--zs-space-3);
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.dropdown-item:hover {
+  background: var(--zs-color-bg);
+  color: var(--zs-color-primary);
 }
 
 .back-link {
@@ -916,13 +930,6 @@ onMounted(() => {
   font-size: 0.78rem;
   font-weight: 800;
   margin: 0 0 var(--zs-space-1);
-}
-
-h1 {
-  color: var(--zs-color-text);
-  font-size: 1.6rem;
-  margin: 0 0 var(--zs-space-1);
-  line-height: 1.15;
 }
 
 .page-note {
@@ -985,10 +992,6 @@ h1 {
   flex-wrap: wrap;
   align-items: flex-start;
   margin-bottom: var(--zs-space-4);
-}
-
-.view-back {
-  margin-bottom: var(--zs-space-2);
 }
 
 .knowledge-mode-panel {
@@ -1124,9 +1127,13 @@ h1 {
 
 .knowledge-layout {
   display: grid;
-  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr) minmax(260px, 320px);
+  grid-template-columns: minmax(240px, 280px) minmax(480px, 1fr);
   gap: var(--zs-space-4);
   align-items: start;
+}
+
+.knowledge-layout:not(.no-right-panel) {
+  grid-template-columns: minmax(240px, 280px) minmax(480px, 1fr) minmax(240px, 280px);
 }
 
 .list-panel,
@@ -1273,15 +1280,6 @@ h1 {
 
 .empty-detail p {
   margin: 0;
-}
-
-.empty-side {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 120px;
-  color: var(--zs-color-text-muted);
-  font-size: 0.84rem;
 }
 
 .detail-form {
@@ -1572,7 +1570,7 @@ h1 {
   }
 
   .knowledge-layout {
-    grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+    grid-template-columns: minmax(220px, 260px) minmax(400px, 1fr);
   }
 
   .right-panel {

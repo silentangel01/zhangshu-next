@@ -7,10 +7,14 @@ from app.schemas.outline import (
     OutlineItemRead,
     OutlineItemType,
     OutlineItemUpdate,
+    OutlineReorderRequest,
+    OutlineReorderResponse,
     OutlineStatus,
 )
 from app.services.outline_service import (
     OutlineChapterNotFoundError,
+    OutlineCircularParentError,
+    OutlineCrossProjectError,
     OutlineInvalidParentError,
     OutlineNotFoundError,
     OutlineParentNotFoundError,
@@ -46,6 +50,33 @@ def list_project_outlines(
         )
     except OutlineProjectNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Project not found") from exc
+
+
+@router.patch(
+    "/api/projects/{project_id}/outlines/reorder",
+    response_model=OutlineReorderResponse,
+)
+def reorder_outlines(
+    project_id: str,
+    data: OutlineReorderRequest,
+    service: OutlineService = Depends(get_outline_service),
+):
+    try:
+        updated = service.reorder_outlines(project_id, data.items)
+    except OutlineProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Project not found") from exc
+    except OutlineNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Outline not found") from exc
+    except OutlineParentNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Parent outline not found") from exc
+    except OutlineInvalidParentError as exc:
+        raise HTTPException(status_code=400, detail="不能将大纲移动到自身下方") from exc
+    except OutlineCircularParentError as exc:
+        raise HTTPException(status_code=400, detail="不能将大纲移动到其后代下方") from exc
+    except OutlineCrossProjectError as exc:
+        raise HTTPException(status_code=400, detail="目标父级不属于当前项目") from exc
+
+    return OutlineReorderResponse(updated_count=updated)
 
 
 @router.post(

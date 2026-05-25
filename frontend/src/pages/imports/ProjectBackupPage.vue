@@ -104,11 +104,6 @@ async function handleManuscriptExport() {
     return
   }
 
-  if (exportFormat.value === 'docx') {
-    errorMessage.value = 'DOCX 导出暂未支持，请先选择 TXT 或 Markdown。'
-    return
-  }
-
   if (exportScope.value === 'volume' && !selectedVolumeId.value) {
     errorMessage.value = '请先选择要导出的分卷。'
     return
@@ -267,10 +262,6 @@ function getErrorMessage(error: unknown, fallback: string): string {
             </label>
           </div>
         </div>
-
-        <p v-if="exportFormat === 'docx'" class="panel-note">
-          DOCX 导出暂未支持，请先使用 TXT 或 Markdown。
-        </p>
 
         <button
           class="primary-button"

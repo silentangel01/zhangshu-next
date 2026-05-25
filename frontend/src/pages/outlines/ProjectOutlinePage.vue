@@ -9,6 +9,7 @@ import {
   deleteOutline,
   getOutline,
   listProjectOutlines,
+  reorderOutlines,
   updateOutline,
 } from '@/entities/outline/api'
 import type {
@@ -24,6 +25,7 @@ import CreateOutlineDialog from '@/features/outlines/CreateOutlineDialog.vue'
 import MaterialLinkPanel from '@/features/material-links/MaterialLinkPanel.vue'
 import OutlineEditor from '@/features/outlines/OutlineEditor.vue'
 import OutlineTree from '@/features/outlines/OutlineTree.vue'
+import { buildReorderPayload, type DropPosition } from '@/features/outlines/outlineDrag'
 
 const route = useRoute()
 
@@ -107,6 +109,33 @@ async function handleSelectOutline(outline: OutlineItem) {
     selectedOutline.value = await getOutline(outline.id)
   } catch (error) {
     errorMessage.value = getErrorMessage(error, '加载大纲详情失败。')
+  }
+}
+
+async function handleReorder(
+  draggedId: string,
+  targetId: string | null,
+  position: DropPosition,
+) {
+  if (!projectId.value) return
+
+  const payload = buildReorderPayload(draggedId, { targetId, position }, outlines.value)
+  if (!payload) {
+    errorMessage.value = '无法移动到该位置'
+    return
+  }
+
+  errorMessage.value = ''
+  successMessage.value = ''
+
+  try {
+    await reorderOutlines(projectId.value, payload)
+    await refreshOutlines()
+    if (selectedOutline.value?.id === draggedId) {
+      selectedOutline.value = await getOutline(draggedId)
+    }
+  } catch (error) {
+    errorMessage.value = getErrorMessage(error, '排序失败，请重试')
   }
 }
 
@@ -225,6 +254,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
           :items="outlines"
           :selected-outline-id="selectedOutline?.id ?? null"
           @select="handleSelectOutline"
+          @reorder="handleReorder"
         />
       </aside>
 

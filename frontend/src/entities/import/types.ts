@@ -53,3 +53,39 @@ export interface ImportReport {
   report_id: string
   report_path: string
 }
+
+export interface ProjectPackageEntityCounts {
+  volumes: number
+  chapters: number
+  chapter_versions: number
+  characters: number
+  settings: number
+  clues: number
+  outlines: number
+  timeline_tracks: number
+  timeline_events: number
+  timeline_edges: number
+  graph_nodes: number
+  graph_edges: number
+  chapter_characters: number
+  chapter_clues: number
+  chapter_settings: number
+  clue_characters: number
+  clue_settings: number
+}
+
+export interface ProjectPackageImportPreview {
+  preview_id: string
+  project_title: string
+  source_version: number
+  entity_counts: ProjectPackageEntityCounts
+  has_cover: boolean
+  warnings: string[]
+}
+
+export interface ProjectPackageImportConfirm {
+  project_id: string
+  project_title: string
+  entity_counts: ProjectPackageEntityCounts
+  warnings: string[]
+}

@@ -11,9 +11,7 @@ import type {
   RagCitation,
 } from '@/entities/knowledge/types'
 import {
-  knowledgeCredibilityLabels,
   knowledgeRetrievalStrictnessLabels,
-  knowledgeSourceTypeLabels,
 } from '@/entities/knowledge/types'
 
 const props = defineProps<{
@@ -39,9 +37,6 @@ const filters = reactive({
   top_k: 10,
 })
 
-const sourceTypes: KnowledgeSourceType[] = ['note', 'file', 'webpage', 'book', 'quote', 'custom']
-const credibilities: KnowledgeCredibility[] = ['low', 'normal', 'high']
-
 async function handleAsk() {
   if (!question.value.trim()) {
     errorMessage.value = '请输入问题'
@@ -66,12 +61,6 @@ async function handleAsk() {
   } finally {
     isAsking.value = false
   }
-}
-
-function handleClearFilters() {
-  filters.source_type = ''
-  filters.credibility = ''
-  filters.top_k = 10
 }
 
 function handleSelectCitation(citation: RagCitation) {
@@ -158,41 +147,6 @@ const matchQualityLabels: Record<string, string> = {
         />
         <button type="submit" class="search-button" :disabled="isAsking">
           {{ isAsking ? '生成中...' : '提问' }}
-        </button>
-      </div>
-
-      <div class="search-filters">
-        <label>
-          <span>资料类型</span>
-          <select v-model="filters.source_type">
-            <option value="">全部类型</option>
-            <option v-for="st in sourceTypes" :key="st" :value="st">
-              {{ knowledgeSourceTypeLabels[st] }}
-            </option>
-          </select>
-        </label>
-
-        <label>
-          <span>可信度</span>
-          <select v-model="filters.credibility">
-            <option value="">全部可信度</option>
-            <option v-for="c in credibilities" :key="c" :value="c">
-              {{ knowledgeCredibilityLabels[c] }}
-            </option>
-          </select>
-        </label>
-
-        <label>
-          <span>引用数量</span>
-          <select v-model.number="filters.top_k">
-            <option :value="5">最多 5 条</option>
-            <option :value="10">最多 10 条</option>
-            <option :value="20">最多 20 条</option>
-          </select>
-        </label>
-
-        <button type="button" class="clear-filters" @click="handleClearFilters">
-          重置
         </button>
       </div>
     </form>
@@ -363,45 +317,6 @@ const matchQualityLabels: Record<string, string> = {
 
 .search-button:hover:not(:disabled) {
   background: var(--zs-color-primary-hover);
-}
-
-.search-filters {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  align-items: end;
-}
-
-.search-filters label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 0.8rem;
-  color: var(--zs-color-text-muted);
-}
-
-.search-filters select,
-.search-filters input {
-  padding: 6px 10px;
-  border: 1px solid var(--zs-color-border);
-  border-radius: 4px;
-  font-size: 0.85rem;
-  background: var(--zs-color-bg);
-  color: var(--zs-color-text);
-}
-
-.clear-filters {
-  padding: 6px 12px;
-  background: transparent;
-  border: 1px solid var(--zs-color-border);
-  border-radius: 4px;
-  font-size: 0.85rem;
-  color: var(--zs-color-text-muted);
-  cursor: pointer;
-}
-
-.clear-filters:hover {
-  background: var(--zs-color-bg);
 }
 
 .error-message {

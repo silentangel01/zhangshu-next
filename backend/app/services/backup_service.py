@@ -242,6 +242,31 @@ class BackupService:
 
     def restore_project_backup(self, content: bytes) -> RestoreReport:
         payload = self._read_payload(content)
+        return self.restore_from_payload(payload)
+
+    def inspect_project_backup(self, content: bytes) -> dict[str, Any]:
+        """Read-only inspection of a project backup zip. Does not write to the database."""
+        payload = self._read_payload(content)
+        manifest = payload["manifest"]
+        project_data = payload["project"]
+        entity_counts = {
+            entity_name: len(payload.get(entity_name, []))
+            for entity_name in PROJECT_CHILDREN
+        }
+        has_cover = bool(payload.get("_cover_bytes"))
+        return {
+            "project_title": str(project_data.get("title") or "未命名项目"),
+            "source_version": manifest.get("version", BACKUP_VERSION),
+            "entity_counts": entity_counts,
+            "has_cover": has_cover,
+            "warnings": [],
+            "_payload": payload,
+        }
+
+    def restore_from_payload(
+        self, payload: dict[str, Any]
+    ) -> RestoreReport:
+        """Restore a project from an already-parsed payload (used by project package import)."""
         warnings: list[str] = []
         errors: list[str] = []
         id_maps: dict[str, dict[str, str]] = {"project": {}}
@@ -274,7 +299,6 @@ class BackupService:
                     self.db.add(ENTITY_MODELS[entity_name](**restored_row))
                 self.db.flush()
 
-            # Restore cover asset if present.
             new_cover_path = self._restore_cover(
                 new_project_id, payload, project_data, warnings
             )

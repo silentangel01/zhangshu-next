@@ -63,6 +63,16 @@ export interface OutlineTreeNodeData {
   children: OutlineTreeNodeData[]
 }
 
+export interface OutlineReorderItem {
+  outline_id: string
+  parent_id: string | null
+  order_index: number
+}
+
+export interface OutlineReorderResponse {
+  updated_count: number
+}
+
 export const outlineItemTypeLabels: Record<OutlineItemType, string> = {
   book_outline: '全书大纲',
   volume_outline: '分卷大纲',

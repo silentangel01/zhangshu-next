@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.outline_item import OutlineItem
+from app.schemas.outline import OutlineReorderItem
 
 
 def utc_now() -> datetime:
@@ -75,3 +76,20 @@ class OutlineRepository:
         self.db.commit()
         self.db.refresh(outline)
         return outline
+
+    def batch_reorder(self, items: list[OutlineReorderItem]) -> int:
+        now = utc_now()
+        updated = 0
+        for item in items:
+            outline = self.get_active(item.outline_id)
+            if outline is None:
+                continue
+            if outline.parent_id != item.parent_id or outline.order_index != item.order_index:
+                outline.parent_id = item.parent_id
+                outline.order_index = item.order_index
+                outline.updated_at = now
+                outline.version += 1
+                updated += 1
+        if updated > 0:
+            self.db.commit()
+        return updated
