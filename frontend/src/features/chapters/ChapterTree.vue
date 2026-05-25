@@ -659,17 +659,27 @@ function isVolumeDropTarget(volumeId: string | null) {
 }
 
 .create-row {
+  justify-content: center;
   min-height: 28px;
-  border: 1px solid var(--zs-color-border);
-  background: var(--zs-color-surface);
+  border: 1px dashed var(--zs-color-border-soft);
+  background: transparent;
+  color: var(--zs-color-text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  opacity: 0.8;
+  transition: opacity 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.create-row:hover,
+.create-row:focus-visible {
+  opacity: 1;
+  border-color: var(--zs-color-primary);
   color: var(--zs-color-primary);
-  font-size: 0.84rem;
-  font-weight: 700;
+  background: var(--zs-color-primary-soft);
 }
 
 .volume-create-row {
   margin-top: 6px;
-  border-style: dashed;
 }
 
 .volume-row {

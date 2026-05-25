@@ -21,7 +21,7 @@ const emit = defineEmits<{
 
 <template>
   <div class="zs-dialog" role="presentation" @click.self="emit('close')">
-    <section class="zs-dialog-content">
+    <section class="zs-dialog-content outline-edit-dialog">
       <header class="zs-dialog-header">
         <h2>编辑大纲</h2>
         <button class="zs-icon-button" type="button" aria-label="关闭" @click="emit('close')">×</button>
@@ -43,5 +43,9 @@ const emit = defineEmits<{
 h2 {
   margin: 0;
   font-size: 1.25rem;
+}
+
+.outline-edit-dialog {
+  max-width: min(720px, calc(100vw - 32px));
 }
 </style>

@@ -453,7 +453,6 @@ function formatDateForFilename(date: Date): string {
 }
 
 .page-header,
-.page-layout,
 .result-header,
 .term-actions,
 .result-footer,
@@ -481,7 +480,10 @@ function formatDateForFilename(date: Date): string {
 }
 
 .page-layout {
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--zs-space-4);
+  align-items: stretch;
   margin-bottom: var(--zs-space-5);
 }
 
@@ -496,7 +498,6 @@ function formatDateForFilename(date: Date): string {
 }
 
 .panel {
-  flex: 1 1 0;
   display: grid;
   gap: var(--zs-space-4);
   padding: var(--zs-space-5);
@@ -618,21 +619,23 @@ h3 {
 }
 
 .segmented-control {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--zs-space-2);
 }
 
 .segmented-control label {
   display: inline-flex;
   align-items: center;
-  gap: var(--zs-space-2);
+  justify-content: center;
+  gap: var(--zs-space-1);
   border: 1px solid var(--zs-color-border);
   border-radius: var(--zs-radius-md);
-  padding: 10px 12px;
+  padding: 10px 8px;
   background: var(--zs-color-surface-soft);
   color: var(--zs-color-text);
   font-weight: 800;
+  white-space: nowrap;
 }
 
 input,
@@ -764,11 +767,18 @@ dd {
   }
 
   .page-header,
-  .page-layout,
   .result-header,
   .result-footer {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .page-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .segmented-control {
+    grid-template-columns: 1fr;
   }
 
   .primary-button,
