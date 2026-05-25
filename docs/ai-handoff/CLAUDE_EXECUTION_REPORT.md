@@ -1,60 +1,91 @@
 ---
 date: 2026-05-25
-task: 前端 UI 微调（时间轴/章节树/大纲弹窗/检查页面）
+task: Tauri 桌面壳兼容性回归与小修
 codex_plan: docs/ai-handoff/CODEX_PLAN.md
 ---
 
 ## Task Summary
 
-对前端 4 个模块做 UI 布局微调：压缩时间轴左侧栏标题区空白、缩窄章节树新建按钮视觉权重、扩大新建大纲条目弹窗宽度与内边距、优化检查页面检查范围横排与双列面板均衡。
+对 Tauri 桌面壳做兼容性检查和小修。修复了两个已知兼容风险：ReviewCheckPage 的 `:has()` CSS 选择器和两个页面的"更多"菜单缺少点击外部/Esc 关闭。Tauri Rust 编译成功，前端构建正确注入 API base URL。
 
 ## Files Changed
 
-- 修改：`frontend/src/pages/timeline/ProjectTimelinePage.vue` — 压缩 `.left-panel` gap（从 `--zs-space-3` 降到 `--zs-space-1`），减少 `.panel-head` gap，为 `.panel-eyebrow` 添加局部行高和 margin 控制，压缩 `.track-list` gap
-- 修改：`frontend/src/features/chapters/ChapterTree.vue` — 将 `.create-row` 改为虚线边框、透明背景、较浅文字色，使新建按钮视觉层级更轻；添加 hover 高亮过渡；居中文字；移除 `.volume-create-row` 冗余 `border-style: dashed`（已在 `.create-row` 统一）
-- 修改：`frontend/src/features/outlines/CreateOutlineDialog.vue` — 添加 `.outline-create-dialog` 局部 class，扩大弹窗最大宽度至 `min(720px, calc(100vw - 32px))`；为表单字段和 grid 添加 `padding-inline`；`.form-grid` 最小列宽从 180px 提升到 220px
-- 修改：`frontend/src/features/outlines/EditOutlineDialog.vue` — 添加 `.outline-edit-dialog` 局部 class，与新建弹窗宽度保持一致
-- 修改：`frontend/src/features/outlines/OutlineEditor.vue` — `.form-grid` / `.metadata-grid` 最小列宽从 170px 提升到 200px
-- 修改：`frontend/src/pages/review/ReviewCheckPage.vue` — `.page-layout` 从 flex 改为 2 列 grid（`minmax(0, 1fr) minmax(0, 1fr)`）；`.segmented-control` 从 `flex-wrap` 改为 `grid-template-columns: repeat(3, minmax(0, 1fr))` 实现桌面端三选项横排；`.segmented-control label` 添加 `white-space: nowrap` 和 `justify-content: center`；移除 `.panel` 的 `flex: 1 1 0`；更新移动端断点为单列 grid
+- 修改：`frontend/src/pages/review/ReviewCheckPage.vue`
+  - 将 segmented control 的 `:has()` CSS 选择器替换为 Vue `:class` 绑定（`.active` class）
+  - 添加 `onBeforeUnmount` 清理、`document.addEventListener('pointerdown', handleOutsideClick)` 和 `document.addEventListener('keydown', handleKeyDown)` 实现更多菜单点击外部和 Esc 关闭
+- 修改：`frontend/src/pages/knowledge/ProjectKnowledgePage.vue`
+  - 添加 `document.addEventListener('keydown', handleKeyDown)` 实现更多菜单 Esc 关闭（click-outside 已有）
+  - `onBeforeUnmount` 中清理 keydown 监听
 
 ## Implementation Notes
 
-1. **时间轴侧栏**：`.left-panel` 与 `.detail-panel` 共享 `gap: --zs-space-3`，为 `.left-panel` 单独覆盖为 `--zs-space-1`，不影响右侧详情面板。`.panel-head` gap 从 `--zs-space-3` 降为 `--zs-space-2`，并添加 `.left-panel .panel-head { margin-bottom: var(--zs-space-1) }` 微调标题与列表的间距。
+### ReviewCheckPage :has() 修复
+- 原有 CSS：`.segmented-control label:has(input[type="radio"]:checked)` 用于高亮选中项
+- 改为 Vue class 绑定：`<label :class="{ active: scope === 'chapter' }">`
+- 新增 CSS：`.segmented-control label.active` 和 `.segmented-control label.active span`
+- 消除了 WebView2 中 `:has()` 选择器的潜在兼容风险
 
-2. **章节树新建按钮**：保留按钮全宽（作为拖拽放置区域），但视觉改为虚线边框 + 透明背景 + 浅色文字 + `opacity: 0.8`，hover 时高亮为 `--zs-color-primary`。这样既不破坏拖拽交互，又让按钮视觉上更轻量。
+### 更多菜单关闭逻辑
+- ReviewCheckPage：添加 `handleOutsideClick`（检查 `.more-menu-wrapper`）和 `handleKeyDown`（Esc 键）
+- KnowledgePage：添加 `handleKeyDown`（Esc 键），click-outside 已通过 `document.addEventListener('click', closeMoreMenu)` 实现
+- 两个页面均在 `onBeforeUnmount` 中正确清理事件监听，避免内存泄漏
 
-3. **大纲弹窗**：使用局部 class `.outline-create-dialog` 覆盖全局 `.zs-dialog-content` 的 `max-width`，不修改全局样式。通过 `> .zs-field`、`> .form-grid` 选择器为表单内容添加 `padding-inline: --zs-space-5`，与 header/footer 的水平内边距对齐。编辑弹窗（EditOutlineDialog）同步扩大宽度以保持一致性。
-
-4. **检查页面**：
-   - `.page-layout` 从 flex 改为 2 列 grid，使检查面板和词库面板宽度严格均衡。
-   - `.segmented-control` 改为 3 列 grid，确保桌面端三选项始终横排不换行。
-   - 结果面板 `.result-panel` 与 `.page-layout` 共享相同的 `max-width: 1120px` 和 `margin: auto`，保持中心对齐。
-   - 移动端（≤820px）断点更新：`.page-layout` 和 `.segmented-control` 都回退为单列。
+### Tauri 构建配置确认
+- `tauri.conf.json` 配置正确：默认窗口 1440×900，最小窗口 1280×720
+- `VITE_API_BASE_URL=http://127.0.0.1:8765` 通过 cross-env 正确注入
+- Sidecar 配置：`binaries/zhangshu-backend`
+- 中文应用名"章枢"和窗口标题配置正确
 
 ## Deviations from Codex Plan
 
-- 未执行可选的二级菜单收纳优化（将低频操作放入"更多"菜单）。当前页面操作入口数量适中，不构成明显拥挤，为避免降低可发现性决定跳过。
-- EditOutlineDialog 和 OutlineEditor 的调整属于 Codex 计划中"仅当编辑大纲弹窗也存在同类贴边或宽度问题时"的一致性修改，已确认存在同类问题并执行。
+无偏差。计划要求修复 `:has()` 和菜单关闭逻辑，均已实现。
 
 ## Verification Commands Run
 
 - `npm run type-check` → ✅
 - `npm run build` → ✅
 - `npm run test:unit -- --run` → ✅ (8 files, 115 tests)
+- `npm run tauri:build` → ⚠️ Rust 编译成功，WiX MSI 打包失败（环境问题）
 
 ## Verification Results
 
-全部通过，无类型错误、无构建错误、无测试回归。
+### 基础构建
+- type-check、build、unit tests 全部通过
+- 前端正确构建，API base URL 注入正确
+
+### Tauri 构建
+- ✅ Rust 后端编译成功（tauri 2.11.2, tauri-build 2.6.2）
+- ✅ 前端构建成功，生成 dist/
+- ✅ 生成独立 exe：`src-tauri/target/release/zhangshu-desktop.exe` (11MB)
+- ❌ WiX MSI 打包失败：`light.exe` 执行失败（本机 WiX 工具环境问题）
+- 根据计划："若因本机缺少 Windows 打包工具、证书、NSIS/WiX 或环境问题失败，Claude Code 应记录为环境阻塞，不要改业务代码绕过"
+
+### 环境检查
+- Tauri CLI: 2.11.2
+- WebView2: 148.0.3967.83
+- Rust: 1.95.0 (stable-x86_64-pc-windows-msvc)
+- Node: 24.14.1
+- cross-env: 已安装
 
 ## Known Issues
 
-- 无法在本次执行中进行视觉验证（需要浏览器环境）。建议手动检查以下断点：
-  - 1440px / 1366px：确认时间轴侧栏标题与列表间距合理、检查范围三选项横排、面板宽度均衡
-  - 1024px：确认大纲弹窗不溢出
-  - 390px：确认所有布局回退为单列，无横向滚动
+### 需要手动验证（无法在 CLI 环境中执行）
+1. **Tauri dev 启动验证**：需要 GUI 环境，无法在 CLI 中运行 `npm run tauri:dev`
+2. **打包应用启动验证**：已生成 exe，但需要手动启动验证首屏加载、API 连接、CORS
+3. **CORS 风险**：Tauri production origin 可能是 `tauri://localhost` 或 `https://tauri.localhost`，当前 CORS 配置只包含 `localhost:5180` 和 `127.0.0.1:5180`。如实际测试出现 CORS 错误，需添加 Tauri production origin
+4. **文件上传/下载验证**：需要在 Tauri 壳内测试 `webkitdirectory`、Blob URL 下载、文件选择器
+5. **最小窗口和缩放验证**：需要在 1280×720 和 125% 缩放下检查布局
+6. **主题验证**：需要在 Tauri 壳内测试默认、护眼、黑夜主题
+
+### 未修改项
+- **CORS 配置**：根据计划"仅当实际 Tauri production origin 导致 CORS 失败时，做最小 CORS origin 修复"。因无法实际运行 Tauri production 验证，未预防性修改
+- **tauri.conf.json**：配置正确，无需修改
+- **tauri_sidecar_main.py**：UTF-8 编码正确，中文日志正常，无需修改
+- **其他工具页**：未发现问题，根据计划"只有确认存在兼容问题时才修改对应文件"
 
 ## Suggested Next Review Points for Codex
 
-1. 时间轴侧栏 `.left-panel` gap 从 `--zs-space-3` 降为 `--zs-space-1` 是否过于紧凑，建议实际页面查看。
-2. 章节树新建按钮改为虚线+透明风格后，是否仍能被用户识别为可点击操作。
-3. 检查页面 `.page-layout` 改为 2 列等宽 grid 后，检查面板（左侧）内容较少可能显得空旷，是否需要调整为不等宽（如 `minmax(280px, 1fr) minmax(0, 2fr)`）。
+1. **CORS 配置**：建议在实际 Tauri production 启动后，如出现 CORS 错误，添加 `tauri://localhost` 和 `https://tauri.localhost` 到 `backend/app/main.py` 的 `allow_origins`
+2. **WiX 打包**：需要修复本机 WiX 工具环境，或改用 NSIS 打包（修改 `tauri.conf.json` 的 `bundle.targets`）
+3. **文件下载**：Tauri WebView2 中 Blob URL 下载行为可能与浏览器不同，建议实际测试 DOCX/备份导出
+4. **webkitdirectory**：需要在 Tauri 壳内测试文件夹选择器，如不可用需确保 zip fallback 入口清晰

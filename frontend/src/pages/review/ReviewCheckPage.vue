@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 import { listChapters } from '@/entities/chapter/api'
@@ -37,6 +37,7 @@ const isChecking = ref(false)
 const isSavingTerm = ref(false)
 const isImportingTerms = ref(false)
 const termImportInputRef = ref<HTMLInputElement | null>(null)
+const showMoreMenu = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
 
@@ -57,7 +58,28 @@ const sortedChapters = computed(() =>
 
 onMounted(() => {
   void loadPageData()
+  document.addEventListener('pointerdown', handleOutsideClick)
+  document.addEventListener('keydown', handleKeyDown)
 })
+
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', handleOutsideClick)
+  document.removeEventListener('keydown', handleKeyDown)
+})
+
+function handleOutsideClick(event: Event) {
+  if (!showMoreMenu.value) return
+  const target = event.target as HTMLElement
+  if (!target.closest('.more-menu-wrapper')) {
+    showMoreMenu.value = false
+  }
+}
+
+function handleKeyDown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && showMoreMenu.value) {
+    showMoreMenu.value = false
+  }
+}
 
 watch(projectId, () => {
   void loadPageData()
@@ -260,6 +282,20 @@ function formatDateForFilename(date: Date): string {
   const pad = (value: number) => String(value).padStart(2, '0')
   return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}`
 }
+
+function toggleMoreMenu() {
+  showMoreMenu.value = !showMoreMenu.value
+}
+
+function handleExportAndCloseMenu() {
+  showMoreMenu.value = false
+  void handleExportTerms()
+}
+
+function handleImportAndCloseMenu() {
+  showMoreMenu.value = false
+  openImportTermsPicker()
+}
 </script>
 
 <template>
@@ -281,25 +317,25 @@ function formatDateForFilename(date: Date): string {
     </section>
 
     <section class="page-layout">
-      <article class="panel">
-        <header>
+      <article class="panel check-panel">
+        <header class="panel-header-compact">
           <p class="eyebrow">检查</p>
           <h2>检查</h2>
+          <p class="panel-hint">只提示，不自动修改正文</p>
         </header>
-        <p class="panel-note">检查功能只提示，不会自动修改正文</p>
 
         <div class="field-group">
           <span class="field-label">检查范围</span>
           <div class="segmented-control" role="radiogroup" aria-label="检查范围">
-            <label>
+            <label :class="{ active: scope === 'chapter' }">
               <input v-model="scope" type="radio" value="chapter" />
               <span>当前章节</span>
             </label>
-            <label>
+            <label :class="{ active: scope === 'volume' }">
               <input v-model="scope" type="radio" value="volume" />
               <span>当前分卷</span>
             </label>
-            <label>
+            <label :class="{ active: scope === 'project' }">
               <input v-model="scope" type="radio" value="project" />
               <span>全书</span>
             </label>
@@ -324,22 +360,29 @@ function formatDateForFilename(date: Date): string {
           </select>
         </label>
 
-        <button class="primary-button" type="button" :disabled="isChecking || isLoading" @click="handleCheck">
-          {{ isChecking ? '正在检查…' : '开始检查' }}
-        </button>
+        <div class="check-actions">
+          <button class="primary-button check-button" type="button" :disabled="isChecking || isLoading" @click="handleCheck">
+            {{ isChecking ? '正在检查…' : '开始检查' }}
+          </button>
+        </div>
       </article>
 
-      <article class="panel">
+      <article class="panel term-panel">
         <header class="term-panel-header">
           <div>
             <p class="eyebrow">词库</p>
             <h2>违禁词 / 敏感词</h2>
           </div>
-          <div class="term-toolbar">
-            <button class="secondary-button" type="button" :disabled="isImportingTerms" @click="openImportTermsPicker">
-              {{ isImportingTerms ? '导入中…' : '导入词库' }}
+          <div class="more-menu-wrapper">
+            <button class="secondary-button more-button" type="button" @click="toggleMoreMenu">
+              更多 ▾
             </button>
-            <button class="secondary-button" type="button" @click="handleExportTerms">导出词库</button>
+            <div v-if="showMoreMenu" class="more-menu" @click.stop>
+              <button type="button" class="more-menu-item" :disabled="isImportingTerms" @click="handleImportAndCloseMenu">
+                {{ isImportingTerms ? '导入中…' : '导入词库' }}
+              </button>
+              <button type="button" class="more-menu-item" @click="handleExportAndCloseMenu">导出词库</button>
+            </div>
             <input
               ref="termImportInputRef"
               class="visually-hidden"
@@ -350,26 +393,30 @@ function formatDateForFilename(date: Date): string {
           </div>
         </header>
 
-        <form class="term-form" @submit.prevent="handleCreateTerm">
-          <label class="field-group">
-            <span class="field-label">匹配词</span>
-            <input v-model="newTerm" type="text" />
-          </label>
-          <label class="field-group">
-            <span class="field-label">严重程度</span>
-            <select v-model="newSeverity">
-              <option value="low">低</option>
-              <option value="medium">中</option>
-              <option value="high">高</option>
-            </select>
-          </label>
-          <label class="field-group">
-            <span class="field-label">建议</span>
-            <input v-model="newSuggestion" type="text" />
-          </label>
-          <button class="primary-button" type="submit" :disabled="isSavingTerm">
-            {{ isSavingTerm ? '正在添加…' : '添加词条' }}
-          </button>
+        <form class="term-form-compact" @submit.prevent="handleCreateTerm">
+          <div class="term-form-row">
+            <label class="field-group field-compact">
+              <span class="field-label">匹配词</span>
+              <input v-model="newTerm" type="text" />
+            </label>
+            <label class="field-group field-compact field-narrow">
+              <span class="field-label">严重程度</span>
+              <select v-model="newSeverity">
+                <option value="low">低</option>
+                <option value="medium">中</option>
+                <option value="high">高</option>
+              </select>
+            </label>
+          </div>
+          <div class="term-form-row">
+            <label class="field-group field-compact field-grow">
+              <span class="field-label">建议</span>
+              <input v-model="newSuggestion" type="text" placeholder="可选" />
+            </label>
+            <button class="primary-button term-submit-button" type="submit" :disabled="isSavingTerm">
+              {{ isSavingTerm ? '正在添加…' : '添加词条' }}
+            </button>
+          </div>
         </form>
 
         <div class="term-list">
@@ -437,7 +484,7 @@ function formatDateForFilename(date: Date): string {
   min-height: 100vh;
   box-sizing: border-box;
   overflow-x: hidden;
-  padding: var(--zs-space-8) var(--zs-space-5);
+  padding: var(--zs-space-6) var(--zs-space-5);
   background: var(--zs-color-bg);
   color: var(--zs-color-text);
 }
@@ -465,7 +512,7 @@ function formatDateForFilename(date: Date): string {
 .page-header {
   align-items: flex-end;
   justify-content: space-between;
-  margin-bottom: var(--zs-space-6);
+  margin-bottom: var(--zs-space-4);
 }
 
 .term-panel-header {
@@ -473,10 +520,48 @@ function formatDateForFilename(date: Date): string {
   justify-content: space-between;
 }
 
-.term-toolbar {
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: var(--zs-space-2);
+.more-menu-wrapper {
+  position: relative;
+}
+
+.more-button {
+  white-space: nowrap;
+}
+
+.more-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 10;
+  display: grid;
+  min-width: 120px;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-md);
+  box-shadow: var(--zs-shadow-sm);
+  background: var(--zs-color-surface);
+  overflow: hidden;
+}
+
+.more-menu-item {
+  min-height: 36px;
+  border: 0;
+  border-radius: 0;
+  padding: 0 14px;
+  background: transparent;
+  color: var(--zs-color-text);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.more-menu-item:hover {
+  background: var(--zs-color-surface-soft);
+}
+
+.more-menu-item + .more-menu-item {
+  border-top: 1px solid var(--zs-color-border-soft);
 }
 
 .page-layout {
@@ -499,14 +584,36 @@ function formatDateForFilename(date: Date): string {
 
 .panel {
   display: grid;
-  gap: var(--zs-space-4);
-  padding: var(--zs-space-5);
+  gap: var(--zs-space-3);
+  padding: var(--zs-space-4) var(--zs-space-5);
+}
+
+.panel-header-compact {
+  display: grid;
+  gap: 2px;
+}
+
+.panel-hint {
+  margin: 0;
+  color: var(--zs-color-text-faint);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.check-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.check-button {
+  width: auto;
+  min-width: 120px;
 }
 
 .result-panel {
   display: grid;
-  gap: var(--zs-space-3);
-  padding: var(--zs-space-5);
+  gap: var(--zs-space-2);
+  padding: var(--zs-space-4) var(--zs-space-5);
 }
 
 .result-card {
@@ -526,7 +633,7 @@ function formatDateForFilename(date: Date): string {
 h1,
 h2,
 h3,
-.panel-note,
+.panel-hint,
 .volume-title,
 .suggestion,
 .empty-state {
@@ -547,7 +654,6 @@ h3 {
   font-size: 1.05rem;
 }
 
-.panel-note,
 .volume-title,
 .suggestion {
   color: var(--zs-color-text-muted);
@@ -607,10 +713,38 @@ h3 {
   color: var(--zs-color-success);
 }
 
-.field-group,
-.term-form {
+.field-group {
   display: grid;
   gap: var(--zs-space-2);
+}
+
+.term-form-compact {
+  display: grid;
+  gap: var(--zs-space-2);
+}
+
+.term-form-row {
+  display: flex;
+  gap: var(--zs-space-2);
+  align-items: end;
+}
+
+.field-compact {
+  flex: 1;
+  min-width: 0;
+}
+
+.field-narrow {
+  flex: 0 0 100px;
+}
+
+.field-grow {
+  flex: 2;
+}
+
+.term-submit-button {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .field-label {
@@ -621,7 +755,7 @@ h3 {
 .segmented-control {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--zs-space-2);
+  gap: var(--zs-space-1);
 }
 
 .segmented-control label {
@@ -629,13 +763,40 @@ h3 {
   align-items: center;
   justify-content: center;
   gap: var(--zs-space-1);
-  border: 1px solid var(--zs-color-border);
-  border-radius: var(--zs-radius-md);
-  padding: 10px 8px;
-  background: var(--zs-color-surface-soft);
+  border: 1px solid var(--zs-color-border-soft);
+  border-radius: var(--zs-radius-sm);
+  padding: 6px 8px;
+  background: var(--zs-color-surface);
   color: var(--zs-color-text);
-  font-weight: 800;
+  font-size: 0.88rem;
+  font-weight: 700;
   white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.segmented-control label:hover {
+  border-color: var(--zs-color-border);
+  background: var(--zs-color-surface-soft);
+}
+
+.segmented-control input[type="radio"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.segmented-control label.active {
+  border-color: var(--zs-color-primary);
+  background: var(--zs-color-primary-soft);
+}
+
+.segmented-control label.active span {
+  color: var(--zs-color-primary);
+  font-weight: 800;
 }
 
 input,
@@ -644,14 +805,14 @@ select {
   box-sizing: border-box;
   border: 1px solid var(--zs-color-border);
   border-radius: var(--zs-radius-md);
-  padding: 12px;
+  padding: 8px 12px;
   background: var(--zs-color-surface);
   color: var(--zs-color-text);
   font: inherit;
 }
 
 button {
-  min-height: 38px;
+  min-height: 34px;
   border-radius: var(--zs-radius-sm);
   border: 1px solid transparent;
   padding: 0 14px;
@@ -753,12 +914,13 @@ dd {
 .empty-state {
   display: grid;
   place-items: center;
-  min-height: 120px;
+  min-height: 64px;
   border: 1px dashed var(--zs-color-border);
   border-radius: var(--zs-radius-md);
   background: var(--zs-color-surface);
   color: var(--zs-color-text-muted);
-  font-weight: 800;
+  font-size: 0.88rem;
+  font-weight: 700;
 }
 
 @media (max-width: 820px) {
@@ -779,6 +941,21 @@ dd {
 
   .segmented-control {
     grid-template-columns: 1fr;
+  }
+
+  .term-form-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .field-narrow,
+  .field-grow {
+    flex: 1;
+  }
+
+  .check-button,
+  .term-submit-button {
+    width: 100%;
   }
 
   .primary-button,

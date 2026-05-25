@@ -403,11 +403,19 @@ onMounted(() => {
   void loadSources()
   void loadIndexStatus()
   document.addEventListener('click', closeMoreMenu)
+  document.addEventListener('keydown', handleKeyDown)
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', closeMoreMenu)
+  document.removeEventListener('keydown', handleKeyDown)
 })
+
+function handleKeyDown(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    showMoreMenu.value = false
+  }
+}
 </script>
 
 <template>

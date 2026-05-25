@@ -1,192 +1,334 @@
 # Task Summary
 
-本次任务是对现有前端 UI 做一轮小范围体验优化，不实现新业务功能，不修改后端、数据库或接口。
+本次任务调整为 **Tauri 桌面壳兼容性回归与小修计划**。
 
-优化范围：
+用户明确要求：不需要大重构，只需要确保现有工具页和关键流程在打包进 Tauri 壳子后不会出现兼容性 bug。
 
-- 时间轴模块：压缩左侧时间轴列表中“时间轴列表 / 轨道”标题区与“主轴”等列表项之间的过大空白。
-- 写作工作区：缩窄“新建章节”和“新建分卷”按钮宽度，使其不再像整行主操作。
-- 大纲模块：扩大“新建大纲条目”表单的可用宽度，并补足左右内边距，避免文本框贴边。
-- 检查功能：调整“检查范围”三个单选项为横向排版；让“检查”和“词库”两个容器宽度更均衡，并让页面核心容器在竖直轴上更对称。
-- 可选 UI 建议：将低频操作收纳到二级菜单，由 Claude Code 结合实际页面复杂度决定是否执行。
+本计划只要求 Claude Code 做兼容性检查和必要小修，不做工具页大规模 UI 统一，不新增业务功能，不重写页面。
+
+重点检查：
+
+- Tauri dev / build 下前端是否能正确连接 sidecar 后端。
+- 打包后 API base、CORS、静态资源路径、文件上传、下载导出是否正常。
+- Windows WebView2 中 CSS、菜单、弹窗、文件选择、窗口尺寸是否稳定。
+- 深色 / 护眼主题在桌面壳内是否完整生效。
+- 工具页在 Tauri 最小窗口尺寸下不出现横向溢出、按钮不可见或弹窗被裁切。
 
 Codex 未修改业务代码。本计划应由 Claude Code 执行。Claude Code 执行前应再次检查计划与实际代码是否冲突；如存在冲突，应停止并反馈，而不是强行实现。
 
 # Current Codebase Findings
 
-已阅读上一轮 `docs/ai-handoff/CLAUDE_EXECUTION_REPORT.md`，上一任务为 SQLite FTS5 全文搜索与完整版本管理，报告显示前后端实现和测试已完成。旧交接文件已归档到：
+已检查当前交接区：
 
-`docs/ai-handoff/archive/2026-05-25-fts-version-management/`
+- `docs/ai-handoff/` 当前只有 `README.md` 和 `archive/`，没有旧活跃计划或执行报告。
 
-本次重点阅读了相关前端文件：
+已检查 Tauri 与前端配置：
 
-- `frontend/src/pages/timeline/ProjectTimelinePage.vue`
-  - 左侧栏使用 `.left-panel`、`.panel-head`、`.panel-eyebrow`、`.track-list`、`.track-item` 等结构。
-  - 左侧标题区显示“时间轴列表”和“轨道”，列表项中包含“主轴”等轨道名称。
-  - 当前标题区与列表区之间的视觉空白偏大，可能来自 `.left-panel` 的 grid gap、`.panel-head`、`.panel-eyebrow` 或标题默认 margin。
+- `frontend/src-tauri/` 已存在。
+- `frontend/src-tauri/tauri.conf.json`
+  - 默认窗口约为 `1440 × 900`。
+  - 最小窗口约为 `1280 × 720`。
+  - `devUrl` 为 `http://localhost:5180`。
+  - `frontendDist` 为 `../dist`。
+  - sidecar 配置为 `binaries/zhangshu-backend`。
+- `frontend/package.json`
+  - `tauri:dev` 使用 `VITE_API_BASE_URL=http://127.0.0.1:8765`。
+  - `tauri:build:frontend` 使用 `VITE_API_BASE_URL=http://127.0.0.1:8765 npm run build`。
+  - `tauri:build` 先构建前端，再执行 `tauri build`。
+  - `tauri:build:backend` 使用 PyInstaller 生成 sidecar。
+- `frontend/vite.config.ts`
+  - Vite dev server 端口为 `5180`，且 `strictPort: true`。
+- `frontend/src/shared/api/client.ts`
+  - API base 来自 `import.meta.env.VITE_API_BASE_URL ?? ''`。
+  - Tauri dev / build 依赖构建脚本注入 `http://127.0.0.1:8765`。
+- `backend/tauri_sidecar_main.py`
+  - sidecar 默认监听 `127.0.0.1:8765`。
+  - 数据目录默认为 sidecar 所在目录下的 `zhangshu_data`，可通过环境变量覆盖。
+  - 端口占用或启动失败会写入 `startup_error.log`。
 
-- `frontend/src/features/chapters/ChapterTree.vue`
-  - “新建章节”和“新建分卷”按钮使用 `.tree-row.create-row`、`.child-row`、`.volume-create-row` 等样式。
-  - 这些按钮继承树节点行的整行布局，视觉上按钮宽度偏大。
-  - 该组件还承载章节树拖拽相关交互，缩窄按钮时不能破坏拖拽放置区域和键盘可访问性。
+已知 Tauri V1 执行报告中留下的风险点：
 
-- `frontend/src/features/outlines/CreateOutlineDialog.vue`
-  - 新建大纲条目表单直接使用全局 `.zs-dialog-content`。
-  - 全局 dialog 最大宽度约为 560px，且该表单没有单独的 `.zs-dialog-body` 内层容器。
-  - 表单字段较多时，当前宽度和左右间距都不够舒展。
+- `npm run tauri:dev` 曾成功启动桌面窗口和 sidecar。
+- `npm run tauri:build` 当时未完整执行，需要补充打包验证。
+- Tauri production 模式下前端 origin、CORS、静态资源协议仍需实际验证。
+- sidecar 构建和打包流程当前主要面向 Windows。
 
+已检查近期工具页状态：
+
+- `frontend/src/pages/search/SearchPage.vue`
 - `frontend/src/pages/review/ReviewCheckPage.vue`
-  - 页面核心区包含检查面板、词库面板和检查结果面板。
-  - 检查面板和词库面板目前使用 flex 布局，视觉高度和宽度不够稳定。
-  - “检查范围”使用 `.segmented-control`，当前允许换行，三个选项在某些宽度下不够横向一致。
-  - 词库导入、导出等低频操作始终暴露在工具栏中，可考虑收纳到二级菜单。
+- `frontend/src/pages/stats/ProjectWritingStatsPage.vue`
+- `frontend/src/pages/imports/ProjectBackupPage.vue`
+- `frontend/src/pages/imports/ImportPage.vue`
+- `frontend/src/pages/versions/ProjectVersionsPage.vue`
+- `frontend/src/pages/knowledge/ProjectKnowledgePage.vue`
+- `frontend/src/features/knowledge/KnowledgeImportDialog.vue`
+- `frontend/src/features/knowledge/KnowledgeIndexRefreshDialog.vue`
 
-- `frontend/src/features/writing/WritingAidPanel.vue`
-  - 右侧辅助面板包含较多标签项，后续如出现拥挤，可考虑将低频入口放入“更多”菜单。
-  - 本次不建议主动重构该组件，只在 Claude Code 实测确认拥挤时做极小范围 UI 收纳。
+这些页面中可能影响 Tauri 壳兼容性的点：
+
+- 下拉菜单如果只靠再次点击按钮关闭，在桌面壳内体验不稳定，应支持点击外部和 Esc 关闭。
+- `ReviewCheckPage.vue` 曾使用 CSS `:has()` 处理选中态，虽然 WebView2 通常支持，但为降低壳内兼容风险，建议改为 Vue class 绑定。
+- 知识库和导入页使用文件选择、批量文件、文件夹选择、zip 上传，需要在 Tauri WebView2 中验证。
+- 导出和备份下载依赖浏览器下载行为，需要确认 Tauri 壳内是否能正确保存文件或触发下载。
+- 窗口最小宽度为 `1280 × 720`，但仍需要检查 `1100 × 760` 或用户手动缩放场景，避免布局被标题栏、系统缩放或侧栏挤坏。
+- 控制台输出中出现过中文显示异常的迹象，需要确认 Tauri 窗口标题、应用名、sidecar 日志文件是否为正确 UTF-8。
 
 # Architecture Decision
 
-本次为前端 UI 微调任务，应采用“局部 CSS / 模板小改”的方式完成。
+本次任务采用 **兼容性优先、最小修改** 策略。
 
-架构决策：
+允许 Claude Code 做：
 
-- 不修改后端 API、Service、Repository、Model、Schema、数据库迁移或数据结构。
-- 不新增依赖，不引入新的 UI 库。
-- 不重写页面或组件，只在既有组件内做局部布局调整。
-- 优先复用现有设计 token，例如 `var(--zs-space-*)`、`var(--zs-radius-*)`、`var(--zs-color-*)`。
-- 对 dialog 宽度和内边距的调整应优先使用局部 class，避免修改全局 `.zs-dialog-content` 影响其他弹窗。
-- 对低频操作二级菜单的调整属于可选优化，必须以“不降低可发现性、不破坏已有功能”为前提。
-- 本次不应改变任何业务流程、数据保存逻辑、路由结构或 API 调用。
+- 验证 Tauri dev 和 Tauri build。
+- 修复会导致桌面壳中不可用、报错、看不见、点不了、下载不了、上传不了的问题。
+- 修复明显的 WebView2 兼容风险，例如关键交互依赖 `:has()`。
+- 修复下拉菜单点击外部 / Esc 关闭问题。
+- 修复 Tauri 壳内 API base、CORS、静态资源路径、窗口尺寸、文件上传下载相关问题。
+- 小范围修复工具页在 Tauri 最小窗口下的横向溢出、弹窗裁切、按钮不可见。
+
+不允许 Claude Code 做：
+
+- 大规模 UI 统一。
+- 抽象新的设计系统。
+- 重写工具页。
+- 重构业务逻辑。
+- 新增业务功能。
+- 为了“顺手好看”调整无关页面。
+- 引入大型依赖或 UI 库。
+
+判断标准：
+
+- 如果问题会导致 Tauri 壳中功能不可用或出现兼容 bug，可以修。
+- 如果只是视觉风格不够统一，但不影响壳内可用性，本任务不修。
 
 # Files to Create or Modify
 
-Claude Code 预计需要修改：
+Claude Code 应先验证，只有确认存在兼容问题时才修改对应文件。
 
-- `frontend/src/pages/timeline/ProjectTimelinePage.vue`
-- `frontend/src/features/chapters/ChapterTree.vue`
-- `frontend/src/features/outlines/CreateOutlineDialog.vue`
+可能需要修改的文件：
+
 - `frontend/src/pages/review/ReviewCheckPage.vue`
+  - 修复更多菜单外部点击 / Esc 关闭。
+  - 如仍依赖 `:has()`，改为 Vue class 绑定。
 
-Claude Code 可选修改：
+- `frontend/src/pages/knowledge/ProjectKnowledgePage.vue`
+  - 修复更多菜单外部点击 / Esc 关闭。
+  - 检查知识库浏览、检索、问答、摘要在 Tauri 最小窗口下是否溢出。
 
-- `frontend/src/features/outlines/EditOutlineDialog.vue`
-  - 仅当编辑大纲弹窗也存在同类贴边或宽度问题时，做一致性小调整。
-- `frontend/src/features/writing/WritingAidPanel.vue`
-  - 仅当右侧辅助面板标签或操作在当前断点明显拥挤时，将低频入口收纳到“更多”菜单。
+- `frontend/src/pages/search/SearchPage.vue`
+  - 仅当 Tauri 壳内搜索索引刷新、结果打开、布局溢出出现兼容问题时小修。
+
+- `frontend/src/pages/imports/ImportPage.vue`
+  - 仅当 Tauri 壳内文件选择、文件夹选择、项目包导入、zip 上传出现问题时小修。
+
+- `frontend/src/pages/imports/ProjectBackupPage.vue`
+  - 仅当 Tauri 壳内 DOCX/TXT/MD 导出、备份下载、备份恢复上传出现问题时小修。
+
+- `frontend/src/pages/versions/ProjectVersionsPage.vue`
+  - 仅当 Tauri 壳内版本恢复确认、版本 diff 展示、清理旧版本确认出现兼容问题时小修。
+
+- `frontend/src/pages/stats/ProjectWritingStatsPage.vue`
+  - 仅当 Tauri 壳内统计图表、热力图、窗口缩放出现布局问题时小修。
+
+- `frontend/src/shared/api/client.ts`
+  - 仅当 Tauri production build 中 API base 不正确时修改。
+  - 不要改变普通 Web dev 的默认相对路径行为。
+
+- `backend/app/main.py`
+  - 仅当实际 Tauri production origin 导致 CORS 失败时，做最小 CORS origin 修复。
+  - 不要修改业务 API。
+
+- `backend/tauri_sidecar_main.py`
+  - 仅当 sidecar 启动、中文日志、数据目录、端口冲突提示在打包后存在实际问题时小修。
+
+- `frontend/src-tauri/tauri.conf.json`
+  - 仅当打包配置、窗口最小尺寸、bundle sidecar 配置存在实际问题时小修。
+
+- `frontend/package.json`
+  - 仅当现有 Tauri scripts 不能完成打包验证时小修。
+  - 不新增无关脚本，不改普通 Web dev/build 命令语义。
 
 不应修改：
 
-- `backend/` 下任何文件。
-- 数据库模型、迁移、初始化脚本。
-- `frontend/src/router/`，除非 Claude Code 发现页面无法访问且必须修正，但本任务原则上不需要。
-- `frontend/src/App.vue`。
-- 依赖文件，如 `package.json`、`package-lock.json`、`pnpm-lock.yaml`。
-- 构建脚本、启动脚本、测试框架配置。
+- 数据库模型、Repository、Service、业务 Schema。
+- 工具页业务流程。
+- 路由结构。
+- 大型全局样式。
+- 依赖版本，除非打包验证明确需要且用户确认。
+- `data/`、`logs/`、`release/`、`frontend/src-tauri/target/` 等本地产物。
 
 # Implementation Steps for Claude Code
 
 1. 执行前检查
-   - 运行 `git status --short`，确认当前工作区状态。
-   - 打开并确认以下页面/组件的最新代码：
-     - `frontend/src/pages/timeline/ProjectTimelinePage.vue`
-     - `frontend/src/features/chapters/ChapterTree.vue`
-     - `frontend/src/features/outlines/CreateOutlineDialog.vue`
-     - `frontend/src/pages/review/ReviewCheckPage.vue`
+   - 运行：
 
-2. 时间轴模块左侧列表空白优化
-   - 在 `frontend/src/pages/timeline/ProjectTimelinePage.vue` 中定位左侧列表区域：
-     - `.left-panel`
-     - `.panel-head`
-     - `.panel-eyebrow`
-     - `.track-list`
-     - `.track-item` 或轨道卡片相关样式
-   - 优先压缩标题区与列表区之间的垂直间距：
-     - 检查 `.left-panel` 的 `gap` 是否过大。
-     - 检查 `.panel-head` 是否有额外 `margin-bottom`。
-     - 检查 `.panel-eyebrow`、`h2` 是否保留浏览器默认 margin。
-   - 建议采用局部规则，例如：
-     - `.left-panel .panel-head { margin-bottom: 0; }`
-     - `.left-panel .panel-eyebrow { margin: 0 0 2px; line-height: 1.2; }`
-     - `.left-panel .panel-head h2 { margin: 0; line-height: 1.25; }`
-     - 适度降低 `.left-panel` 内部 gap，但不要让标题、统计、列表拥挤。
-   - 如果实际问题来自“主轴”列表项内部左右元素距离过远，而不是标题与列表的距离：
-     - 保持轨道名称和主轴标识视觉上成组。
-     - 将低优先级操作按钮改为更紧凑的图标按钮或收纳到已有菜单。
-     - 不要隐藏“主轴”这个核心信息。
+```powershell
+git status --short
+```
 
-3. 写作工作区新建按钮宽度优化
-   - 在 `frontend/src/features/chapters/ChapterTree.vue` 中调整 `.create-row`、`.volume-create-row`、必要时 `.child-row.create-row`。
-   - 目标是让“新建章节”“新建分卷”更像轻量辅助操作，而不是整行主按钮。
-   - 推荐方向：
-     - 将 `.create-row` 设置为内容宽度或较小固定最大宽度，如 `width: fit-content`、`justify-self: start`、更小的水平 padding。
-     - 对子级新建章节按钮保留适当缩进，但避免整行铺满。
-     - 对新建分卷按钮保留虚线边框或轻量样式，但降低横向占比。
-   - 注意：
-     - 不要破坏章节树拖拽排序、拖入分卷、未分配章节区域等已有交互。
-     - 如果当前按钮同时承担拖拽放置区域，应保留足够可点击和可拖放的命中区域，或只缩窄视觉按钮而不缩窄外层放置容器。
+   - 阅读本计划。
+   - 确认本任务是 Tauri 壳兼容性回归，不是 UI 大重构。
 
-4. 新建大纲条目表单宽度与内边距优化
-   - 在 `frontend/src/features/outlines/CreateOutlineDialog.vue` 中为弹窗添加局部 class，例如：
-     - `outline-create-dialog`
-     - `outline-dialog-body`
-   - 不要直接扩大全局 `.zs-dialog-content`。
-   - 建议：
-     - 将新建大纲弹窗宽度调整为 `min(720px 或 760px, calc(100vw - 32px))`。
-     - 给表单主体增加明确内边距，例如复用 `.zs-dialog-body` 或局部 body class。
-     - 将字段 grid 的最小列宽从约 180px 提升到 220px 或 240px，避免字段过窄。
-     - 保持小屏下单列布局，不产生横向滚动。
-   - 如 `EditOutlineDialog.vue` 也存在同类贴边问题，可采用同样局部 class 做一致性调整，但不要扩大范围到全部 dialog。
+2. 基础构建验证
+   - 在 `frontend/` 执行：
 
-5. 检查功能页面布局优化
-   - 在 `frontend/src/pages/review/ReviewCheckPage.vue` 中调整核心布局。
-   - 将检查面板和词库面板从不稳定的 flex 体验改为更稳定的两列 grid：
-     - 桌面端建议 `grid-template-columns: minmax(0, 1fr) minmax(0, 1fr)`。
-     - `align-items: stretch`，使两个容器宽度一致、视觉重量更平衡。
-   - 检查结果面板保持与上方两列区域同一个 `max-width` 和水平中心线。
-   - 调整“检查范围”：
-     - 桌面端三个选项固定横向排列，例如 `grid-template-columns: repeat(3, minmax(0, 1fr))`。
-     - 每个选项内部使用 `inline-flex` 或 flex，确保 radio 与文本“当前章节 / 当前分卷 / 全书”在同一行。
-     - 设置 `white-space: nowrap`，避免文本拆行。
-     - 小屏端可以改为单列或允许自然换行。
-   - 调整页面三个核心容器的竖直轴对称：
-     - 检查面板、词库面板、检查结果面板使用一致的外层宽度、左右边距和对齐方式。
-     - 不要让某个面板单独贴边或偏离页面中心线。
+```powershell
+npm run type-check
+npm run build
+```
 
-6. 可选 UI 交互优化，由 Claude Code 判断是否执行
-   - `frontend/src/pages/review/ReviewCheckPage.vue`
-     - 可将“导入词库”“导出词库”等低频操作收纳到“更多”二级菜单。
-     - 常用操作如“开始检查”“添加词条”应继续直接可见。
-   - `frontend/src/pages/timeline/ProjectTimelinePage.vue`
-     - 如左侧轨道列表卡片操作过多，可将删除、隐藏、重命名等低频操作收纳到单个菜单。
-     - 不要隐藏创建时间轴、切换轨道等主要操作。
-   - `frontend/src/features/writing/WritingAidPanel.vue`
-     - 如右侧辅助面板标签在常见宽度下明显拥挤，可考虑将“关系图、时间轴、伏笔、提醒、版本”等低频入口中的一部分收纳到“更多”。
-     - 该项为可选建议，不应为了本任务重构右侧面板。
+   - 如失败，先判断是否与本任务相关。
+   - 不要顺手修复无关业务问题；如发现无关失败，写入执行报告并停止或询问。
 
-7. 执行后记录
-   - Claude Code 应在 `docs/ai-handoff/CLAUDE_EXECUTION_REPORT.md` 中说明：
+3. Tauri dev 验证
+   - 在 `frontend/` 执行：
+
+```powershell
+npm run tauri:dev
+```
+
+   - 验证：
+     - Tauri 窗口能打开。
+     - sidecar 能启动。
+     - `/health` 或项目列表 API 请求成功。
+     - 普通 Web dev 不受影响。
+     - 窗口标题和应用名中文正常。
+     - 控制台无明显前端错误。
+
+4. Tauri build 验证
+   - 如 sidecar exe 不存在或过期，先执行：
+
+```powershell
+npm run tauri:build:backend
+```
+
+   - 然后执行：
+
+```powershell
+npm run tauri:build
+```
+
+   - 若因本机缺少 Windows 打包工具、证书、NSIS/WiX 或环境问题失败，Claude Code 应记录为环境阻塞，不要改业务代码绕过。
+   - 若因项目配置、API base、sidecar 路径、CORS、静态资源路径失败，做最小修复。
+
+5. Tauri production 包手动启动验证
+   - 找到 `frontend/src-tauri/target/release/bundle/` 下生成的包或可执行文件。
+   - 启动打包后的应用。
+   - 验证：
+     - 首屏加载正常。
+     - 项目列表能加载。
+     - 进入已有项目能加载写作工作区。
+     - API 请求指向 `127.0.0.1:8765`。
+     - 没有 CORS 错误。
+     - 退出应用后 sidecar 不残留异常进程。
+
+6. 工具页壳内兼容性 smoke test
+   - 在 Tauri dev 或打包应用中逐页检查：
+     - `/projects/:projectId/search`
+     - `/projects/:projectId/review`
+     - `/projects/:projectId/stats`
+     - `/projects/:projectId/backup`
+     - `/imports`
+     - `/projects/:projectId/versions`
+     - `/projects/:projectId/knowledge`
+   - 每页只检查壳内兼容性，不做 UI 大改。
+
+7. 文件上传与导入验证
+   - 在 Tauri 壳内检查：
+     - 作品导入选择单个 `.txt` / `.md` / `.docx` 文件。
+     - 作品导入选择文件夹。
+     - 项目包 `.zip` 选择。
+     - 知识库批量导入选择文件。
+     - 知识库批量导入选择文件夹。
+     - 知识库导入 `.zip`。
+   - 如果 `webkitdirectory` 在 WebView2 中不可用，应保留 zip 导入作为 fallback，并在 UI 上确保用户能找到 fallback。
+   - 不改变导入业务逻辑。
+
+8. 文件下载与导出验证
+   - 在 Tauri 壳内检查：
+     - TXT 导出。
+     - Markdown 导出。
+     - DOCX 导出。
+     - 项目备份 zip 导出。
+     - 词库导出。
+   - 如果 `a.download`、Blob URL 或浏览器下载行为在 Tauri 壳中不可用，应优先使用 Tauri shell 已允许能力或现有浏览器可用方式的最小兼容修复。
+   - 不改变导出内容格式。
+
+9. 菜单与弹窗兼容性修复
+   - 检查 Review 和 Knowledge 的“更多”菜单。
+   - 如不能点击外部关闭或 Esc 关闭，按最小方式修复：
+     - `document.addEventListener('pointerdown', ...)`
+     - `document.addEventListener('keydown', ...)`
+     - `onBeforeUnmount` 清理监听。
+   - 避免为此创建复杂新组件。
+   - 检查弹窗：
+     - 知识库导入弹窗。
+     - 刷新知识索引弹窗。
+     - 版本恢复弹窗。
+     - 导入预览/确认相关面板。
+   - 确保在 Tauri 最小窗口下不被裁切到无法操作。
+
+10. CSS / WebView2 兼容性修复
+    - 检查关键交互是否依赖 `:has()`。
+    - 如 Review 检查范围仍用 `:has()`，改为 Vue class active。
+    - 不要求移除所有现代 CSS，只处理关键功能选中态、菜单、弹窗、布局。
+    - 检查 `position: fixed`、`overflow`、`max-height: 90vh` 在壳内是否正常。
+    - 检查深色和护眼主题下菜单、弹窗、空状态、图表是否可读。
+
+11. Tauri 最小窗口与缩放验证
+    - 检查尺寸：
+      - 默认 `1440 × 900`
+      - 最小 `1280 × 720`
+      - 手动缩小或系统缩放近似 `1100 × 760`
+      - 125% 缩放
+    - 验证：
+      - 页面无全局横向滚动。
+      - 主按钮没有被挤出屏幕。
+      - 下拉菜单没有被裁切。
+      - 弹窗底部按钮可见。
+      - 画布类页面不因主题改变 canvas 背景色。
+
+12. 中文与编码验证
+    - 检查 Tauri 窗口标题、应用名、sidecar 日志、错误日志中的中文是否正常。
+    - 如发现 `章枢` 显示为乱码，只修正对应配置或日志字符串编码问题。
+    - 不改业务文案。
+
+13. 执行报告
+    - Claude Code 必须写入：
+
+`docs/ai-handoff/CLAUDE_EXECUTION_REPORT.md`
+
+   - 报告必须包含：
+     - 执行了哪些命令。
+     - Tauri dev 是否通过。
+     - Tauri build 是否通过。
+     - 打包应用是否实际启动验证。
+     - 哪些工具页做了壳内 smoke test。
+     - 上传/下载/导入/导出验证结果。
+     - 是否发现 CORS、API base、静态资源、WebView2 CSS、菜单、弹窗、中文编码问题。
      - 实际修改了哪些文件。
-     - 哪些 UI 建议已采纳，哪些未采纳及原因。
-     - 是否存在与计划不一致的地方。
-     - 执行了哪些验证命令。
-     - 手动检查了哪些页面和断点。
+     - 未修复问题和原因。
 
 # Constraints
 
-- 本任务只做 UI 布局和交互层面的微调，不实现新业务功能。
-- 不修改后端，不修改数据库，不新增 API。
-- 不新增依赖，不引入大型 UI 库。
-- 不做全局样式大改，除非是非常小且确定不会影响其他页面的 token 级修复。
-- dialog 宽度和间距优先使用局部 class，不要直接改变所有弹窗。
-- 不要重写 `ProjectTimelinePage.vue`、`ChapterTree.vue`、`ReviewCheckPage.vue` 或 `WritingAidPanel.vue`。
-- 不要改动无关页面。
-- 用户可见 UI 文案必须使用简体中文。
-- 所有改动必须保持现有功能可用，尤其是章节树拖拽、检查范围选择、词库操作和时间轴轨道切换。
+- 不做大重构。
+- 不做工具页全面统一。
+- 不新增业务功能。
+- 不修改业务数据结构。
+- 不修改路由。
+- 不引入新依赖。
+- 不重写页面。
+- 不重写 Tauri 壳。
+- 不提交或保留本地打包产物。
+- 不提交 `data/`、`logs/`、`release/`、`frontend/src-tauri/target/`。
+- 只有确认存在 Tauri 壳兼容问题时才修改对应文件。
+- 所有修复必须是最小必要修复。
+- 如果打包失败是本机环境问题，应记录阻塞原因，不要用代码绕过。
 
 # Verification Commands
 
-建议 Claude Code 执行：
+基础前端验证：
 
 ```powershell
 cd frontend
@@ -194,69 +336,94 @@ npm run type-check
 npm run build
 ```
 
-如项目当前配置包含前端单元测试，可补充执行：
+Tauri dev 验证：
 
 ```powershell
 cd frontend
-npm run test:unit
+npm run tauri:dev
 ```
 
-手动视觉验证：
+sidecar 构建：
 
-- 打开写作工作区页面，例如 `/projects/{projectId}`：
-  - 检查“新建章节”“新建分卷”按钮宽度是否收窄。
-  - 检查章节树拖拽、点击、新建入口是否仍可用。
-- 打开时间轴页面，例如 `/projects/{projectId}/timeline`：
-  - 检查左侧“时间轴列表 / 轨道”和“主轴”之间是否仍存在异常大空白。
-  - 检查轨道切换、创建、编辑、删除操作是否仍可用。
-- 打开大纲页面并触发新建大纲条目：
-  - 检查表单宽度是否更舒展。
-  - 检查左右内边距是否合理。
-  - 检查 390px 左右移动端宽度下是否无横向滚动。
-- 打开检查页面，例如 `/projects/{projectId}/review`：
-  - 检查“当前章节 / 当前分卷 / 全书”是否横向排列且文本不拆行。
-  - 检查“检查”和“词库”两个容器是否宽度均衡。
-  - 检查检查结果区域是否与上方区域保持同一中心轴和合理左右间距。
+```powershell
+cd frontend
+npm run tauri:build:backend
+```
 
-建议检查断点：
+Tauri 打包验证：
 
-- 1440px 桌面宽度
-- 1366px 桌面宽度
-- 1024px 平板或窄桌面宽度
-- 390px 移动端宽度
+```powershell
+cd frontend
+npm run tauri:build
+```
+
+可选后端导入检查：
+
+```powershell
+cd backend
+python -c "import app.main; print('backend import ok')"
+```
+
+手动壳内 smoke test：
+
+- 打开项目列表。
+- 打开一个项目。
+- 打开搜索、检查、统计、导出备份、导入、版本、知识库页面。
+- 测试文件上传、文件夹上传、zip 上传。
+- 测试 TXT / MD / DOCX / 项目备份 zip 下载。
+- 测试更多菜单点击外部关闭和 Esc 关闭。
+- 测试默认、护眼、黑夜主题。
+- 测试最小窗口和 125% 缩放。
 
 # Acceptance Criteria
 
-- 时间轴左侧栏标题区和轨道列表之间不再出现明显不合理空白。
-- “主轴”等轨道列表项信息仍然清晰，主要操作仍可访问。
-- 写作工作区“新建章节”“新建分卷”按钮明显变窄，视觉层级更轻，但点击和拖拽相关交互不受影响。
-- 新建大纲条目表单宽度和左右内边距更合理，字段不贴边，小屏不横向溢出。
-- 检查页面中“当前章节 / 当前分卷 / 全书”三个选项在桌面端横向排列。
-- 检查面板和词库面板宽度均衡，检查结果面板与上方区域保持中心对齐。
-- 可选的二级菜单优化若执行，必须保留常用操作的可见性。
-- `npm run type-check` 和 `npm run build` 通过。
-- 未修改任何后端、数据库、依赖或无关文件。
+- `npm run type-check` 通过。
+- `npm run build` 通过。
+- `npm run tauri:dev` 能启动桌面窗口和 sidecar。
+- `npm run tauri:build` 能完成，或执行报告明确说明环境阻塞且不是项目配置问题。
+- 打包后的应用能启动并加载首屏。
+- 打包后的应用能访问 sidecar API，没有 CORS 或 API base 错误。
+- 搜索、检查、统计、导入、导出备份、版本、知识库页面在 Tauri 壳内能打开。
+- 文件上传、文件夹导入或 zip fallback 在 Tauri 壳内可用。
+- TXT / MD / DOCX / 项目备份 zip 下载在 Tauri 壳内可用，或报告明确记录当前 Tauri 下载限制和最小修复建议。
+- 更多菜单支持点击外部关闭、Esc 关闭、菜单项点击后关闭。
+- 关键选中态不依赖有兼容风险的 CSS `:has()`。
+- 最小窗口下无全局横向滚动，弹窗按钮不被裁切。
+- 默认、护眼、黑夜主题在壳内可读。
+- 中文应用名、窗口标题和错误日志不出现乱码。
+- 未进行大重构，未修改无关业务代码。
 
 # Risks and Watchpoints
 
-- 缩窄章节树新建按钮可能减少拖拽放置命中区域。若按钮当前承担放置功能，应保留外层可拖放区域。
-- 修改全局 dialog 样式可能影响大量弹窗。应使用局部 class 控制新建大纲弹窗。
-- 检查页面两列 grid 在窄屏可能溢出。必须添加或保留移动端断点。
-- 将低频操作放入二级菜单可能降低可发现性。仅在操作区明显拥挤时执行，并保留核心操作直达入口。
-- 时间轴页面样式较复杂，压缩间距时不要让左侧栏标题、统计数和轨道卡片互相贴得过近。
-- 本次是视觉优化，不应顺手修改业务逻辑、接口字段或数据保存逻辑。
+- Tauri production 的 origin 可能不同于 Web dev，CORS 需要实际验证后再修。
+- Tauri 静态资源协议可能暴露 API base 配置问题，不能只跑 Web `npm run build`。
+- 文件下载在 WebView2 中可能和浏览器下载行为不同，需要实际壳内验证。
+- `webkitdirectory` 在桌面 WebView 中应实测，不要假设完全等同浏览器。
+- 打包失败可能来自本机缺少构建工具，不一定是代码问题。
+- sidecar 端口 `8765` 可能被占用，需要确认错误提示清楚，但不要本任务扩展为动态端口架构。
+- 修改 CORS 时不要放开过宽 origin。
+- 修复菜单关闭逻辑时注意清理 document listener，避免内存泄漏或多次触发。
+- 不要为了兼容性检查顺手做工具页 UI 统一。
+- 不要提交 PyInstaller 输出、Tauri target、日志、数据库或本地配置。
 
 # Review Checklist
 
-- [ ] Claude Code 是否只修改了计划允许的前端 UI 文件？
-- [ ] 是否没有修改 `backend/`、数据库、依赖、启动脚本或无关文件？
-- [ ] 时间轴左侧栏空白问题是否被实际修正？
-- [ ] 写作工作区新建按钮是否收窄且不影响章节树交互？
-- [ ] 新建大纲条目弹窗是否更宽、更有内边距，并保持移动端可用？
-- [ ] 检查范围三个选项是否横向排列且文本不拆行？
-- [ ] 检查、词库、检查结果三个核心容器是否在页面中心轴上更一致？
-- [ ] 如执行二级菜单优化，是否没有隐藏高频操作？
-- [ ] 是否通过 `npm run type-check`？
-- [ ] 是否通过 `npm run build`？
-- [ ] 是否没有引入密钥、本地配置、日志、数据库或临时文件？
-- [ ] `CLAUDE_EXECUTION_REPORT.md` 是否说明实际改动、验证结果和未采纳建议？
+- [ ] Claude Code 是否遵守“不做大重构，只做 Tauri 兼容性小修”？
+- [ ] 是否没有修改无关业务代码？
+- [ ] 是否没有修改数据库、Repository、Service、业务 Schema？
+- [ ] 是否执行并记录 `npm run type-check`？
+- [ ] 是否执行并记录 `npm run build`？
+- [ ] 是否执行并记录 `npm run tauri:dev`？
+- [ ] 是否执行并记录 `npm run tauri:build`，或说明环境阻塞？
+- [ ] 打包应用是否实际启动验证？
+- [ ] Tauri production 下 API base 是否正确？
+- [ ] 是否没有 CORS 错误？
+- [ ] 文件上传、文件夹导入或 zip fallback 是否可用？
+- [ ] TXT / MD / DOCX / 项目备份 zip 下载是否可用？
+- [ ] 更多菜单是否支持点击外部和 Esc 关闭？
+- [ ] 是否规避了关键 `:has()` 兼容风险？
+- [ ] 最小窗口和 125% 缩放下是否无全局横向滚动？
+- [ ] 弹窗底部按钮是否始终可见？
+- [ ] 默认、护眼、黑夜主题是否在壳内可读？
+- [ ] 中文窗口标题、应用名、日志是否正常？
+- [ ] 是否没有提交 `data/`、`logs/`、`release/`、`frontend/src-tauri/target/` 或本地打包产物？
