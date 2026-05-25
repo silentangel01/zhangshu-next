@@ -14,6 +14,7 @@ import ProjectSettingsPage from '@/pages/settings/ProjectSettingsPage.vue'
 import ProjectWritingStatsPage from '@/pages/stats/ProjectWritingStatsPage.vue'
 import ReviewCheckPage from '@/pages/review/ReviewCheckPage.vue'
 import SearchPage from '@/pages/search/SearchPage.vue'
+import ProjectVersionsPage from '@/pages/versions/ProjectVersionsPage.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -71,6 +72,11 @@ const router = createRouter({
       path: '/projects/:projectId/search',
       name: 'project-search',
       component: SearchPage,
+    },
+    {
+      path: '/projects/:projectId/versions',
+      name: 'project-versions',
+      component: ProjectVersionsPage,
     },
     {
       path: '/projects/:projectId/review',

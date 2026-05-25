@@ -2,8 +2,12 @@
 import { computed, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
-import { searchProjectChapters } from '@/entities/search/api'
-import type { ChapterSearchResult } from '@/entities/search/types'
+import { rebuildProjectSearchIndex, searchProject } from '@/entities/search/api'
+import type { ProjectSearchResult, SearchEntityType } from '@/entities/search/types'
+import {
+  SEARCH_ENTITY_TYPE_LABELS,
+  SEARCH_FILTER_OPTIONS,
+} from '@/entities/search/types'
 import { safeReadJson, safeWriteJson } from '@/shared/storage/localWorkspaceState'
 
 const route = useRoute()
@@ -11,10 +15,14 @@ const router = useRouter()
 
 const keyword = ref('')
 const searchedKeyword = ref('')
-const results = ref<ChapterSearchResult[]>([])
+const results = ref<ProjectSearchResult[]>([])
+const totalCount = ref(0)
 const isSearching = ref(false)
 const hasSearched = ref(false)
 const errorMessage = ref('')
+const activeFilter = ref<SearchEntityType | 'all'>('all')
+const isRefreshing = ref(false)
+const refreshMessage = ref('')
 
 const projectId = computed<string>(() => {
   const value = route.params.projectId
@@ -23,12 +31,18 @@ const projectId = computed<string>(() => {
 
 const workspaceStorageKey = computed(() => `zhangshu:workspace:${projectId.value}`)
 
+const filteredResults = computed(() => {
+  if (activeFilter.value === 'all') return results.value
+  return results.value.filter((r) => r.entity_type === activeFilter.value)
+})
+
 async function handleSearch() {
   const query = keyword.value.trim()
   if (!query) {
     results.value = []
     searchedKeyword.value = ''
     hasSearched.value = false
+    totalCount.value = 0
     errorMessage.value = ''
     return
   }
@@ -37,10 +51,12 @@ async function handleSearch() {
   errorMessage.value = ''
 
   try {
-    const response = await searchProjectChapters(projectId.value, query)
+    const types = activeFilter.value === 'all' ? undefined : [activeFilter.value]
+    const response = await searchProject(projectId.value, query, { types, limit: 50 })
     results.value = response.results
     searchedKeyword.value = response.query
     hasSearched.value = true
+    totalCount.value = response.total
   } catch (error) {
     errorMessage.value = getErrorMessage(error, '搜索失败，请稍后重试')
   } finally {
@@ -48,24 +64,88 @@ async function handleSearch() {
   }
 }
 
-async function openChapter(result: ChapterSearchResult) {
-  const currentState = safeReadJson<Record<string, unknown> | null>(workspaceStorageKey.value, null)
-  safeWriteJson(workspaceStorageKey.value, {
-    ...(currentState ?? {}),
-    selectedChapterId: result.chapter_id,
-  })
-  await router.push(`/projects/${projectId.value}`)
+function handleFilterChange(filter: SearchEntityType | 'all') {
+  activeFilter.value = filter
+  if (hasSearched.value) {
+    void handleSearch()
+  }
 }
 
-function formatUpdatedAt(value: string): string {
+async function openResult(result: ProjectSearchResult) {
+  const pid = projectId.value
+  switch (result.entity_type) {
+    case 'chapter': {
+      const currentState = safeReadJson<Record<string, unknown> | null>(
+        workspaceStorageKey.value,
+        null,
+      )
+      safeWriteJson(workspaceStorageKey.value, {
+        ...(currentState ?? {}),
+        selectedChapterId: result.entity_id,
+      })
+      await router.push(`/projects/${pid}`)
+      break
+    }
+    case 'setting':
+      await router.push(`/projects/${pid}/settings?settingId=${result.entity_id}`)
+      break
+    case 'character':
+      await router.push(`/projects/${pid}/characters?characterId=${result.entity_id}`)
+      break
+    case 'clue':
+      await router.push(`/projects/${pid}/clues?clueId=${result.entity_id}`)
+      break
+    case 'outline':
+      await router.push(`/projects/${pid}/outlines?outlineId=${result.entity_id}`)
+      break
+    case 'knowledge': {
+      const sourceId =
+        result.metadata && typeof result.metadata.source_id === 'string'
+          ? result.metadata.source_id
+          : null
+      const queryParam = sourceId ? `sourceId=${sourceId}` : `chunkId=${result.entity_id}`
+      await router.push(`/projects/${pid}/knowledge?${queryParam}`)
+      break
+    }
+    case 'timeline':
+      await router.push(`/projects/${pid}/timeline`)
+      break
+    case 'graph':
+      await router.push(`/projects/${pid}/graph`)
+      break
+  }
+}
+
+async function handleRefreshIndex() {
+  isRefreshing.value = true
+  refreshMessage.value = ''
+  try {
+    const resp = await rebuildProjectSearchIndex(projectId.value)
+    refreshMessage.value = resp.message
+  } catch {
+    refreshMessage.value = '刷新搜索索引失败'
+  } finally {
+    isRefreshing.value = false
+    setTimeout(() => {
+      refreshMessage.value = ''
+    }, 3000)
+  }
+}
+
+function cleanSnippet(snippet: string): string {
+  return snippet.replace(/>>>/g, '<mark>').replace(/<<</g, '</mark>')
+}
+
+function formatUpdatedAt(value: string | null): string {
+  if (!value) return ''
   return new Intl.DateTimeFormat(undefined, {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(new Date(value))
 }
 
-function getMatchedFieldLabel(value: ChapterSearchResult['matched_field']): string {
-  return value === 'title' ? '标题' : '正文'
+function getTypeLabel(type: SearchEntityType): string {
+  return SEARCH_ENTITY_TYPE_LABELS[type] ?? type
 }
 
 function getErrorMessage(error: unknown, fallback: string): string {
@@ -81,11 +161,23 @@ function getErrorMessage(error: unknown, fallback: string): string {
     <header class="page-header">
       <div>
         <RouterLink class="back-link" :to="`/projects/${projectId}`">返回写作页</RouterLink>
-        <p class="eyebrow">搜索</p>
+        <p class="eyebrow">全文搜索</p>
         <h1>搜索</h1>
       </div>
-      <RouterLink class="secondary-link" to="/projects">项目列表</RouterLink>
+      <div class="header-actions">
+        <button
+          class="ghost-button"
+          type="button"
+          :disabled="isRefreshing"
+          @click="handleRefreshIndex"
+        >
+          {{ isRefreshing ? '正在刷新…' : '刷新搜索索引' }}
+        </button>
+        <RouterLink class="secondary-link" to="/projects">项目列表</RouterLink>
+      </div>
     </header>
+
+    <p v-if="refreshMessage" class="info-banner" role="status">{{ refreshMessage }}</p>
 
     <section class="search-panel">
       <form class="search-form" @submit.prevent="handleSearch">
@@ -94,7 +186,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
           <input
             v-model="keyword"
             type="search"
-            placeholder="搜索章节标题和正文"
+            placeholder="搜索正文、设定、人物、伏笔、大纲、知识库…"
             autocomplete="off"
           />
         </label>
@@ -102,6 +194,19 @@ function getErrorMessage(error: unknown, fallback: string): string {
           {{ isSearching ? '正在搜索…' : '搜索' }}
         </button>
       </form>
+
+      <div class="filter-bar" role="group" aria-label="搜索范围">
+        <button
+          v-for="opt in SEARCH_FILTER_OPTIONS"
+          :key="opt.value"
+          class="filter-chip"
+          :class="{ active: activeFilter === opt.value }"
+          type="button"
+          @click="handleFilterChange(opt.value)"
+        >
+          {{ opt.label }}
+        </button>
+      </div>
     </section>
 
     <section v-if="errorMessage" class="error-banner" role="alert">
@@ -109,26 +214,42 @@ function getErrorMessage(error: unknown, fallback: string): string {
     </section>
 
     <section class="result-panel" aria-live="polite">
-      <p v-if="hasSearched && results.length === 0" class="empty-state">未找到结果</p>
+      <p v-if="hasSearched && filteredResults.length === 0" class="empty-state">
+        未找到匹配「{{ searchedKeyword }}」的结果
+      </p>
 
-      <article v-for="result in results" :key="result.chapter_id" class="result-card">
+      <p v-if="hasSearched && totalCount > 0" class="result-count">
+        共 {{ totalCount }} 条结果
+      </p>
+
+      <article
+        v-for="result in filteredResults"
+        :key="`${result.entity_type}:${result.entity_id}`"
+        class="result-card"
+      >
         <header class="result-header">
-          <div>
-            <p class="volume-title">{{ result.volume_title || '未分卷章节' }}</p>
-            <h2>{{ result.chapter_title }}</h2>
+          <div class="result-title-group">
+            <span class="type-pill">{{ getTypeLabel(result.entity_type) }}</span>
+            <h2>{{ result.title || '(无标题)' }}</h2>
           </div>
-          <span class="match-pill">{{ getMatchedFieldLabel(result.matched_field) }}</span>
+          <span v-if="result.subtitle" class="subtitle">{{ result.subtitle }}</span>
         </header>
 
-        <p class="snippet">{{ result.snippet }}</p>
+        <p v-if="result.snippet" class="snippet" v-html="cleanSnippet(result.snippet)"></p>
 
         <footer class="result-footer">
-          <span>更新于 {{ formatUpdatedAt(result.updated_at) }}</span>
-          <button class="secondary-button" type="button" @click="openChapter(result)">打开章节</button>
+          <span v-if="result.updated_at" class="updated-at">
+            更新于 {{ formatUpdatedAt(result.updated_at) }}
+          </span>
+          <button class="secondary-button" type="button" @click="openResult(result)">
+            打开
+          </button>
         </footer>
       </article>
 
-      <p v-if="!hasSearched" class="empty-state">输入关键词后搜索章节标题和正文</p>
+      <p v-if="!hasSearched" class="empty-state">
+        输入关键词搜索正文、设定、人物、伏笔、大纲、知识库等内容
+      </p>
     </section>
   </main>
 </template>
@@ -146,6 +267,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
 .page-header,
 .search-panel,
 .error-banner,
+.info-banner,
 .result-panel {
   max-width: 980px;
   margin-right: auto;
@@ -166,6 +288,12 @@ function getErrorMessage(error: unknown, fallback: string): string {
   margin-bottom: var(--zs-space-6);
 }
 
+.header-actions {
+  display: flex;
+  gap: var(--zs-space-3);
+  align-items: center;
+}
+
 .eyebrow {
   margin: 0 0 6px;
   color: var(--zs-color-text-muted);
@@ -176,9 +304,9 @@ function getErrorMessage(error: unknown, fallback: string): string {
 
 h1,
 h2,
-.volume-title,
 .snippet,
-.empty-state {
+.empty-state,
+.result-count {
   margin: 0;
 }
 
@@ -189,8 +317,7 @@ h1 {
 }
 
 h2 {
-  margin-top: 4px;
-  font-size: 1.18rem;
+  font-size: 1.1rem;
   line-height: 1.25;
 }
 
@@ -217,6 +344,23 @@ h2 {
   text-decoration: none;
 }
 
+.ghost-button {
+  min-height: 38px;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-sm);
+  padding: 0 14px;
+  background: transparent;
+  color: var(--zs-color-text-muted);
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.ghost-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .search-panel,
 .result-card {
   box-sizing: border-box;
@@ -227,6 +371,8 @@ h2 {
 }
 
 .search-panel {
+  display: grid;
+  gap: var(--zs-space-4);
   margin-bottom: var(--zs-space-5);
   padding: var(--zs-space-5);
 }
@@ -254,6 +400,32 @@ input {
   font: inherit;
 }
 
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--zs-space-2);
+}
+
+.filter-chip {
+  min-height: 32px;
+  border: 1px solid var(--zs-color-border);
+  border-radius: 999px;
+  padding: 0 14px;
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text-muted);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.filter-chip.active {
+  border-color: var(--zs-color-primary);
+  background: var(--zs-color-primary-soft);
+  color: var(--zs-color-primary);
+}
+
 .error-banner {
   box-sizing: border-box;
   margin-bottom: var(--zs-space-4);
@@ -265,9 +437,29 @@ input {
   font-weight: 800;
 }
 
+.info-banner {
+  box-sizing: border-box;
+  margin-bottom: var(--zs-space-4);
+  border: 1px solid var(--zs-color-success);
+  border-radius: var(--zs-radius-md);
+  padding: 10px 14px;
+  background: var(--zs-color-success-soft, rgba(34, 197, 94, 0.08));
+  color: var(--zs-color-success);
+  font-weight: 800;
+  max-width: 980px;
+  margin-right: auto;
+  margin-left: auto;
+}
+
 .result-panel {
   display: grid;
   gap: var(--zs-space-3);
+}
+
+.result-count {
+  color: var(--zs-color-text-muted);
+  font-size: 0.88rem;
+  font-weight: 800;
 }
 
 .result-card {
@@ -282,25 +474,44 @@ input {
   justify-content: space-between;
 }
 
-.volume-title,
-.result-footer,
-.snippet {
+.result-title-group {
+  display: flex;
+  gap: var(--zs-space-2);
+  align-items: center;
+}
+
+.type-pill {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 3px 10px;
+  background: var(--zs-color-primary-soft);
+  color: var(--zs-color-primary);
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.subtitle {
   color: var(--zs-color-text-muted);
+  font-size: 0.82rem;
 }
 
 .snippet {
+  color: var(--zs-color-text-muted);
   line-height: 1.7;
   overflow-wrap: anywhere;
 }
 
-.match-pill {
-  flex: 0 0 auto;
-  border-radius: 999px;
-  padding: 4px 9px;
-  background: var(--zs-color-info-soft);
-  color: var(--zs-color-info);
-  font-size: 0.78rem;
+.snippet :deep(mark) {
+  border-radius: 2px;
+  background: var(--zs-color-warning-soft, rgba(245, 158, 11, 0.15));
+  color: var(--zs-color-text);
+  padding: 0 2px;
   font-weight: 800;
+}
+
+.updated-at {
+  color: var(--zs-color-text-muted);
+  font-size: 0.82rem;
 }
 
 .empty-state {
@@ -353,9 +564,15 @@ button:disabled {
     flex-direction: column;
   }
 
+  .header-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   .primary-button,
   .secondary-button,
-  .secondary-link {
+  .secondary-link,
+  .ghost-button {
     width: 100%;
   }
 }

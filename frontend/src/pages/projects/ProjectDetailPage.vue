@@ -563,6 +563,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
             <RouterLink :to="`/projects/${projectId}/graph`">关系图</RouterLink>
             <RouterLink :to="`/projects/${projectId}/timeline`">时间轴</RouterLink>
             <RouterLink :to="`/projects/${projectId}/knowledge`">知识库</RouterLink>
+            <RouterLink :to="`/projects/${projectId}/versions`">版本中心</RouterLink>
             <RouterLink to="/imports">导入导出</RouterLink>
             <RouterLink :to="`/projects/${projectId}/backup`">备份恢复</RouterLink>
             <button type="button" @click="showAppSettings = true">应用设置</button>

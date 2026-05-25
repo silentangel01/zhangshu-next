@@ -409,6 +409,41 @@ def _ensure_writing_stat_event_columns() -> None:
         connection.execute(text("DROP TABLE writing_stat_events"))
 
 
+def _ensure_chapter_version_management_columns() -> None:
+    inspector = inspect(engine)
+    if "chapter_versions" not in inspector.get_table_names():
+        return
+
+    existing_columns = {
+        column["name"] for column in inspector.get_columns("chapter_versions")
+    }
+    with engine.begin() as connection:
+        if "label" not in existing_columns:
+            connection.execute(
+                text("ALTER TABLE chapter_versions ADD COLUMN label VARCHAR(255)")
+            )
+        if "is_pinned" not in existing_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE chapter_versions "
+                    "ADD COLUMN is_pinned BOOLEAN NOT NULL DEFAULT 0"
+                )
+            )
+        if "metadata_json" not in existing_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE chapter_versions "
+                    "ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'"
+                )
+            )
+        if "deleted_at" not in existing_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE chapter_versions ADD COLUMN deleted_at DATETIME"
+                )
+            )
+
+
 def init_database() -> None:
     from app.models import project  # noqa: F401
     from app.models import volume  # noqa: F401
@@ -445,6 +480,7 @@ def init_database() -> None:
     from app.models import knowledge_index_profile  # noqa: F401
     from app.models import app_config  # noqa: F401
     from app.models import writing_stat_event  # noqa: F401
+    from app.models import entity_version  # noqa: F401
 
     ensure_database_directory()
     _ensure_writing_stat_event_columns()
@@ -455,9 +491,14 @@ def init_database() -> None:
     added_position_ratio = _ensure_timeline_event_columns()
     _ensure_timeline_edge_columns()
     _ensure_knowledge_index_profile_columns()
+    _ensure_chapter_version_management_columns()
     _backfill_timeline_tracks()
     if added_position_ratio:
         _backfill_timeline_event_position_ratios()
+
+    from app.infrastructure.search_fts import ensure_search_fts_schema
+
+    ensure_search_fts_schema(engine)
 
 
 def get_db() -> Generator[Session, None, None]:

@@ -36,6 +36,7 @@ from app.api.timeline import router as timeline_router
 from app.api.settings import router as settings_router
 from app.api.volumes import router as volumes_router
 from app.api.writing_stats import router as writing_stats_router
+from app.api.versions import router as versions_router
 from app.infrastructure.database import init_database
 
 app = FastAPI(title="Zhangshu Local API", version="0.1.0")
@@ -90,6 +91,7 @@ app.include_router(graphs_router)
 app.include_router(timeline_router)
 app.include_router(app_config_router)
 app.include_router(writing_stats_router)
+app.include_router(versions_router)
 
 
 def _mount_frontend_static() -> None:
