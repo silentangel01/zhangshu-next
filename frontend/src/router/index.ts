@@ -5,13 +5,16 @@ import ProjectCluesPage from '@/pages/clues/ProjectCluesPage.vue'
 import ImportPage from '@/pages/imports/ImportPage.vue'
 import ProjectBackupPage from '@/pages/imports/ProjectBackupPage.vue'
 import ProjectGraphPage from '@/pages/graph/ProjectGraphPage.vue'
+import ProjectKnowledgePage from '@/pages/knowledge/ProjectKnowledgePage.vue'
 import ProjectOutlinePage from '@/pages/outlines/ProjectOutlinePage.vue'
 import ProjectDetailPage from '@/pages/projects/ProjectDetailPage.vue'
 import ProjectsPage from '@/pages/projects/ProjectsPage.vue'
 import ProjectTimelinePage from '@/pages/timeline/ProjectTimelinePage.vue'
 import ProjectSettingsPage from '@/pages/settings/ProjectSettingsPage.vue'
+import ProjectWritingStatsPage from '@/pages/stats/ProjectWritingStatsPage.vue'
 import ReviewCheckPage from '@/pages/review/ReviewCheckPage.vue'
 import SearchPage from '@/pages/search/SearchPage.vue'
+import ProjectVersionsPage from '@/pages/versions/ProjectVersionsPage.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -71,9 +74,24 @@ const router = createRouter({
       component: SearchPage,
     },
     {
+      path: '/projects/:projectId/versions',
+      name: 'project-versions',
+      component: ProjectVersionsPage,
+    },
+    {
       path: '/projects/:projectId/review',
       name: 'project-review',
       component: ReviewCheckPage,
+    },
+    {
+      path: '/projects/:projectId/knowledge',
+      name: 'project-knowledge',
+      component: ProjectKnowledgePage,
+    },
+    {
+      path: '/projects/:projectId/stats',
+      name: 'project-stats',
+      component: ProjectWritingStatsPage,
     },
     {
       path: '/backup',

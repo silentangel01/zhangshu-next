@@ -22,6 +22,8 @@ class ChapterVersionListItem(BaseModel):
     word_count: int
     source: str
     note: str | None
+    label: str | None = None
+    is_pinned: bool = False
     created_at: datetime
 
 

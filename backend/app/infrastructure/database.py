@@ -328,6 +328,201 @@ def _ensure_project_book_columns() -> None:
             )
 
 
+def _ensure_knowledge_index_profile_columns() -> None:
+    inspector = inspect(engine)
+    if "knowledge_index_profiles" not in inspector.get_table_names():
+        return
+
+    existing_columns = {
+        column["name"] for column in inspector.get_columns("knowledge_index_profiles")
+    }
+    with engine.begin() as connection:
+        if "provider_type" not in existing_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE knowledge_index_profiles "
+                    "ADD COLUMN provider_type VARCHAR(32) NOT NULL DEFAULT 'compat'"
+                )
+            )
+        if "display_name" not in existing_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE knowledge_index_profiles "
+                    "ADD COLUMN display_name VARCHAR(128) NOT NULL DEFAULT ''"
+                )
+            )
+        if "chunk_size" not in existing_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE knowledge_index_profiles "
+                    "ADD COLUMN chunk_size VARCHAR(16) NOT NULL DEFAULT 'medium'"
+                )
+            )
+        if "status" not in existing_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE knowledge_index_profiles "
+                    "ADD COLUMN status VARCHAR(32) NOT NULL DEFAULT 'ready'"
+                )
+            )
+        if "last_refreshed_at" not in existing_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE knowledge_index_profiles "
+                    "ADD COLUMN last_refreshed_at DATETIME"
+                )
+            )
+        if "last_error" not in existing_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE knowledge_index_profiles ADD COLUMN last_error TEXT"
+                )
+            )
+
+
+def _ensure_writing_stat_event_columns() -> None:
+    """Ensure the writing_stat_events table matches the current model schema.
+
+    If the table exists with an incompatible schema (legacy columns from an
+    earlier version), drop it and let create_all() rebuild it. The old table
+    contains no useful historical data since writing stats events are only
+    meaningful from the point the feature was enabled.
+    """
+    inspector = inspect(engine)
+    if "writing_stat_events" not in inspector.get_table_names():
+        return
+
+    existing_columns = {
+        column["name"] for column in inspector.get_columns("writing_stat_events")
+    }
+    required_columns = {
+        "id", "project_id", "chapter_id", "volume_id", "source",
+        "old_word_count", "new_word_count", "delta_words",
+        "added_words", "deleted_words", "occurred_at",
+        "local_date", "local_hour",
+    }
+
+    if required_columns.issubset(existing_columns):
+        return
+
+    with engine.begin() as connection:
+        connection.execute(text("DROP TABLE writing_stat_events"))
+
+
+def _ensure_cloud_user_id_columns() -> None:
+    """Add cloud_user_id to cloud tables and backfill from stored auth config."""
+    inspector = inspect(engine)
+    table_names = inspector.get_table_names()
+
+    added_link_col = False
+    if "cloud_project_links" in table_names:
+        existing = {c["name"] for c in inspector.get_columns("cloud_project_links")}
+        with engine.begin() as conn:
+            if "cloud_user_id" not in existing:
+                conn.execute(
+                    text(
+                        "ALTER TABLE cloud_project_links "
+                        "ADD COLUMN cloud_user_id VARCHAR(255) NOT NULL DEFAULT ''"
+                    )
+                )
+                added_link_col = True
+
+    added_record_col = False
+    if "cloud_backup_records" in table_names:
+        existing = {c["name"] for c in inspector.get_columns("cloud_backup_records")}
+        with engine.begin() as conn:
+            if "cloud_user_id" not in existing:
+                conn.execute(
+                    text(
+                        "ALTER TABLE cloud_backup_records "
+                        "ADD COLUMN cloud_user_id VARCHAR(255) NOT NULL DEFAULT ''"
+                    )
+                )
+                added_record_col = True
+
+    if not (added_link_col or added_record_col):
+        return
+
+    # Backfill: read cloud_user_id from app_config (encrypted store)
+    stored_user_id = ""
+    if "app_config" in table_names:
+        with engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT config_value, is_encrypted FROM app_config "
+                    "WHERE config_key = 'cloud_user_id'"
+                )
+            ).first()
+            if row:
+                raw_value = row[0]
+                is_encrypted = bool(row[1])
+                if is_encrypted and raw_value:
+                    try:
+                        from app.infrastructure.config_crypto import decrypt_value
+
+                        stored_user_id = decrypt_value(raw_value)
+                    except Exception:
+                        stored_user_id = ""
+                else:
+                    stored_user_id = raw_value or ""
+
+    if not stored_user_id:
+        return
+
+    with engine.begin() as conn:
+        if added_link_col:
+            conn.execute(
+                text(
+                    "UPDATE cloud_project_links "
+                    "SET cloud_user_id = :uid WHERE cloud_user_id = ''"
+                ),
+                {"uid": stored_user_id},
+            )
+        if added_record_col:
+            conn.execute(
+                text(
+                    "UPDATE cloud_backup_records "
+                    "SET cloud_user_id = :uid WHERE cloud_user_id = ''"
+                ),
+                {"uid": stored_user_id},
+            )
+
+
+def _ensure_chapter_version_management_columns() -> None:
+    inspector = inspect(engine)
+    if "chapter_versions" not in inspector.get_table_names():
+        return
+
+    existing_columns = {
+        column["name"] for column in inspector.get_columns("chapter_versions")
+    }
+    with engine.begin() as connection:
+        if "label" not in existing_columns:
+            connection.execute(
+                text("ALTER TABLE chapter_versions ADD COLUMN label VARCHAR(255)")
+            )
+        if "is_pinned" not in existing_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE chapter_versions "
+                    "ADD COLUMN is_pinned BOOLEAN NOT NULL DEFAULT 0"
+                )
+            )
+        if "metadata_json" not in existing_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE chapter_versions "
+                    "ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'"
+                )
+            )
+        if "deleted_at" not in existing_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE chapter_versions ADD COLUMN deleted_at DATETIME"
+                )
+            )
+
+
 def init_database() -> None:
     from app.models import project  # noqa: F401
     from app.models import volume  # noqa: F401
@@ -357,17 +552,35 @@ def init_database() -> None:
     from app.models import timeline_edge  # noqa: F401
     from app.models import timeline_track  # noqa: F401
     from app.models import setting_item  # noqa: F401
+    from app.models import knowledge_source  # noqa: F401
+    from app.models import knowledge_chunk  # noqa: F401
+    from app.models import knowledge_link  # noqa: F401
+    from app.models import knowledge_embedding  # noqa: F401
+    from app.models import knowledge_index_profile  # noqa: F401
+    from app.models import app_config  # noqa: F401
+    from app.models import writing_stat_event  # noqa: F401
+    from app.models import entity_version  # noqa: F401
+    from app.models import cloud_project_link  # noqa: F401
+    from app.models import cloud_backup_record  # noqa: F401
 
     ensure_database_directory()
+    _ensure_writing_stat_event_columns()
     Base.metadata.create_all(bind=engine)
     _ensure_project_book_columns()
     _ensure_setting_tree_columns()
     _ensure_graph_node_size_columns()
     added_position_ratio = _ensure_timeline_event_columns()
     _ensure_timeline_edge_columns()
+    _ensure_knowledge_index_profile_columns()
+    _ensure_chapter_version_management_columns()
+    _ensure_cloud_user_id_columns()
     _backfill_timeline_tracks()
     if added_position_ratio:
         _backfill_timeline_event_position_ratios()
+
+    from app.infrastructure.search_fts import ensure_search_fts_schema
+
+    ensure_search_fts_schema(engine)
 
 
 def get_db() -> Generator[Session, None, None]:

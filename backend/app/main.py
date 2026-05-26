@@ -1,11 +1,17 @@
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+# Load .env from backend/ directory (development) or exe directory (packaged)
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+load_dotenv()  # also try CWD
+
+from app.api.app_config import router as app_config_router
 from app.api.backups import router as backups_router
 from app.api.chapter_versions import router as chapter_versions_router
 from app.api.chapters import router as chapters_router
@@ -15,6 +21,10 @@ from app.api.creative_reminders import router as creative_reminders_router
 from app.api.exports import router as exports_router
 from app.api.graphs import router as graphs_router
 from app.api.imports import projects_import_router, router as imports_router
+from app.api.knowledge import router as knowledge_router
+from app.api.knowledge_embedding import router as knowledge_embedding_router
+from app.api.knowledge_retrieval import router as knowledge_retrieval_router
+from app.api.rag import router as rag_router
 from app.api.material_links import router as material_links_router
 from app.api.outlines import router as outlines_router
 from app.api.projects import router as projects_router
@@ -25,6 +35,10 @@ from app.api.search import router as search_router
 from app.api.timeline import router as timeline_router
 from app.api.settings import router as settings_router
 from app.api.volumes import router as volumes_router
+from app.api.writing_stats import router as writing_stats_router
+from app.api.versions import router as versions_router
+from app.api.cloud import router as cloud_router
+from app.api.cloud import projects_cloud_router
 from app.infrastructure.database import init_database
 
 app = FastAPI(title="Zhangshu Local API", version="0.1.0")
@@ -34,6 +48,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "http://localhost:5180",
+        "http://127.0.0.1:5180",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -68,9 +84,18 @@ app.include_router(characters_router)
 app.include_router(settings_router)
 app.include_router(clues_router)
 app.include_router(creative_reminders_router)
+app.include_router(knowledge_router)
+app.include_router(knowledge_embedding_router)
+app.include_router(knowledge_retrieval_router)
+app.include_router(rag_router)
 app.include_router(material_links_router)
 app.include_router(graphs_router)
 app.include_router(timeline_router)
+app.include_router(app_config_router)
+app.include_router(writing_stats_router)
+app.include_router(versions_router)
+app.include_router(cloud_router)
+app.include_router(projects_cloud_router)
 
 
 def _mount_frontend_static() -> None:

@@ -2115,6 +2115,11 @@ function clearDragState() {
   letter-spacing: 0;
 }
 
+.left-panel .panel-eyebrow {
+  margin: 0 0 2px;
+  line-height: 1.2;
+}
+
 h1 {
   margin: 0;
   color: var(--zs-color-text);
@@ -2296,11 +2301,19 @@ button:disabled {
   padding: var(--zs-space-3);
 }
 
+.left-panel {
+  gap: var(--zs-space-1);
+}
+
 .panel-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: var(--zs-space-3);
+  gap: var(--zs-space-2);
+}
+
+.left-panel .panel-head {
+  margin-bottom: var(--zs-space-1);
 }
 
 .panel-head.compact {
@@ -2334,7 +2347,7 @@ h2 {
 
 .track-list {
   display: grid;
-  gap: var(--zs-space-2);
+  gap: var(--zs-space-1);
 }
 
 .track-list-item {

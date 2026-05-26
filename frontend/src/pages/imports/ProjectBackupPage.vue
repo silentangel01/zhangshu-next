@@ -10,6 +10,7 @@ import { downloadManuscriptExport } from '@/entities/project/exportApi'
 import type { ManuscriptExportFormat, ManuscriptExportScope } from '@/entities/project/exportTypes'
 import { listVolumes } from '@/entities/volume/api'
 import type { Volume } from '@/entities/volume/types'
+import CloudBackupPanel from '@/features/cloud/CloudBackupPanel.vue'
 
 const route = useRoute()
 
@@ -101,11 +102,6 @@ function handleBackupFileChange(event: Event) {
 async function handleManuscriptExport() {
   if (!projectId.value) {
     errorMessage.value = '项目 ID 缺失。'
-    return
-  }
-
-  if (exportFormat.value === 'docx') {
-    errorMessage.value = 'DOCX 导出暂未支持，请先选择 TXT 或 Markdown。'
     return
   }
 
@@ -268,10 +264,6 @@ function getErrorMessage(error: unknown, fallback: string): string {
           </div>
         </div>
 
-        <p v-if="exportFormat === 'docx'" class="panel-note">
-          DOCX 导出暂未支持，请先使用 TXT 或 Markdown。
-        </p>
-
         <button
           class="primary-button"
           type="button"
@@ -321,6 +313,10 @@ function getErrorMessage(error: unknown, fallback: string): string {
           <p v-if="backupFile" class="file-note">已选择：{{ backupFile.name }}</p>
         </div>
       </article>
+    </section>
+
+    <section v-if="projectId" class="page-layout">
+      <CloudBackupPanel :project-id="projectId" />
     </section>
 
     <section v-if="restoreReport" class="report-panel">

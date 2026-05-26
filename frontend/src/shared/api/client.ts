@@ -54,3 +54,37 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 export async function getHealth() {
   return apiRequest('/health')
 }
+
+export async function apiUpload<T>(
+  path: string,
+  formData: FormData,
+  options: Omit<RequestInit, 'body'> = {},
+): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    body: formData,
+  })
+
+  if (!response.ok) {
+    let message = `API upload failed: ${response.status}`
+
+    try {
+      const payload = (await response.json()) as { detail?: unknown }
+      if (typeof payload.detail === 'string') {
+        message = payload.detail
+      }
+    } catch {
+      // Keep the status-based message when the API does not return JSON.
+    }
+
+    throw new ApiError(message, response.status)
+  }
+
+  const text = await response.text()
+
+  if (!text) {
+    return undefined as T
+  }
+
+  return JSON.parse(text) as T
+}

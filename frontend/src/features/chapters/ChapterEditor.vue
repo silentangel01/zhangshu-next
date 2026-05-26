@@ -15,7 +15,10 @@ import {
   getRecoveryDraft,
   saveRecoveryDraft,
 } from './recoveryDraft'
+import { formatChapterContent } from './chapterFormatting'
+import type { FirstLineIndentSpaces, ParagraphSpacingLines } from './chapterFormatting'
 import { safeReadJson, safeWriteJson } from '@/shared/storage/localWorkspaceState'
+import { formatDateTimeFull } from '@/shared/utils/formatDateTime'
 
 const props = defineProps<{
   chapter: Chapter
@@ -46,8 +49,6 @@ interface DraftCandidate {
   word_count: number
 }
 
-type FirstLineIndent = 'none' | '2em'
-type EditorLineHeight = '1.4' | '1.6' | '1.8' | '2.0'
 type EditorFontPreset =
   | 'system'
   | 'microsoft-yahei'
@@ -70,18 +71,27 @@ type EditorFontPreset =
   | 'courier-new'
 type EditorFontSize = 14 | 16 | 18 | 20
 type EditorWidth = 'standard' | 'wide' | 'full'
-type ParagraphSpacing = 'normal' | 'comfortable'
+type EditorLineHeight = 1.0 | 1.5 | 2.0 | 2.5 | 3.0
+type EditorTextAlign = 'left' | 'center' | 'right' | 'justify'
 type EditorTheme = 'plain' | 'eye' | 'dark'
 
 interface EditorAppearanceSettings {
-  firstLineIndent: FirstLineIndent
+  firstLineIndentSpaces: FirstLineIndentSpaces
   lineHeight: EditorLineHeight
   selectedFontPreset: EditorFontPreset
   customFontFamily: string
   fontSize: EditorFontSize
   editorWidth: EditorWidth
-  paragraphSpacing: ParagraphSpacing
+  paragraphSpacingLines: ParagraphSpacingLines
+  textAlign: EditorTextAlign
   theme: EditorTheme
+}
+
+interface FormatUndoSnapshot {
+  content: string
+  selectionStart: number
+  selectionEnd: number
+  createdAt: number
 }
 
 // 粗体、下划线、颜色等逐字格式需要先决定富文本存储方案，本轮仅做显示设置。
@@ -89,13 +99,14 @@ const EDITOR_APPEARANCE_STORAGE_KEY = 'zhangshu:editor:appearance'
 const WRITING_IDLE_TIMEOUT_MS = 3 * 60 * 1000
 const SESSION_SPEED_MIN_ACTIVE_MS = 10 * 1000
 const defaultAppearanceSettings: EditorAppearanceSettings = {
-  firstLineIndent: 'none',
-  lineHeight: '1.8',
+  firstLineIndentSpaces: 0,
+  lineHeight: 1.0,
   selectedFontPreset: 'system',
   customFontFamily: '',
   fontSize: 16,
   editorWidth: 'wide',
-  paragraphSpacing: 'normal',
+  paragraphSpacingLines: 0,
+  textAlign: 'left',
   theme: 'plain',
 }
 
@@ -111,6 +122,9 @@ const pendingDraft = ref<DraftCandidate | null>(null)
 const showDraftPreview = ref(false)
 const appearanceSettings = ref<EditorAppearanceSettings>(readEditorAppearanceSettings())
 const moreSettingsRef = ref<HTMLDetailsElement | null>(null)
+const editorTextareaRef = ref<HTMLTextAreaElement | null>(null)
+const formatUndoSnapshot = ref<FormatUndoSnapshot | null>(null)
+const autoFormatMessage = ref('')
 const sessionChapterId = ref(props.chapter.id)
 const initialSessionWordCount = ref(calculateContentWordCount(props.chapter.content))
 const activeWritingMilliseconds = ref(0)
@@ -120,6 +134,7 @@ let autosaveTimer: ReturnType<typeof window.setTimeout> | null = null
 let writingIdleTimer: ReturnType<typeof window.setTimeout> | null = null
 let writingClockTimer: ReturnType<typeof window.setInterval> | null = null
 let isApplyingLoadedContent = false
+let skipNextAutosaveForAutoFormat = false
 
 const localWordCount = computed(() => calculateContentWordCount(localContent.value))
 const sessionActiveMilliseconds = computed(() => {
@@ -139,7 +154,7 @@ const sessionSpeedText = computed(() => {
 })
 const hasUnsavedChanges = computed(() => localContent.value !== originalContent.value)
 const isSaveInProgress = computed(() => isManualSaving.value || isAutosaving.value)
-const formattedLastSavedAt = computed(() => formatDateTime(lastSavedAt.value))
+const formattedLastSavedAt = computed(() => formatDateTimeFull(lastSavedAt.value))
 const saveStatusText = computed(() => {
   if (isManualSaving.value) {
     return '正在保存…'
@@ -167,9 +182,8 @@ const saveStatusText = computed(() => {
 const editorStyle = computed(() => ({
   fontFamily: getEditorFontFamily(appearanceSettings.value),
   fontSize: `${appearanceSettings.value.fontSize}px`,
-  lineHeight: appearanceSettings.value.lineHeight,
-  textIndent: appearanceSettings.value.firstLineIndent === '2em' ? '2em' : '0',
-  paddingBlock: appearanceSettings.value.paragraphSpacing === 'comfortable' ? '22px' : '16px',
+  lineHeight: String(appearanceSettings.value.lineHeight),
+  textAlign: appearanceSettings.value.textAlign,
 }))
 const editorShellStyle = computed(() => ({
   maxWidth: getEditorMaxWidth(appearanceSettings.value.editorWidth),
@@ -196,6 +210,7 @@ watch(
 
     cancelPendingAutosave()
     errorMessage.value = ''
+    autoFormatMessage.value = ''
 
     if (!hasUnsavedChanges.value) {
       clearRecoveryDraft(props.chapter.id)
@@ -299,6 +314,7 @@ async function saveCurrentContent(source: 'manual' | 'autosave') {
     isApplyingLoadedContent = false
     clearRecoveryDraft(props.chapter.id)
     pendingDraft.value = null
+    clearFormattingUndo()
     emit('dirtyChange', false)
     emit('saved', savedChapter)
     saveStatus.value = source === 'autosave' ? 'autosaved' : 'manual-saved'
@@ -312,6 +328,7 @@ async function saveCurrentContent(source: 'manual' | 'autosave') {
 
 async function applyLoadedChapter(chapter: Chapter) {
   cancelPendingAutosave()
+  clearFormattingUndo()
   if (chapter.id !== sessionChapterId.value) {
     sessionChapterId.value = chapter.id
     resetWritingSession(chapter.content)
@@ -319,6 +336,7 @@ async function applyLoadedChapter(chapter: Chapter) {
   isApplyingLoadedContent = true
   errorMessage.value = ''
   recoveryMessage.value = ''
+  autoFormatMessage.value = ''
   pendingDraft.value = null
   showDraftPreview.value = false
   lastSavedAt.value = chapter.updated_at
@@ -395,6 +413,7 @@ function restorePendingDraftToEditor() {
   if (!confirmed) {
     return
   }
+  clearFormattingUndo()
   localContent.value = draft.content
   saveStatus.value = 'dirty'
   recoveryMessage.value = '已恢复草稿，请确认内容后保存。'
@@ -424,6 +443,11 @@ function scheduleAutosave() {
     return
   }
 
+  if (skipNextAutosaveForAutoFormat) {
+    skipNextAutosaveForAutoFormat = false
+    return
+  }
+
   autosaveTimer = window.setTimeout(() => {
     autosaveTimer = null
     void runAutosave()
@@ -438,6 +462,7 @@ function cancelPendingAutosave() {
 }
 
 function handleEditorInput() {
+  clearFormattingUndo()
   recordWritingActivity()
 }
 
@@ -562,35 +587,75 @@ function handleBeforeUnload(event: BeforeUnloadEvent) {
   event.returnValue = ''
 }
 
-function formatDateTime(value: string): string {
-  const date = new Date(value)
-  const pad = (part: number) => String(part).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
-}
-
 function isNetworkLikeError(error: unknown): boolean {
   return error instanceof TypeError || (error instanceof Error && error.message.includes('Failed to fetch'))
 }
 
 function readEditorAppearanceSettings(): EditorAppearanceSettings {
-  const settings = safeReadJson<(Partial<EditorAppearanceSettings> & { fontFamily?: unknown }) | null>(EDITOR_APPEARANCE_STORAGE_KEY, null)
+  const settings = safeReadJson<(Partial<EditorAppearanceSettings> & {
+    fontFamily?: unknown
+    firstLineIndent?: unknown
+    lineHeight?: unknown
+    paragraphSpacing?: unknown
+  }) | null>(EDITOR_APPEARANCE_STORAGE_KEY, null)
+
   const legacyFontPreset = normalizeLegacyFontPreset(settings?.fontFamily)
+
+  // Migrate firstLineIndent
+  let firstLineIndentSpaces: FirstLineIndentSpaces = defaultAppearanceSettings.firstLineIndentSpaces
+  if (settings?.firstLineIndent === '2em') {
+    firstLineIndentSpaces = 2
+  } else if (isFirstLineIndentSpaces(settings?.firstLineIndentSpaces)) {
+    firstLineIndentSpaces = settings.firstLineIndentSpaces
+  }
+
+  // Migrate lineHeight
+  let lineHeight: EditorLineHeight = defaultAppearanceSettings.lineHeight
+  if (isEditorLineHeight(settings?.lineHeight)) {
+    lineHeight = settings.lineHeight
+  } else if (settings?.lineHeight === '1.4' || settings?.lineHeight === '1.6') {
+    lineHeight = 1.5
+  } else if (settings?.lineHeight === '1.8' || settings?.lineHeight === '2.0') {
+    lineHeight = 2.0
+  }
+
+  // Migrate paragraphSpacing
+  let paragraphSpacingLines: ParagraphSpacingLines = defaultAppearanceSettings.paragraphSpacingLines
+  if (isParagraphSpacingLines(settings?.paragraphSpacingLines)) {
+    paragraphSpacingLines = settings.paragraphSpacingLines
+  } else if (settings?.paragraphSpacing === 'comfortable') {
+    paragraphSpacingLines = 1
+  }
+
   return {
-    firstLineIndent: settings?.firstLineIndent === '2em' ? '2em' : defaultAppearanceSettings.firstLineIndent,
-    lineHeight: isEditorLineHeight(settings?.lineHeight) ? settings.lineHeight : defaultAppearanceSettings.lineHeight,
+    firstLineIndentSpaces,
+    lineHeight,
     selectedFontPreset: isEditorFontPreset(settings?.selectedFontPreset)
       ? settings.selectedFontPreset
       : legacyFontPreset ?? defaultAppearanceSettings.selectedFontPreset,
     customFontFamily: typeof settings?.customFontFamily === 'string' ? settings.customFontFamily : '',
     fontSize: isEditorFontSize(settings?.fontSize) ? settings.fontSize : defaultAppearanceSettings.fontSize,
     editorWidth: isEditorWidth(settings?.editorWidth) ? settings.editorWidth : defaultAppearanceSettings.editorWidth,
-    paragraphSpacing: settings?.paragraphSpacing === 'comfortable' ? 'comfortable' : defaultAppearanceSettings.paragraphSpacing,
+    paragraphSpacingLines,
+    textAlign: isEditorTextAlign(settings?.textAlign) ? settings.textAlign : defaultAppearanceSettings.textAlign,
     theme: isEditorTheme(settings?.theme) ? settings.theme : defaultAppearanceSettings.theme,
   }
 }
 
+function isFirstLineIndentSpaces(value: unknown): value is FirstLineIndentSpaces {
+  return value === 0 || value === 2 || value === 4
+}
+
 function isEditorLineHeight(value: unknown): value is EditorLineHeight {
-  return value === '1.4' || value === '1.6' || value === '1.8' || value === '2.0'
+  return value === 1.0 || value === 1.5 || value === 2.0 || value === 2.5 || value === 3.0
+}
+
+function isParagraphSpacingLines(value: unknown): value is ParagraphSpacingLines {
+  return value === 0 || value === 1 || value === 2
+}
+
+function isEditorTextAlign(value: unknown): value is EditorTextAlign {
+  return value === 'left' || value === 'center' || value === 'right' || value === 'justify'
 }
 
 function isEditorFontPreset(value: unknown): value is EditorFontPreset {
@@ -683,6 +748,72 @@ function getEditorMaxWidth(width: EditorWidth) {
   }
   return widths[width]
 }
+
+function handleAutoFormat() {
+  const textarea = editorTextareaRef.value
+  const result = formatChapterContent(localContent.value, {
+    firstLineIndentSpaces: appearanceSettings.value.firstLineIndentSpaces,
+    paragraphSpacingLines: appearanceSettings.value.paragraphSpacingLines,
+  })
+
+  if (!result.changed) {
+    autoFormatMessage.value = '内容无需排版，未做更改。'
+    return
+  }
+
+  // Save undo snapshot before modifying content
+  formatUndoSnapshot.value = {
+    content: localContent.value,
+    selectionStart: textarea?.selectionStart ?? 0,
+    selectionEnd: textarea?.selectionEnd ?? 0,
+    createdAt: Date.now(),
+  }
+
+  // Prevent the upcoming localContent watcher from triggering autosave
+  cancelPendingAutosave()
+  skipNextAutosaveForAutoFormat = true
+
+  // Apply formatted content
+  localContent.value = result.content
+
+  // Save recovery draft (but don't autosave to backend)
+  saveLocalDraft()
+
+  autoFormatMessage.value = `已自动排版（${result.paragraphCount} 个段落），可撤销或保存。`
+}
+
+function handleUndoFormat() {
+  const snapshot = formatUndoSnapshot.value
+  if (!snapshot) {
+    return
+  }
+
+  cancelPendingAutosave()
+
+  // Restore content
+  localContent.value = snapshot.content
+
+  // Restore cursor position after DOM update
+  nextTick(() => {
+    const textarea = editorTextareaRef.value
+    if (textarea) {
+      textarea.selectionStart = snapshot.selectionStart
+      textarea.selectionEnd = snapshot.selectionEnd
+    }
+  })
+
+  // Clear undo snapshot
+  formatUndoSnapshot.value = null
+
+  // Save recovery draft
+  saveLocalDraft()
+
+  autoFormatMessage.value = '已撤销本次自动排版。'
+}
+
+function clearFormattingUndo() {
+  formatUndoSnapshot.value = null
+}
 </script>
 
 <template>
@@ -711,7 +842,7 @@ function getEditorMaxWidth(width: EditorWidth) {
     <section v-if="pendingDraft" class="recovery-banner">
       <div>
         <h3>检测到未恢复的草稿</h3>
-        <p>草稿更新时间：{{ formatDateTime(pendingDraft.updated_at) }}，字数：{{ pendingDraft.word_count }}</p>
+        <p>草稿更新时间：{{ formatDateTimeFull(pendingDraft.updated_at) }}，字数：{{ pendingDraft.word_count }}</p>
       </div>
       <div class="recovery-actions">
         <button class="secondary-button" type="button" @click="showDraftPreview = !showDraftPreview">
@@ -737,22 +868,6 @@ function getEditorMaxWidth(width: EditorWidth) {
           </select>
         </label>
         <label>
-          <span>行距</span>
-          <select v-model="appearanceSettings.lineHeight">
-            <option value="1.4">1.4</option>
-            <option value="1.6">1.6</option>
-            <option value="1.8">1.8</option>
-            <option value="2.0">2.0</option>
-          </select>
-        </label>
-        <label>
-          <span>首行缩进</span>
-          <select v-model="appearanceSettings.firstLineIndent">
-            <option value="none">无</option>
-            <option value="2em">2em</option>
-          </select>
-        </label>
-        <label>
           <span>宽度</span>
           <select v-model="appearanceSettings.editorWidth">
             <option value="standard">标准</option>
@@ -760,9 +875,104 @@ function getEditorMaxWidth(width: EditorWidth) {
             <option value="full">舒展</option>
           </select>
         </label>
+        <div class="align-group" role="group" aria-label="对齐方式">
+          <button
+            type="button"
+            :class="{ active: appearanceSettings.textAlign === 'left' }"
+            title="左对齐"
+            @click="appearanceSettings.textAlign = 'left'"
+          >
+            <svg width="16" height="14" viewBox="0 0 16 14" aria-hidden="true">
+              <rect x="0" y="0" width="16" height="2" rx="0.5" fill="currentColor"/>
+              <rect x="0" y="4" width="10" height="2" rx="0.5" fill="currentColor"/>
+              <rect x="0" y="8" width="14" height="2" rx="0.5" fill="currentColor"/>
+              <rect x="0" y="12" width="8" height="2" rx="0.5" fill="currentColor"/>
+            </svg>
+          </button>
+          <button
+            type="button"
+            :class="{ active: appearanceSettings.textAlign === 'center' }"
+            title="居中"
+            @click="appearanceSettings.textAlign = 'center'"
+          >
+            <svg width="16" height="14" viewBox="0 0 16 14" aria-hidden="true">
+              <rect x="0" y="0" width="16" height="2" rx="0.5" fill="currentColor"/>
+              <rect x="3" y="4" width="10" height="2" rx="0.5" fill="currentColor"/>
+              <rect x="1" y="8" width="14" height="2" rx="0.5" fill="currentColor"/>
+              <rect x="4" y="12" width="8" height="2" rx="0.5" fill="currentColor"/>
+            </svg>
+          </button>
+          <button
+            type="button"
+            :class="{ active: appearanceSettings.textAlign === 'right' }"
+            title="右对齐"
+            @click="appearanceSettings.textAlign = 'right'"
+          >
+            <svg width="16" height="14" viewBox="0 0 16 14" aria-hidden="true">
+              <rect x="0" y="0" width="16" height="2" rx="0.5" fill="currentColor"/>
+              <rect x="6" y="4" width="10" height="2" rx="0.5" fill="currentColor"/>
+              <rect x="2" y="8" width="14" height="2" rx="0.5" fill="currentColor"/>
+              <rect x="8" y="12" width="8" height="2" rx="0.5" fill="currentColor"/>
+            </svg>
+          </button>
+          <button
+            type="button"
+            :class="{ active: appearanceSettings.textAlign === 'justify' }"
+            title="两端对齐"
+            @click="appearanceSettings.textAlign = 'justify'"
+          >
+            <svg width="16" height="14" viewBox="0 0 16 14" aria-hidden="true">
+              <rect x="0" y="0" width="16" height="2" rx="0.5" fill="currentColor"/>
+              <rect x="0" y="4" width="16" height="2" rx="0.5" fill="currentColor"/>
+              <rect x="0" y="8" width="16" height="2" rx="0.5" fill="currentColor"/>
+              <rect x="0" y="12" width="10" height="2" rx="0.5" fill="currentColor"/>
+            </svg>
+          </button>
+        </div>
+        <button
+          class="primary-outline-button"
+          type="button"
+          @click="handleAutoFormat"
+        >
+          自动排版
+        </button>
+        <button
+          v-if="formatUndoSnapshot"
+          class="secondary-button"
+          type="button"
+          @click="handleUndoFormat"
+        >
+          撤销排版
+        </button>
         <details ref="moreSettingsRef" class="more-settings" @toggle="handleMoreSettingsToggle">
           <summary>更多设置</summary>
           <div class="more-settings-menu">
+            <label>
+              <span>行间距</span>
+              <select v-model.number="appearanceSettings.lineHeight">
+                <option :value="1.0">1</option>
+                <option :value="1.5">1.5</option>
+                <option :value="2.0">2</option>
+                <option :value="2.5">2.5</option>
+                <option :value="3.0">3</option>
+              </select>
+            </label>
+            <label>
+              <span>首行缩进</span>
+              <select v-model.number="appearanceSettings.firstLineIndentSpaces">
+                <option :value="0">无</option>
+                <option :value="2">2 空格</option>
+                <option :value="4">4 空格</option>
+              </select>
+            </label>
+            <label>
+              <span>段落间距</span>
+              <select v-model.number="appearanceSettings.paragraphSpacingLines">
+                <option :value="0">无空行</option>
+                <option :value="1">1 空行</option>
+                <option :value="2">2 空行</option>
+              </select>
+            </label>
             <label>
               <span>字体</span>
               <select v-model="appearanceSettings.selectedFontPreset" class="font-select">
@@ -796,13 +1006,6 @@ function getEditorMaxWidth(width: EditorWidth) {
                 placeholder="例如：霞鹜文楷"
               />
             </label>
-            <label>
-              <span>段间距</span>
-              <select v-model="appearanceSettings.paragraphSpacing">
-                <option value="normal">普通</option>
-                <option value="comfortable">舒展</option>
-              </select>
-            </label>
           </div>
         </details>
         <button
@@ -815,6 +1018,7 @@ function getEditorMaxWidth(width: EditorWidth) {
         </button>
       </div>
       <textarea
+        ref="editorTextareaRef"
         v-model="localContent"
         class="editor-textarea"
         :style="editorStyle"
@@ -828,6 +1032,7 @@ function getEditorMaxWidth(width: EditorWidth) {
     <footer class="editor-messages" aria-live="polite">
       <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
       <p v-if="recoveryMessage" class="recovery-message">{{ recoveryMessage }}</p>
+      <p v-if="autoFormatMessage" class="format-message">{{ autoFormatMessage }}</p>
     </footer>
   </section>
 </template>
@@ -990,6 +1195,36 @@ function getEditorMaxWidth(width: EditorWidth) {
   font: inherit;
 }
 
+.align-group {
+  display: inline-flex;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-sm);
+  overflow: hidden;
+}
+
+.align-group button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  min-width: 30px;
+  border: none;
+  border-right: 1px solid var(--zs-color-border-soft);
+  padding: 0 var(--zs-space-2);
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text-muted);
+  cursor: pointer;
+}
+
+.align-group button:last-child {
+  border-right: none;
+}
+
+.align-group button.active {
+  background: var(--zs-color-primary-soft);
+  color: var(--zs-color-primary);
+}
+
 .font-select,
 .font-input {
   min-width: 180px;
@@ -1045,6 +1280,7 @@ function getEditorMaxWidth(width: EditorWidth) {
   border-radius: var(--zs-radius-md);
   padding: 20px;
   resize: vertical;
+  background: var(--zs-color-surface);
   color: var(--zs-color-text);
   font: inherit;
   white-space: pre-wrap;
@@ -1074,6 +1310,13 @@ function getEditorMaxWidth(width: EditorWidth) {
 
 .recovery-message {
   color: var(--zs-color-success);
+}
+
+.format-message {
+  margin: 0;
+  color: var(--zs-color-info);
+  font-size: 0.84rem;
+  font-weight: 600;
 }
 
 @media (max-width: 1320px) {

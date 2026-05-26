@@ -1,6 +1,13 @@
 import { API_BASE_URL } from '@/shared/api/client'
 
-import type { ConfirmImportPayload, ImportPreview, ImportReport, ImportType } from './types'
+import type {
+  ConfirmImportPayload,
+  ImportPreview,
+  ImportReport,
+  ImportType,
+  ProjectPackageImportConfirm,
+  ProjectPackageImportPreview,
+} from './types'
 
 async function parseResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -72,4 +79,32 @@ export async function confirmImport(
   })
 
   return parseResponse<ImportReport>(response)
+}
+
+export async function previewProjectPackageImport(
+  file: File,
+): Promise<ProjectPackageImportPreview> {
+  const formData = new FormData()
+  formData.append('file', file)
+
+  const response = await fetch(`${API_BASE_URL}/api/imports/project-package/preview`, {
+    method: 'POST',
+    body: formData,
+  })
+
+  return parseResponse<ProjectPackageImportPreview>(response)
+}
+
+export async function confirmProjectPackageImport(
+  previewId: string,
+): Promise<ProjectPackageImportConfirm> {
+  const response = await fetch(`${API_BASE_URL}/api/imports/project-package/confirm`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ preview_id: previewId }),
+  })
+
+  return parseResponse<ProjectPackageImportConfirm>(response)
 }

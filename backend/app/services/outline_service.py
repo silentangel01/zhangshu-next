@@ -7,7 +7,7 @@ from app.repositories.chapter_repo import ChapterRepository
 from app.repositories.outline_repo import OutlineRepository
 from app.repositories.project_repo import ProjectRepository
 from app.repositories.volume_repo import VolumeRepository
-from app.schemas.outline import OutlineItemCreate, OutlineItemUpdate
+from app.schemas.outline import OutlineItemCreate, OutlineItemUpdate, OutlineReorderItem
 
 
 class OutlineNotFoundError(Exception):
@@ -31,6 +31,14 @@ class OutlineParentNotFoundError(Exception):
 
 
 class OutlineInvalidParentError(Exception):
+    pass
+
+
+class OutlineCircularParentError(Exception):
+    pass
+
+
+class OutlineCrossProjectError(Exception):
     pass
 
 
@@ -140,6 +148,52 @@ class OutlineService:
             raise OutlineVolumeNotFoundError
 
         return self.outline_repo.list_active_by_project(volume.project_id, volume_id=volume_id)
+
+    def reorder_outlines(
+        self, project_id: str, items: list[OutlineReorderItem]
+    ) -> int:
+        self._ensure_project_exists(project_id)
+
+        all_outlines = self.outline_repo.list_active_by_project(project_id)
+        outline_map = {o.id: o for o in all_outlines}
+
+        # Validate all items belong to the project.
+        for item in items:
+            if item.outline_id not in outline_map:
+                raise OutlineNotFoundError
+            if item.parent_id is not None and item.parent_id not in outline_map:
+                raise OutlineParentNotFoundError
+
+        # Build proposed parent map and check for cross-project parents.
+        proposed_parents: dict[str, str | None] = {}
+        for item in items:
+            if item.parent_id is not None:
+                parent = outline_map[item.parent_id]
+                if parent.project_id != project_id:
+                    raise OutlineCrossProjectError
+            proposed_parents[item.outline_id] = item.parent_id
+
+        # Check for self-reference.
+        for item in items:
+            if item.parent_id == item.outline_id:
+                raise OutlineInvalidParentError
+
+        # Check for cycles: for each moved node, walk up the proposed parent chain.
+        for item in items:
+            visited = {item.outline_id}
+            current_parent = item.parent_id
+            while current_parent is not None:
+                if current_parent in visited:
+                    raise OutlineCircularParentError
+                visited.add(current_parent)
+                # Use proposed parent if this parent was also moved, else existing.
+                current_parent = proposed_parents.get(
+                    current_parent,
+                    outline_map[current_parent].parent_id,
+                )
+
+        # Apply updates in a single transaction.
+        return self.outline_repo.batch_reorder(items)
 
     def _ensure_project_exists(self, project_id: str) -> None:
         project = self.project_repo.get_active(project_id)

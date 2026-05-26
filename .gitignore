@@ -28,10 +28,10 @@ data/
 logs/
 *.log
 
-# Backups / exports
-backups/
-exports/
-recovery/
+# Backups / exports / recovery (root-level data dirs only)
+/backups/
+/exports/
+/recovery/
 
 # OS / editor / AI tools
 .DS_Store
@@ -60,6 +60,10 @@ docs\ai-handoff
 
 # Tauri build output
 frontend/src-tauri/target/
+frontend/src-tauri/gen/
+frontend/src-tauri/binaries/*.exe
+frontend/src-tauri/binaries/*.app
+frontend/src-tauri/binaries/zhangshu-backend-*
 
 # Agents-Rules
 AGENTS.md
@@ -77,3 +81,11 @@ scripts/
 # Vite temporary cache
 frontend/.vite-cache-*/
 frontend/.vite-cache/
+
+# Cloud server local artifacts
+cloud-server/python-*.exe
+cloud-server/_oss_diag.py
+cloud-server/cloud_server.db
+cloud-server/.env
+cloud-server/.env.*
+!cloud-server/.env.example

@@ -68,7 +68,7 @@ function handleSubmit() {
 
 <template>
   <div class="zs-dialog" role="presentation" @click.self="emit('close')">
-    <form class="zs-dialog-content" @submit.prevent="handleSubmit">
+    <form class="zs-dialog-content outline-create-dialog" @submit.prevent="handleSubmit">
       <header class="zs-dialog-header">
         <h2>新建大纲条目</h2>
         <button class="zs-icon-button" type="button" aria-label="关闭" @click="emit('close')">×</button>
@@ -166,9 +166,26 @@ h2 {
   font-size: 1.25rem;
 }
 
+.outline-create-dialog {
+  max-width: min(720px, calc(100vw - 32px));
+}
+
+.outline-create-dialog > .zs-field,
+.outline-create-dialog > .form-grid {
+  padding-inline: var(--zs-space-5);
+}
+
+.outline-create-dialog > .zs-field:first-of-type {
+  padding-top: var(--zs-space-4);
+}
+
+.outline-create-dialog > .form-grid:last-of-type {
+  padding-bottom: var(--zs-space-4);
+}
+
 .form-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 12px;
 }
 </style>

@@ -37,10 +37,12 @@ import ChapterVersionPreviewDialog from '@/features/chapters/ChapterVersionPrevi
 import CreateChapterDialog from '@/features/chapters/CreateChapterDialog.vue'
 import EditChapterDialog from '@/features/chapters/EditChapterDialog.vue'
 import { clearRecoveryDraft } from '@/features/chapters/recoveryDraft'
+import AppSettingsDialog from '@/features/app-config/AppSettingsDialog.vue'
 import CreateVolumeDialog from '@/features/volumes/CreateVolumeDialog.vue'
 import EditVolumeDialog from '@/features/volumes/EditVolumeDialog.vue'
 import WritingAidPanel from '@/features/writing/WritingAidPanel.vue'
 import { safeReadJson, safeWriteJson } from '@/shared/storage/localWorkspaceState'
+import { formatDateTime } from '@/shared/utils/formatDateTime'
 
 const route = useRoute()
 
@@ -67,6 +69,7 @@ const treeMessage = ref('')
 const treeMessageTone = ref<'success' | 'warning'>('success')
 const showCreateVolumeDialog = ref(false)
 const showCreateChapterDialog = ref(false)
+const showAppSettings = ref(false)
 const rightAidTab = ref<WritingAidTab | null>(null)
 const isLeftPanelCollapsed = ref(false)
 const isRightPanelCollapsed = ref(false)
@@ -510,13 +513,6 @@ async function saveChange(action: () => Promise<void>, fallback: string) {
   }
 }
 
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(value))
-}
-
 const STATUS_LABELS: Record<string, string> = {
   planning: '筹备中',
   writing: '连载中',
@@ -549,19 +545,22 @@ function getErrorMessage(error: unknown, fallback: string): string {
       <div>
         <RouterLink class="back-link" to="/projects">返回项目列表</RouterLink>
         <p class="eyebrow">写作工作区</p>
-        <h1>{{ project?.title || '正在加载项目……' }}</h1>
       </div>
       <div class="header-actions">
         <RouterLink class="toolbar-link" :to="`/projects/${projectId}/search`">搜索</RouterLink>
         <RouterLink class="toolbar-link" :to="`/projects/${projectId}/review`">检查</RouterLink>
+        <RouterLink class="toolbar-link" :to="`/projects/${projectId}/stats`">统计</RouterLink>
         <details class="more-menu">
           <summary>更多</summary>
           <div class="more-menu-list">
             <RouterLink :to="`/projects/${projectId}/outlines`">完整大纲</RouterLink>
             <RouterLink :to="`/projects/${projectId}/graph`">关系图</RouterLink>
             <RouterLink :to="`/projects/${projectId}/timeline`">时间轴</RouterLink>
+            <RouterLink :to="`/projects/${projectId}/knowledge`">知识库</RouterLink>
+            <RouterLink :to="`/projects/${projectId}/versions`">版本中心</RouterLink>
             <RouterLink to="/imports">导入导出</RouterLink>
             <RouterLink :to="`/projects/${projectId}/backup`">备份恢复</RouterLink>
+            <button type="button" @click="showAppSettings = true">应用设置</button>
           </div>
         </details>
       </div>
@@ -662,7 +661,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
               </div>
               <div>
                 <dt>更新时间</dt>
-                <dd>{{ formatDate(project.updated_at) }}</dd>
+                <dd>{{ formatDateTime(project.updated_at) }}</dd>
               </div>
               <div>
                 <dt>分卷</dt>
@@ -746,6 +745,11 @@ function getErrorMessage(error: unknown, fallback: string): string {
       @close="previewVersion = null"
       @restore="handleRestoreVersion"
     />
+
+    <AppSettingsDialog
+      v-if="showAppSettings"
+      @close="showAppSettings = false"
+    />
   </main>
 </template>
 
@@ -785,14 +789,9 @@ function getErrorMessage(error: unknown, fallback: string): string {
   text-transform: uppercase;
 }
 
-h1,
 h2 {
   margin: 0;
   line-height: 1.15;
-}
-
-h1 {
-  font-size: 1.55rem;
 }
 
 h2 {
@@ -838,7 +837,7 @@ h2 {
 .more-menu-list {
   position: absolute;
   top: calc(100% + 8px);
-  right: 0;
+  left: 0;
   z-index: 20;
   display: grid;
   min-width: 150px;
@@ -849,7 +848,8 @@ h2 {
   box-shadow: var(--zs-shadow-md);
 }
 
-.more-menu-list a {
+.more-menu-list a,
+.more-menu-list button {
   border-radius: 6px;
   padding: 9px 10px;
   color: var(--zs-color-text);
@@ -857,8 +857,19 @@ h2 {
   text-decoration: none;
 }
 
+.more-menu-list button {
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-size: inherit;
+  font-family: inherit;
+}
+
 .more-menu-list a:hover,
-.more-menu-list a:focus-visible {
+.more-menu-list a:focus-visible,
+.more-menu-list button:hover,
+.more-menu-list button:focus-visible {
   background: var(--zs-color-surface-soft);
   color: var(--zs-color-primary);
   outline: none;
@@ -1247,7 +1258,7 @@ button:disabled {
 
   .page-header,
   .header-actions {
-    align-items: stretch;
+    align-items: flex-start;
     flex-direction: column;
   }
 

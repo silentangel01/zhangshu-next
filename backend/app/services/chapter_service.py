@@ -11,6 +11,7 @@ from app.repositories.outline_repo import OutlineRepository
 from app.repositories.project_repo import ProjectRepository
 from app.repositories.volume_repo import VolumeRepository
 from app.schemas.chapter import ChapterCreate, ChapterReorderRequest, ChapterUpdate
+from app.services.writing_stats_service import WritingStatsService
 
 
 AUTOSAVE_VERSION_INTERVAL_SECONDS = 5 * 60
@@ -77,6 +78,7 @@ class ChapterService:
         values = data.model_dump(exclude_unset=True)
         save_source = values.pop("save_source", "manual")
         original_content = chapter.content
+        old_word_count = chapter.word_count
         content_changed = "content" in values and values["content"] != original_content
 
         if "volume_id" in values:
@@ -94,6 +96,17 @@ class ChapterService:
             updated_chapter = self.chapter_repo.update(chapter, values, commit=False)
             if content_changed:
                 self._create_content_version_if_needed(updated_chapter, str(save_source))
+                new_word_count = updated_chapter.word_count
+                if new_word_count != old_word_count:
+                    WritingStatsService(self.db).record_chapter_word_change(
+                        project_id=updated_chapter.project_id,
+                        chapter_id=updated_chapter.id,
+                        volume_id=updated_chapter.volume_id,
+                        source=str(save_source),
+                        old_word_count=old_word_count,
+                        new_word_count=new_word_count,
+                        occurred_at=updated_chapter.updated_at,
+                    )
 
             self.db.commit()
             self.db.refresh(updated_chapter)

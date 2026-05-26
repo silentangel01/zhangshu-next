@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
 import type { OutlineItem, OutlineTreeNodeData } from '@/entities/outline/types'
 import OutlineTreeNode from './OutlineTreeNode.vue'
+import type { DropPosition } from './outlineDrag'
 
 const props = defineProps<{
   items: OutlineItem[]
@@ -11,7 +12,10 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   select: [item: OutlineItem]
+  reorder: [draggedId: string, targetId: string | null, position: DropPosition]
 }>()
+
+const draggedId = ref<string | null>(null)
 
 const treeGroups = computed(() => buildOutlineTree(props.items))
 
@@ -59,6 +63,20 @@ function compareOutlineItems(left: OutlineItem, right: OutlineItem): number {
   }
   return new Date(left.created_at).getTime() - new Date(right.created_at).getTime()
 }
+
+function handleDragStart(id: string) {
+  draggedId.value = id
+}
+
+function handleDragEnd() {
+  draggedId.value = null
+}
+
+function handleDrop(targetId: string | null, position: DropPosition) {
+  if (!draggedId.value) return
+  emit('reorder', draggedId.value, targetId, position)
+  draggedId.value = null
+}
 </script>
 
 <template>
@@ -77,7 +95,11 @@ function compareOutlineItems(left: OutlineItem, right: OutlineItem): number {
           :node="node"
           :depth="0"
           :selected-outline-id="selectedOutlineId"
+          :dragged-id="draggedId"
           @select="emit('select', $event)"
+          @drag-start="handleDragStart"
+          @drag-end="handleDragEnd"
+          @drop="handleDrop"
         />
       </ul>
 
@@ -90,7 +112,11 @@ function compareOutlineItems(left: OutlineItem, right: OutlineItem): number {
             :node="node"
             :depth="0"
             :selected-outline-id="selectedOutlineId"
+            :dragged-id="draggedId"
             @select="emit('select', $event)"
+            @drag-start="handleDragStart"
+            @drag-end="handleDragEnd"
+            @drop="handleDrop"
           />
         </ul>
       </section>

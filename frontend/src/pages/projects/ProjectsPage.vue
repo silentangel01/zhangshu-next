@@ -3,6 +3,9 @@ import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import defaultBookCover from '@/assets/default-book-cover.svg'
+import { getCloudAccountStatus } from '@/entities/cloud/api'
+import type { CloudAccountStatus } from '@/entities/cloud/types'
+import CloudAccountDialog from '@/features/cloud/CloudAccountDialog.vue'
 import {
   createProject,
   deleteProject,
@@ -23,6 +26,7 @@ import {
   type ProjectFilterState,
   type ProjectSortKey,
 } from '@/features/projects/projectFilters'
+import { formatDateTime } from '@/shared/utils/formatDateTime'
 
 const BUILTIN_TAGS = [
   '玄幻',
@@ -68,6 +72,8 @@ const errorMessage = ref('')
 const showCreateDialog = ref(false)
 const editingProject = ref<Project | null>(null)
 const isFilterPanelOpen = ref(false)
+const showCloudDialog = ref(false)
+const cloudAccountStatus = ref<CloudAccountStatus | null>(null)
 
 const searchKeyword = ref('')
 const filterState = ref<ProjectFilterState>({ keyword: '', status: '', tag: '' })
@@ -86,7 +92,16 @@ const displayedProjects = computed(() => {
 
 onMounted(() => {
   void refreshProjects()
+  void loadCloudStatus()
 })
+
+async function loadCloudStatus() {
+  try {
+    cloudAccountStatus.value = await getCloudAccountStatus()
+  } catch {
+    // Cloud not configured — silently ignore.
+  }
+}
 
 async function refreshProjects() {
   isLoading.value = true
@@ -221,13 +236,6 @@ async function handleDelete(project: Project) {
   }
 }
 
-function formatUpdatedAt(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(value))
-}
-
 function getStatusLabel(status: string): string {
   return STATUS_LABELS[status] ?? status
 }
@@ -248,6 +256,13 @@ function getErrorMessage(error: unknown, fallback: string): string {
         <h1>书籍</h1>
       </div>
       <div class="header-actions">
+        <button
+          class="secondary-link cloud-account-button"
+          type="button"
+          @click="showCloudDialog = true"
+        >
+          {{ cloudAccountStatus?.logged_in ? cloudAccountStatus.email ?? '云账户' : '云账户' }}
+        </button>
         <RouterLink class="secondary-link" to="/imports">导入作品</RouterLink>
         <RouterLink class="secondary-link" to="/backup">备份恢复</RouterLink>
         <button class="primary-button" type="button" :disabled="isSaving" @click="showCreateDialog = true">
@@ -356,7 +371,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
             <p class="book-summary">{{ project.summary || '暂无简介。' }}</p>
 
             <footer class="book-footer">
-              <span class="book-updated">更新于 {{ formatUpdatedAt(project.updated_at) }}</span>
+              <span class="book-updated">更新于 {{ formatDateTime(project.updated_at) }}</span>
               <div class="book-actions">
                 <RouterLink class="open-link" :to="`/projects/${project.id}`">打开</RouterLink>
                 <button
@@ -399,6 +414,11 @@ function getErrorMessage(error: unknown, fallback: string): string {
       @submit="handleEdit"
       @upload-cover="handleEditCoverUpload"
       @delete-cover="handleEditCoverDelete"
+    />
+
+    <CloudAccountDialog
+      v-if="showCloudDialog"
+      @close="showCloudDialog = false; loadCloudStatus()"
     />
   </main>
 </template>
@@ -666,6 +686,11 @@ h1 {
   color: var(--zs-color-text);
   font-weight: 800;
   text-decoration: none;
+}
+
+.cloud-account-button {
+  cursor: pointer;
+  font: inherit;
 }
 
 button {
