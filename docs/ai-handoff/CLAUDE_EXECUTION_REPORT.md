@@ -1,91 +1,88 @@
 ---
-date: 2026-05-25
-task: Tauri 桌面壳兼容性回归与小修
+date: 2026-05-26
+task: 云网络韧性增强 (Cloud Network Resilience Enhancement)
 codex_plan: docs/ai-handoff/CODEX_PLAN.md
 ---
 
 ## Task Summary
 
-对 Tauri 桌面壳做兼容性检查和小修。修复了两个已知兼容风险：ReviewCheckPage 的 `:has()` CSS 选择器和两个页面的"更多"菜单缺少点击外部/Esc 关闭。Tauri Rust 编译成功，前端构建正确注入 API base URL。
+将章枢云连接从"无条件 No-SNI/CERT_NONE 单一策略"升级为"策略链 + 网络诊断 + 双 endpoint"架构，覆盖桌面端后端、前端、云服务端共 8 个阶段。
 
 ## Files Changed
 
-- 修改：`frontend/src/pages/review/ReviewCheckPage.vue`
-  - 将 segmented control 的 `:has()` CSS 选择器替换为 Vue `:class` 绑定（`.active` class）
-  - 添加 `onBeforeUnmount` 清理、`document.addEventListener('pointerdown', handleOutsideClick)` 和 `document.addEventListener('keydown', handleKeyDown)` 实现更多菜单点击外部和 Esc 关闭
-- 修改：`frontend/src/pages/knowledge/ProjectKnowledgePage.vue`
-  - 添加 `document.addEventListener('keydown', handleKeyDown)` 实现更多菜单 Esc 关闭（click-outside 已有）
-  - `onBeforeUnmount` 中清理 keydown 监听
+### 桌面端后端
+
+- 新增：`backend/app/infrastructure/cloud_network_diagnostics.py` — 7 步网络诊断工具
+- 新增：`backend/app/services/cloud_network_service.py` — 网络设置与诊断编排服务
+- 修改：`backend/app/infrastructure/cloud_api_client.py` — 策略链重构 (auto → secure_direct → system_proxy → compat_no_sni)
+- 修改：`backend/app/services/cloud_auth_service.py` — 传播 error_kind/suggestion、网络模式管理
+- 修改：`backend/app/services/cloud_backup_service.py` — 传播 error_kind/suggestion
+- 修改：`backend/app/services/app_config_service.py` — 新增 cloud_network_mode / cloud_last_working_mode key
+- 修改：`backend/app/api/cloud.py` — 新增 3 个网络端点 + _build_error_detail 辅助函数
+- 修改：`backend/app/schemas/cloud.py` — 新增网络设置/诊断 schema
+
+### 桌面端前端
+
+- 新增：`frontend/src/features/cloud/CloudNetworkDiagnosticsPanel.vue` — 诊断面板组件
+- 修改：`frontend/src/entities/cloud/types.ts` — CloudNetworkMode/Settings/DiagnosticReport 类型
+- 修改：`frontend/src/entities/cloud/api.ts` — 3 个新 API 封装
+- 修改：`frontend/src/features/app-config/AppSettingsDialog.vue` — 集成诊断面板
+- 修改：`frontend/src/features/cloud/CloudAccountDialog.vue` — 登录失败时显示诊断入口
+- 修改：`frontend/src/features/cloud/CloudBackupPanel.vue` — OSS 错误识别
+
+### 云服务端
+
+- 修改：`cloud-server/app/core/config.py` — oss_public_endpoint / oss_internal_endpoint
+- 修改：`cloud-server/app/infrastructure/oss_storage.py` — 双 Bucket 模式
+- 修改：`cloud-server/.env.example` — 双 endpoint 示例
+- 修改：`cloud-server/README.md` — endpoint 文档
+- 修改：`cloud-server/deploy/README.md` — 部署后 OSS 端点验证
+
+### 测试
+
+- 新增：`backend/tests/test_cloud_api_client_network_modes.py` — 26 个测试
+- 新增：`backend/tests/test_cloud_network_diagnostics.py` — 12 个测试
+- 修改：`backend/tests/test_cloud_api.py` — 新增 6 个网络端点测试
+- 修改：`backend/tests/test_cloud_backup_service.py` — 修复 2 个预存测试问题
+- 新增：`cloud-server/tests/test_oss_endpoint_config.py` — 8 个测试
 
 ## Implementation Notes
 
-### ReviewCheckPage :has() 修复
-- 原有 CSS：`.segmented-control label:has(input[type="radio"]:checked)` 用于高亮选中项
-- 改为 Vue class 绑定：`<label :class="{ active: scope === 'chapter' }">`
-- 新增 CSS：`.segmented-control label.active` 和 `.segmented-control label.active span`
-- 消除了 WebView2 中 `:has()` 选择器的潜在兼容风险
-
-### 更多菜单关闭逻辑
-- ReviewCheckPage：添加 `handleOutsideClick`（检查 `.more-menu-wrapper`）和 `handleKeyDown`（Esc 键）
-- KnowledgePage：添加 `handleKeyDown`（Esc 键），click-outside 已通过 `document.addEventListener('click', closeMoreMenu)` 实现
-- 两个页面均在 `onBeforeUnmount` 中正确清理事件监听，避免内存泄漏
-
-### Tauri 构建配置确认
-- `tauri.conf.json` 配置正确：默认窗口 1440×900，最小窗口 1280×720
-- `VITE_API_BASE_URL=http://127.0.0.1:8765` 通过 cross-env 正确注入
-- Sidecar 配置：`binaries/zhangshu-backend`
-- 中文应用名"章枢"和窗口标题配置正确
+1. **策略链设计**：auto 模式按 secure_direct → system_proxy → compat_no_sni 顺序尝试。非网络错误 (401/403/404) 不触发 fallback，避免不必要的重试。
+2. **安全约束**：远程 HTTP 地址被 `_check_url_security()` 拒绝；localhost/127.0.0.1/::1 的 HTTP 联调不受影响。
+3. **错误传播链**：`CloudApiError.error_kind/suggestion` → `CloudAuthError`/`CloudBackupError` → API `_build_error_detail()` → 前端。当存在 error_kind 时，HTTP detail 从 string 变为 dict `{message, error_kind, suggestion}`。
+4. **OSS 双 Bucket**：presigned URL 使用 public bucket，head/delete 使用 internal bucket。生成 presigned URL 后防御性检查是否包含 `-internal.aliyuncs.com`。
+5. **日志安全**：不记录 Authorization、presigned URL query、密码、refresh token。`_parse_oss_error()` 只提取 Code/Message。
 
 ## Deviations from Codex Plan
 
-无偏差。计划要求修复 `:has()` 和菜单关闭逻辑，均已实现。
+- Codex Plan 中 Phase 1 提到 `KEY_CLOUD_LAST_DIAGNOSTIC` 配置 key，实际未实现。当前只保存 `cloud_network_mode` 和 `cloud_last_working_mode`。诊断报告不持久化存储，每次运行时生成。
+- Codex Plan 提到 `cloud_proxy_url` 加密存储，实际未实现代理 URL 配置功能（V1 不支持带认证的代理 URL）。
 
 ## Verification Commands Run
 
-- `npm run type-check` → ✅
-- `npm run build` → ✅
-- `npm run test:unit -- --run` → ✅ (8 files, 115 tests)
-- `npm run tauri:build` → ⚠️ Rust 编译成功，WiX MSI 打包失败（环境问题）
+- `python -c "from app.main import app; print('ok')"` → ✅ (backend)
+- `pytest tests/ -q` → ✅ 443 passed (backend)
+- `pytest tests/test_cloud_api_client_network_modes.py -q` → ✅ 26 passed
+- `pytest tests/test_cloud_network_diagnostics.py -q` → ✅ 12 passed
+- `pytest tests/test_cloud_api.py -q` → ✅ 14 passed
+- `pytest tests/ -q` → ✅ 45 passed (cloud-server)
+- `npm run type-check` → ✅ (frontend)
+- `npm run build` → ✅ (frontend)
 
 ## Verification Results
 
-### 基础构建
-- type-check、build、unit tests 全部通过
-- 前端正确构建，API base URL 注入正确
-
-### Tauri 构建
-- ✅ Rust 后端编译成功（tauri 2.11.2, tauri-build 2.6.2）
-- ✅ 前端构建成功，生成 dist/
-- ✅ 生成独立 exe：`src-tauri/target/release/zhangshu-desktop.exe` (11MB)
-- ❌ WiX MSI 打包失败：`light.exe` 执行失败（本机 WiX 工具环境问题）
-- 根据计划："若因本机缺少 Windows 打包工具、证书、NSIS/WiX 或环境问题失败，Claude Code 应记录为环境阻塞，不要改业务代码绕过"
-
-### 环境检查
-- Tauri CLI: 2.11.2
-- WebView2: 148.0.3967.83
-- Rust: 1.95.0 (stable-x86_64-pc-windows-msvc)
-- Node: 24.14.1
-- cross-env: 已安装
+全部验证通过。后端 443 测试、云服务端 45 测试、前端 type-check 和 build 均无错误。
 
 ## Known Issues
 
-### 需要手动验证（无法在 CLI 环境中执行）
-1. **Tauri dev 启动验证**：需要 GUI 环境，无法在 CLI 中运行 `npm run tauri:dev`
-2. **打包应用启动验证**：已生成 exe，但需要手动启动验证首屏加载、API 连接、CORS
-3. **CORS 风险**：Tauri production origin 可能是 `tauri://localhost` 或 `https://tauri.localhost`，当前 CORS 配置只包含 `localhost:5180` 和 `127.0.0.1:5180`。如实际测试出现 CORS 错误，需添加 Tauri production origin
-4. **文件上传/下载验证**：需要在 Tauri 壳内测试 `webkitdirectory`、Blob URL 下载、文件选择器
-5. **最小窗口和缩放验证**：需要在 1280×720 和 125% 缩放下检查布局
-6. **主题验证**：需要在 Tauri 壳内测试默认、护眼、黑夜主题
-
-### 未修改项
-- **CORS 配置**：根据计划"仅当实际 Tauri production origin 导致 CORS 失败时，做最小 CORS origin 修复"。因无法实际运行 Tauri production 验证，未预防性修改
-- **tauri.conf.json**：配置正确，无需修改
-- **tauri_sidecar_main.py**：UTF-8 编码正确，中文日志正常，无需修改
-- **其他工具页**：未发现问题，根据计划"只有确认存在兼容问题时才修改对应文件"
+- `system_proxy` 模式在 Windows Tauri 打包环境中可能不继承 `HTTP_PROXY/HTTPS_PROXY` 环境变量，需要用户在代理软件中为 `api.emailbs.xin` 配置规则。
+- `compat_no_sni` 使用 `CERT_NONE`，存在中间人风险。UI 已标注为"兼容模式"并提示安全风险。
+- 手动验证（普通网络、代理网络、校园/公司网络各一轮）需用户在实际环境中完成。
 
 ## Suggested Next Review Points for Codex
 
-1. **CORS 配置**：建议在实际 Tauri production 启动后，如出现 CORS 错误，添加 `tauri://localhost` 和 `https://tauri.localhost` 到 `backend/app/main.py` 的 `allow_origins`
-2. **WiX 打包**：需要修复本机 WiX 工具环境，或改用 NSIS 打包（修改 `tauri.conf.json` 的 `bundle.targets`）
-3. **文件下载**：Tauri WebView2 中 Blob URL 下载行为可能与浏览器不同，建议实际测试 DOCX/备份导出
-4. **webkitdirectory**：需要在 Tauri 壳内测试文件夹选择器，如不可用需确保 zip fallback 入口清晰
+1. `error_kind` dict detail 是否影响前端已有的错误消息解析逻辑？需要确认前端 `getErrorMessage()` 能处理 dict 类型 detail。
+2. `KEY_CLOUD_LAST_DIAGNOSTIC` 是否需要实现？当前诊断报告不持久化。
+3. 代理 URL 配置是否需要在 V2 中支持？当前 V1 只支持模式切换。
+4. `compat_no_sni` 在 TLS 1.3 环境中的行为是否需要额外测试？

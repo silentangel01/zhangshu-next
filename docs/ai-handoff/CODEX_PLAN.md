@@ -1,429 +1,562 @@
 # Task Summary
 
-本次任务调整为 **Tauri 桌面壳兼容性回归与小修计划**。
+本次任务是规划章枢云功能的网络适配与防护性改进，目标是在用户挂代理、使用校园网、公司网、运营商网络、网络 DNS/TLS/OSS endpoint 异常时，尽量避免登录、注册、云备份出现“只有开发者能排查”的连接问题。
 
-用户明确要求：不需要大重构，只需要确保现有工具页和关键流程在打包进 Tauri 壳子后不会出现兼容性 bug。
+重点不是新增云业务功能，而是增强现有云连接链路的鲁棒性：
 
-本计划只要求 Claude Code 做兼容性检查和必要小修，不做工具页大规模 UI 统一，不新增业务功能，不重写页面。
-
-重点检查：
-
-- Tauri dev / build 下前端是否能正确连接 sidecar 后端。
-- 打包后 API base、CORS、静态资源路径、文件上传、下载导出是否正常。
-- Windows WebView2 中 CSS、菜单、弹窗、文件选择、窗口尺寸是否稳定。
-- 深色 / 护眼主题在桌面壳内是否完整生效。
-- 工具页在 Tauri 最小窗口尺寸下不出现横向溢出、按钮不可见或弹窗被裁切。
+- 把当前临时的 `IP 直连 + No-SNI + 关闭证书验证` 改造成可诊断、可回退、可配置的连接策略。
+- 为用户提供“云服务连接诊断”入口和可理解的错误提示。
+- 对代理、校园/公司网络 DPI/SNI 过滤、OSS 内外网 endpoint、TLS/HTTP2 兼容等场景增加防护。
+- 云服务端补齐 OSS 公网/内网双 endpoint，避免预签名 URL 再次返回内网地址。
+- 明确生产云 API 必须使用 HTTPS；仅允许 `localhost`、`127.0.0.1`、`::1` 等本地开发地址继续使用 HTTP，避免安全加固误伤本地联调。
 
 Codex 未修改业务代码。本计划应由 Claude Code 执行。Claude Code 执行前应再次检查计划与实际代码是否冲突；如存在冲突，应停止并反馈，而不是强行实现。
 
 # Current Codebase Findings
 
-已检查当前交接区：
-
-- `docs/ai-handoff/` 当前只有 `README.md` 和 `archive/`，没有旧活跃计划或执行报告。
-
-已检查 Tauri 与前端配置：
-
-- `frontend/src-tauri/` 已存在。
-- `frontend/src-tauri/tauri.conf.json`
-  - 默认窗口约为 `1440 × 900`。
-  - 最小窗口约为 `1280 × 720`。
-  - `devUrl` 为 `http://localhost:5180`。
-  - `frontendDist` 为 `../dist`。
-  - sidecar 配置为 `binaries/zhangshu-backend`。
-- `frontend/package.json`
-  - `tauri:dev` 使用 `VITE_API_BASE_URL=http://127.0.0.1:8765`。
-  - `tauri:build:frontend` 使用 `VITE_API_BASE_URL=http://127.0.0.1:8765 npm run build`。
-  - `tauri:build` 先构建前端，再执行 `tauri build`。
-  - `tauri:build:backend` 使用 PyInstaller 生成 sidecar。
-- `frontend/vite.config.ts`
-  - Vite dev server 端口为 `5180`，且 `strictPort: true`。
-- `frontend/src/shared/api/client.ts`
-  - API base 来自 `import.meta.env.VITE_API_BASE_URL ?? ''`。
-  - Tauri dev / build 依赖构建脚本注入 `http://127.0.0.1:8765`。
-- `backend/tauri_sidecar_main.py`
-  - sidecar 默认监听 `127.0.0.1:8765`。
-  - 数据目录默认为 sidecar 所在目录下的 `zhangshu_data`，可通过环境变量覆盖。
-  - 端口占用或启动失败会写入 `startup_error.log`。
-
-已知 Tauri V1 执行报告中留下的风险点：
-
-- `npm run tauri:dev` 曾成功启动桌面窗口和 sidecar。
-- `npm run tauri:build` 当时未完整执行，需要补充打包验证。
-- Tauri production 模式下前端 origin、CORS、静态资源协议仍需实际验证。
-- sidecar 构建和打包流程当前主要面向 Windows。
-
-已检查近期工具页状态：
-
-- `frontend/src/pages/search/SearchPage.vue`
-- `frontend/src/pages/review/ReviewCheckPage.vue`
-- `frontend/src/pages/stats/ProjectWritingStatsPage.vue`
-- `frontend/src/pages/imports/ProjectBackupPage.vue`
-- `frontend/src/pages/imports/ImportPage.vue`
-- `frontend/src/pages/versions/ProjectVersionsPage.vue`
-- `frontend/src/pages/knowledge/ProjectKnowledgePage.vue`
-- `frontend/src/features/knowledge/KnowledgeImportDialog.vue`
-- `frontend/src/features/knowledge/KnowledgeIndexRefreshDialog.vue`
-
-这些页面中可能影响 Tauri 壳兼容性的点：
-
-- 下拉菜单如果只靠再次点击按钮关闭，在桌面壳内体验不稳定，应支持点击外部和 Esc 关闭。
-- `ReviewCheckPage.vue` 曾使用 CSS `:has()` 处理选中态，虽然 WebView2 通常支持，但为降低壳内兼容风险，建议改为 Vue class 绑定。
-- 知识库和导入页使用文件选择、批量文件、文件夹选择、zip 上传，需要在 Tauri WebView2 中验证。
-- 导出和备份下载依赖浏览器下载行为，需要确认 Tauri 壳内是否能正确保存文件或触发下载。
-- 窗口最小宽度为 `1280 × 720`，但仍需要检查 `1100 × 760` 或用户手动缩放场景，避免布局被标题栏、系统缩放或侧栏挤坏。
-- 控制台输出中出现过中文显示异常的迹象，需要确认 Tauri 窗口标题、应用名、sidecar 日志文件是否为正确 UTF-8。
+- 已阅读 `docs/ai-handoff/CLAUDE_EXECUTION_REPORT.md`，该活跃执行报告是“统一前端时间显示格式”，与当前云连接任务无直接关系，已按用户要求归档到：
+  - `docs/ai-handoff/archive/2026-05-26-pre-network-resilience/CLAUDE_EXECUTION_REPORT.md`
+- 已阅读并归档旧活跃计划：
+  - `docs/ai-handoff/archive/2026-05-26-pre-network-resilience/CODEX_PLAN.md`
+- 已阅读云服务连接问题文档：
+  - `docs/Cloud_Service_Connection_Troubleshooting.md`
+  - `docs/ai-handoff/CLOUD_DEPLOYMENT_LOG.md`
+- 两份云连接文档确认的关键问题：
+  - 国内服务器部署时 Docker、Docker Hub、PyPI 镜像源容易超时。
+  - Python / Nginx TLS 组合曾出现误导性 `bad key share` 日志。
+  - Clash / TUN / 系统代理可能影响 httpx 行为。
+  - 校园网 DPI 会根据 TLS SNI 字段重置 `api.emailbs.xin` 连接。
+  - 当前临时解决方式是 IP 直连、手动 Host 头、No-SNI、`CERT_NONE`、`trust_env=False`。
+  - OSS 预签名 URL 曾因 `OSS_ENDPOINT=oss-cn-hangzhou-internal.aliyuncs.com` 返回阿里云内网地址，导致桌面端公网环境上传 403。
+- 当前 `backend/app/infrastructure/cloud_api_client.py` 的状态：
+  - 所有 HTTPS 云 API 都会自动把域名解析为 IP。
+  - 所有请求都使用 No-SNI SSLContext。
+  - 当前 SSLContext 设置 `verify_mode = ssl.CERT_NONE`，会跳过证书验证。
+  - 当前强制 `maximum_version = ssl.TLSVersion.TLSv1_2`。
+  - 当前 `httpx.Client(..., trust_env=False)`，不读取系统代理环境变量。
+  - 该实现能绕过校园网 SNI 过滤，但作为默认路径安全性和适配性都不够理想。
+- 当前 `backend/app/api/cloud.py` 只有账号、登录、启用、备份相关 API，没有云网络诊断、网络模式设置或诊断报告 API。
+- 当前 `frontend/src/features/cloud/CloudAccountDialog.vue` 登录/注册失败只展示通用错误，没有引导用户进行连接诊断。
+- 当前 `frontend/src/features/app-config/AppSettingsDialog.vue` 有“章枢云账户”状态，但没有云网络连接策略、诊断入口或代理/校园网提示。
+- 当前 `cloud-server/app/infrastructure/oss_storage.py` 只有单一 `oss_endpoint`，既用于生成客户端预签名 URL，也用于服务端 `head_object/delete_object`。
+- 当前 `cloud-server/app/core/config.py` 没有 `OSS_PUBLIC_ENDPOINT` / `OSS_INTERNAL_ENDPOINT` 双 endpoint 配置。
 
 # Architecture Decision
 
-本次任务采用 **兼容性优先、最小修改** 策略。
+## 1. 云连接策略从“单一路径”升级为“策略链”
 
-允许 Claude Code 做：
+新增桌面端云连接策略枚举：
 
-- 验证 Tauri dev 和 Tauri build。
-- 修复会导致桌面壳中不可用、报错、看不见、点不了、下载不了、上传不了的问题。
-- 修复明显的 WebView2 兼容风险，例如关键交互依赖 `:has()`。
-- 修复下拉菜单点击外部 / Esc 关闭问题。
-- 修复 Tauri 壳内 API base、CORS、静态资源路径、窗口尺寸、文件上传下载相关问题。
-- 小范围修复工具页在 Tauri 最小窗口下的横向溢出、弹窗裁切、按钮不可见。
+- `auto`：默认。先走安全直连，失败后按诊断结果尝试兼容路径。
+- `secure_direct`：域名 + SNI + 正常证书验证 + 不使用系统代理。
+- `system_proxy`：域名 + SNI + 正常证书验证 + 允许读取系统代理环境变量。
+- `compat_no_sni`：IP 直连 + Host 头 + No-SNI，作为校园/公司网 DPI 过滤的兼容路径。
 
-不允许 Claude Code 做：
+默认模式必须是 `auto`。不允许继续把 `compat_no_sni` 作为所有 HTTPS 请求的无条件默认路径。
 
-- 大规模 UI 统一。
-- 抽象新的设计系统。
-- 重写工具页。
-- 重构业务逻辑。
-- 新增业务功能。
-- 为了“顺手好看”调整无关页面。
-- 引入大型依赖或 UI 库。
+## 2. 安全优先级
 
-判断标准：
+连接策略优先级：
 
-- 如果问题会导致 Tauri 壳中功能不可用或出现兼容 bug，可以修。
-- 如果只是视觉风格不够统一，但不影响壳内可用性，本任务不修。
+1. 优先使用完整 TLS 校验的安全路径。
+2. 只有在检测到 TLS 握手重置、SNI 疑似过滤等场景时，才允许自动尝试 `compat_no_sni`。
+3. `compat_no_sni` 必须被标记为“兼容模式”，并在 UI 中提示：该模式会降低证书校验强度，只应在普通连接失败时使用。
+4. 诊断日志不得记录 JWT、refresh token、密码、OSS 签名 URL 完整 query、API key。
+
+## 3. HTTPS 生产约束与本地豁免
+
+生产级章枢云 API 不允许使用明文 HTTP。`ZHANGSHU_CLOUD_API_BASE_URL` 如果指向公网域名或公网 IP，必须使用 `https://`。
+
+允许 HTTP 的范围只限本地开发和测试：
+
+- `http://localhost:<port>`
+- `http://127.0.0.1:<port>`
+- `http://[::1]:<port>`
+
+这条规则不应影响章枢桌面端访问自己的本地 sidecar，也不应影响 Claude Code 在本机启动 `cloud-server` 做联调。它只用于阻止用户把生产云服务配置成 `http://api.example.com` 这类明文远程地址。
+
+如果用户显式配置了远程 HTTP 地址，客户端应：
+
+- 在账号登录、注册、云备份前阻止请求或至少给出高危警告。
+- 在诊断报告中标记为 `insecure_remote_http`。
+- 提示用户改为 HTTPS，或通过 Nginx / Caddy / 云负载均衡配置 TLS。
+
+## 4. 网络诊断是独立能力
+
+新增独立的本地诊断服务，不把诊断逻辑塞进登录、注册或备份业务逻辑中。
+
+建议分层：
+
+- Infrastructure：HTTP/TCP/DNS/TLS/OSS URL 诊断工具。
+- Service：编排诊断流程，生成用户可读建议。
+- API：暴露诊断和网络设置接口。
+- Frontend：展示诊断结果和连接模式设置。
+
+## 5. 云服务端 OSS 双 endpoint
+
+云服务端应区分：
+
+- `OSS_PUBLIC_ENDPOINT`：用于生成给桌面端使用的 presigned PUT/GET URL，必须公网可达。
+- `OSS_INTERNAL_ENDPOINT`：用于云服务端自身 `head_object/delete_object`，可选，用于阿里云内网访问以节省流量。
+
+保留 `OSS_ENDPOINT` 作为兼容配置，但 README 应明确：如果只配置一个 endpoint，它必须是公网 endpoint。
 
 # Files to Create or Modify
 
-Claude Code 应先验证，只有确认存在兼容问题时才修改对应文件。
+## 桌面端后端
 
-可能需要修改的文件：
+- 修改：`backend/app/infrastructure/cloud_api_client.py`
+  - 引入连接策略链。
+  - 不再默认所有 HTTPS 请求都使用 No-SNI + `CERT_NONE`。
+  - 增加错误分类和策略选择。
+  - 增加远程 HTTP 风险判断：公网远程地址必须 HTTPS，本地 `localhost/127.0.0.1/::1` 可继续 HTTP。
+- 新增：`backend/app/infrastructure/cloud_network_diagnostics.py`
+  - DNS、TCP、HTTPS、No-SNI、代理、OSS URL 可达性诊断。
+- 新增：`backend/app/services/cloud_network_service.py`
+  - 读取/保存云网络模式，编排诊断报告。
+- 修改：`backend/app/services/app_config_service.py`
+  - 增加云网络配置 key 常量。
+- 修改：`backend/app/infrastructure/config_crypto.py`
+  - 如果支持带账号密码的代理 URL，则将 `cloud_proxy_url` 加入 `SENSITIVE_KEYS`。
+  - 若 V1 不支持代理账号密码，则无需保存代理 URL，只保存 mode。
+- 新增或修改：`backend/app/schemas/cloud_network.py` 或 `backend/app/schemas/cloud.py`
+  - 增加网络设置和诊断响应 schema。
+- 修改：`backend/app/api/cloud.py`
+  - 增加云网络诊断与设置 API。
+- 修改：`backend/packaged_main.py`
+  - 保留 `ZHANGSHU_CLOUD_API_BASE_URL` 默认值。
+  - 不在这里硬编码网络兼容模式。
 
-- `frontend/src/pages/review/ReviewCheckPage.vue`
-  - 修复更多菜单外部点击 / Esc 关闭。
-  - 如仍依赖 `:has()`，改为 Vue class 绑定。
+## 桌面端前端
 
-- `frontend/src/pages/knowledge/ProjectKnowledgePage.vue`
-  - 修复更多菜单外部点击 / Esc 关闭。
-  - 检查知识库浏览、检索、问答、摘要在 Tauri 最小窗口下是否溢出。
+- 修改：`frontend/src/entities/cloud/types.ts`
+  - 增加 `CloudNetworkMode`、`CloudNetworkSettings`、`CloudNetworkDiagnosticReport` 类型。
+- 修改：`frontend/src/entities/cloud/api.ts`
+  - 增加获取/保存网络设置、运行诊断的 API 封装。
+- 新增：`frontend/src/features/cloud/CloudNetworkDiagnosticsPanel.vue`
+  - 诊断按钮、策略选择、结果展示、用户建议。
+- 修改：`frontend/src/features/cloud/CloudAccountDialog.vue`
+  - 登录/注册失败时展示“运行连接诊断”入口。
+  - 错误提示根据诊断类别区分代理、网络拦截、服务端不可达、账号错误。
+- 修改：`frontend/src/features/app-config/AppSettingsDialog.vue`
+  - 在“章枢云账户”区域增加“网络连接”二级区域。
+  - 不把诊断面板做成大段技术文档；只展示状态、建议和高级设置入口。
+- 可选修改：`frontend/src/features/cloud/CloudBackupPanel.vue`
+  - 云备份上传失败时识别 OSS 内网 endpoint、403、签名 URL 过期、网络超时，并显示更具体提示。
 
-- `frontend/src/pages/search/SearchPage.vue`
-  - 仅当 Tauri 壳内搜索索引刷新、结果打开、布局溢出出现兼容问题时小修。
+## 云服务端
 
-- `frontend/src/pages/imports/ImportPage.vue`
-  - 仅当 Tauri 壳内文件选择、文件夹选择、项目包导入、zip 上传出现问题时小修。
+- 修改：`cloud-server/app/core/config.py`
+  - 增加 `oss_public_endpoint`、`oss_internal_endpoint`。
+  - 保留 `oss_endpoint` 作为旧配置兼容。
+- 修改：`cloud-server/app/infrastructure/oss_storage.py`
+  - 使用 public bucket 生成 presigned URL。
+  - 使用 internal bucket 执行 `head_object/delete_object`；未配置 internal 时回退 public。
+- 修改：`cloud-server/.env.example`
+  - 增加双 endpoint 示例。
+- 修改：`cloud-server/README.md`
+  - 增加公网/内网 endpoint 说明。
+  - 增加校园网/公司网/代理排查说明。
+- 修改：`cloud-server/deploy/README.md`
+  - 增加部署后检查项：公网 health、OSS public presigned URL、CORS。
+- 可选修改：`cloud-server/deploy/deploy.sh`
+  - 生成 `.env` 时写出 `OSS_PUBLIC_ENDPOINT` 和 `OSS_INTERNAL_ENDPOINT` 注释。
 
-- `frontend/src/pages/imports/ProjectBackupPage.vue`
-  - 仅当 Tauri 壳内 DOCX/TXT/MD 导出、备份下载、备份恢复上传出现问题时小修。
+## 测试
 
-- `frontend/src/pages/versions/ProjectVersionsPage.vue`
-  - 仅当 Tauri 壳内版本恢复确认、版本 diff 展示、清理旧版本确认出现兼容问题时小修。
-
-- `frontend/src/pages/stats/ProjectWritingStatsPage.vue`
-  - 仅当 Tauri 壳内统计图表、热力图、窗口缩放出现布局问题时小修。
-
-- `frontend/src/shared/api/client.ts`
-  - 仅当 Tauri production build 中 API base 不正确时修改。
-  - 不要改变普通 Web dev 的默认相对路径行为。
-
-- `backend/app/main.py`
-  - 仅当实际 Tauri production origin 导致 CORS 失败时，做最小 CORS origin 修复。
-  - 不要修改业务 API。
-
-- `backend/tauri_sidecar_main.py`
-  - 仅当 sidecar 启动、中文日志、数据目录、端口冲突提示在打包后存在实际问题时小修。
-
-- `frontend/src-tauri/tauri.conf.json`
-  - 仅当打包配置、窗口最小尺寸、bundle sidecar 配置存在实际问题时小修。
-
-- `frontend/package.json`
-  - 仅当现有 Tauri scripts 不能完成打包验证时小修。
-  - 不新增无关脚本，不改普通 Web dev/build 命令语义。
-
-不应修改：
-
-- 数据库模型、Repository、Service、业务 Schema。
-- 工具页业务流程。
-- 路由结构。
-- 大型全局样式。
-- 依赖版本，除非打包验证明确需要且用户确认。
-- `data/`、`logs/`、`release/`、`frontend/src-tauri/target/` 等本地产物。
+- 新增：`backend/tests/test_cloud_api_client_network_modes.py`
+- 新增：`backend/tests/test_cloud_network_diagnostics.py`
+- 修改：`backend/tests/test_cloud_api.py`
+- 修改或新增：`cloud-server/tests/test_oss_endpoint_config.py`
+- 修改或新增前端类型检查相关测试，如项目已有 Vitest，则补：
+  - `frontend/src/features/cloud/__tests__/CloudNetworkDiagnosticsPanel.spec.ts`
 
 # Implementation Steps for Claude Code
 
-1. 执行前检查
-   - 运行：
+## Phase 1: 梳理现有临时方案并建立枚举
 
-```powershell
-git status --short
+1. 读取 `backend/app/infrastructure/cloud_api_client.py`，保留现有 No-SNI 兼容逻辑，但不要让它无条件接管所有 HTTPS 请求。
+2. 在后端定义连接模式：
+
+```python
+CloudNetworkMode = Literal["auto", "secure_direct", "system_proxy", "compat_no_sni"]
 ```
 
-   - 阅读本计划。
-   - 确认本任务是 Tauri 壳兼容性回归，不是 UI 大重构。
+3. 在 `AppConfigService` 增加 key：
 
-2. 基础构建验证
-   - 在 `frontend/` 执行：
-
-```powershell
-npm run type-check
-npm run build
+```python
+KEY_CLOUD_NETWORK_MODE = "cloud_network_mode"
+KEY_CLOUD_LAST_WORKING_MODE = "cloud_last_working_mode"
+KEY_CLOUD_LAST_DIAGNOSTIC = "cloud_last_diagnostic"
 ```
 
-   - 如失败，先判断是否与本任务相关。
-   - 不要顺手修复无关业务问题；如发现无关失败，写入执行报告并停止或询问。
+4. 默认 `cloud_network_mode` 为 `auto`。
+5. 仅在用户明确选择或 `auto` 策略诊断命中时才使用 `compat_no_sni`。
 
-3. Tauri dev 验证
-   - 在 `frontend/` 执行：
+## Phase 2: 重构 CloudApiClient 为策略链
 
-```powershell
-npm run tauri:dev
+1. 在 `CloudApiClient.__init__` 中保留原始 base URL：
+   - `_original_base_url`
+   - `_hostname`
+   - `_scheme`
+2. 新增私有方法：
+
+```python
+_build_secure_direct_client(timeout) -> httpx.Client
+_build_system_proxy_client(timeout) -> httpx.Client
+_build_compat_no_sni_client(timeout) -> tuple[httpx.Client, str]
+_is_local_development_url(url) -> bool
+_is_insecure_remote_http(url) -> bool
+_request_with_mode(mode, method, path, json, timeout)
+_classify_http_error(exc) -> CloudNetworkErrorKind
 ```
 
-   - 验证：
-     - Tauri 窗口能打开。
-     - sidecar 能启动。
-     - `/health` 或项目列表 API 请求成功。
-     - 普通 Web dev 不受影响。
-     - 窗口标题和应用名中文正常。
-     - 控制台无明显前端错误。
+3. 在发起云 API 请求前做 URL 安全检查：
+   - 如果 base URL 是 `http://localhost`、`http://127.0.0.1` 或 `http://[::1]`，允许继续，用于本地开发和测试。
+   - 如果 base URL 是 `http://` 且 host 不是本地地址，返回明确错误：`生产云服务必须使用 HTTPS，请将 ZHANGSHU_CLOUD_API_BASE_URL 改为 https://...`。
+   - 不要阻止桌面端访问自己的本地 sidecar；本检查只针对 `CloudApiClient` 访问远程章枢云 API。
+4. `secure_direct`：
+   - URL 使用原始域名。
+   - `verify=True`。
+   - `trust_env=False`。
+5. `system_proxy`：
+   - URL 使用原始域名。
+   - `verify=True`。
+   - `trust_env=True`。
+   - 用于允许用户/系统代理接管请求。
+6. `compat_no_sni`：
+   - URL 使用解析后的 IP。
+   - Header 带 `Host: 原始域名`。
+   - `trust_env=False`。
+   - SSLContext 可复用当前 `_build_no_sni_context()`，但必须用注释明确这是兼容路径。
+7. `auto`：
+   - 优先尝试 `secure_direct`。
+   - 如果失败类型是代理/DNS/连接重置/SSL 握手失败，再尝试 `system_proxy`。
+   - 如果仍失败且错误疑似 SNI 过滤，再尝试 `compat_no_sni`。
+   - 如果某模式成功，可把 `cloud_last_working_mode` 保存为非敏感配置，但不要永久覆盖用户选择。
+8. 登录、注册、项目、备份 API 都使用该策略链。
+9. OSS `upload_backup(upload_url, content)` 不应使用 Cloud API 的 No-SNI 逻辑；它连接的是 OSS presigned URL，必须：
+   - `trust_env` 根据网络模式决定；
+   - 默认先直连；
+   - 如果用户选择 `system_proxy`，允许代理；
+   - 上传失败时解析 OSS 错误 XML，但不要输出完整签名 query。
 
-4. Tauri build 验证
-   - 如 sidecar exe 不存在或过期，先执行：
+## Phase 3: 新增网络诊断服务
 
-```powershell
-npm run tauri:build:backend
+1. 新建 `backend/app/infrastructure/cloud_network_diagnostics.py`。
+2. 实现诊断步骤：
+   - `config_check`：确认 `ZHANGSHU_CLOUD_API_BASE_URL` 是否存在、scheme 是否为 http/https。
+   - `https_policy_check`：确认远程云 API 使用 HTTPS；本地 `localhost/127.0.0.1/::1` 允许 HTTP。
+   - `dns_check`：解析 hostname，返回 IP 列表和耗时。
+   - `tcp_check`：对 host:port 做 TCP 连接测试。
+   - `secure_https_check`：用域名 + SNI + 证书验证 GET `/health`。
+   - `system_proxy_check`：`trust_env=True` GET `/health`。
+   - `compat_no_sni_check`：IP + Host + No-SNI GET `/health`。
+   - `api_contract_check`：GET `/health` 或 `/api/auth/me`，无 token 时只验证服务是否可达。
+3. 每一步返回：
+
+```json
+{
+  "name": "secure_https",
+  "ok": false,
+  "latency_ms": 123,
+  "error_kind": "tls_reset_or_sni_filtered",
+  "message": "普通 HTTPS 连接被重置，可能是校园网或公司网拦截。",
+  "suggestion": "可尝试系统代理或兼容模式。"
+}
 ```
 
-   - 然后执行：
+4. 错误分类建议：
+   - `not_configured`
+   - `invalid_url`
+   - `dns_failed`
+   - `tcp_unreachable`
+   - `timeout`
+   - `tls_failed`
+   - `tls_reset_or_sni_filtered`
+   - `proxy_required_or_interfered`
+   - `http_status_error`
+   - `cloud_unavailable`
+   - `insecure_remote_http`
+   - `oss_internal_endpoint`
+   - `oss_forbidden_or_signature_error`
+   - `unknown`
+5. 诊断不得携带密码、token、refresh token。
+6. 诊断响应 schema 应保留机器可读字段和用户可读建议。
 
-```powershell
-npm run tauri:build
+## Phase 4: 新增本地 API
+
+在 `backend/app/api/cloud.py` 增加：
+
+1. `GET /api/cloud/network/settings`
+   - 返回：
+
+```json
+{
+  "mode": "auto",
+  "last_working_mode": "secure_direct",
+  "base_url_configured": true
+}
 ```
 
-   - 若因本机缺少 Windows 打包工具、证书、NSIS/WiX 或环境问题失败，Claude Code 应记录为环境阻塞，不要改业务代码绕过。
-   - 若因项目配置、API base、sidecar 路径、CORS、静态资源路径失败，做最小修复。
+2. `PUT /api/cloud/network/settings`
+   - 请求：
 
-5. Tauri production 包手动启动验证
-   - 找到 `frontend/src-tauri/target/release/bundle/` 下生成的包或可执行文件。
-   - 启动打包后的应用。
-   - 验证：
-     - 首屏加载正常。
-     - 项目列表能加载。
-     - 进入已有项目能加载写作工作区。
-     - API 请求指向 `127.0.0.1:8765`。
-     - 没有 CORS 错误。
-     - 退出应用后 sidecar 不残留异常进程。
+```json
+{"mode": "auto"}
+```
 
-6. 工具页壳内兼容性 smoke test
-   - 在 Tauri dev 或打包应用中逐页检查：
-     - `/projects/:projectId/search`
-     - `/projects/:projectId/review`
-     - `/projects/:projectId/stats`
-     - `/projects/:projectId/backup`
-     - `/imports`
-     - `/projects/:projectId/versions`
-     - `/projects/:projectId/knowledge`
-   - 每页只检查壳内兼容性，不做 UI 大改。
+   - 只允许四种 mode。
+   - 如果用户设置 `compat_no_sni`，后端允许保存，但前端必须显示安全提示。
+3. `POST /api/cloud/network/diagnose`
+   - 请求可为空，或支持：
 
-7. 文件上传与导入验证
-   - 在 Tauri 壳内检查：
-     - 作品导入选择单个 `.txt` / `.md` / `.docx` 文件。
-     - 作品导入选择文件夹。
-     - 项目包 `.zip` 选择。
-     - 知识库批量导入选择文件。
-     - 知识库批量导入选择文件夹。
-     - 知识库导入 `.zip`。
-   - 如果 `webkitdirectory` 在 WebView2 中不可用，应保留 zip 导入作为 fallback，并在 UI 上确保用户能找到 fallback。
-   - 不改变导入业务逻辑。
+```json
+{"include_oss": false}
+```
 
-8. 文件下载与导出验证
-   - 在 Tauri 壳内检查：
-     - TXT 导出。
-     - Markdown 导出。
-     - DOCX 导出。
-     - 项目备份 zip 导出。
-     - 词库导出。
-   - 如果 `a.download`、Blob URL 或浏览器下载行为在 Tauri 壳中不可用，应优先使用 Tauri shell 已允许能力或现有浏览器可用方式的最小兼容修复。
-   - 不改变导出内容格式。
+   - 返回完整诊断报告。
+4. 不要让这些接口触发登录、注册或上传备份。
 
-9. 菜单与弹窗兼容性修复
-   - 检查 Review 和 Knowledge 的“更多”菜单。
-   - 如不能点击外部关闭或 Esc 关闭，按最小方式修复：
-     - `document.addEventListener('pointerdown', ...)`
-     - `document.addEventListener('keydown', ...)`
-     - `onBeforeUnmount` 清理监听。
-   - 避免为此创建复杂新组件。
-   - 检查弹窗：
-     - 知识库导入弹窗。
-     - 刷新知识索引弹窗。
-     - 版本恢复弹窗。
-     - 导入预览/确认相关面板。
-   - 确保在 Tauri 最小窗口下不被裁切到无法操作。
+## Phase 5: 前端设置和诊断面板
 
-10. CSS / WebView2 兼容性修复
-    - 检查关键交互是否依赖 `:has()`。
-    - 如 Review 检查范围仍用 `:has()`，改为 Vue class active。
-    - 不要求移除所有现代 CSS，只处理关键功能选中态、菜单、弹窗、布局。
-    - 检查 `position: fixed`、`overflow`、`max-height: 90vh` 在壳内是否正常。
-    - 检查深色和护眼主题下菜单、弹窗、空状态、图表是否可读。
+1. 在 `frontend/src/entities/cloud/types.ts` 增加类型：
 
-11. Tauri 最小窗口与缩放验证
-    - 检查尺寸：
-      - 默认 `1440 × 900`
-      - 最小 `1280 × 720`
-      - 手动缩小或系统缩放近似 `1100 × 760`
-      - 125% 缩放
-    - 验证：
-      - 页面无全局横向滚动。
-      - 主按钮没有被挤出屏幕。
-      - 下拉菜单没有被裁切。
-      - 弹窗底部按钮可见。
-      - 画布类页面不因主题改变 canvas 背景色。
+```ts
+export type CloudNetworkMode = 'auto' | 'secure_direct' | 'system_proxy' | 'compat_no_sni'
 
-12. 中文与编码验证
-    - 检查 Tauri 窗口标题、应用名、sidecar 日志、错误日志中的中文是否正常。
-    - 如发现 `章枢` 显示为乱码，只修正对应配置或日志字符串编码问题。
-    - 不改业务文案。
+export interface CloudNetworkSettings {
+  mode: CloudNetworkMode
+  last_working_mode: CloudNetworkMode | null
+  base_url_configured: boolean
+}
 
-13. 执行报告
-    - Claude Code 必须写入：
+export interface CloudNetworkDiagnosticStep {
+  name: string
+  ok: boolean
+  latency_ms: number | null
+  error_kind: string
+  message: string
+  suggestion: string
+}
 
-`docs/ai-handoff/CLAUDE_EXECUTION_REPORT.md`
+export interface CloudNetworkDiagnosticReport {
+  ok: boolean
+  recommended_mode: CloudNetworkMode
+  summary: string
+  steps: CloudNetworkDiagnosticStep[]
+}
+```
 
-   - 报告必须包含：
-     - 执行了哪些命令。
-     - Tauri dev 是否通过。
-     - Tauri build 是否通过。
-     - 打包应用是否实际启动验证。
-     - 哪些工具页做了壳内 smoke test。
-     - 上传/下载/导入/导出验证结果。
-     - 是否发现 CORS、API base、静态资源、WebView2 CSS、菜单、弹窗、中文编码问题。
-     - 实际修改了哪些文件。
-     - 未修复问题和原因。
+2. 在 `frontend/src/entities/cloud/api.ts` 增加：
+   - `getCloudNetworkSettings()`
+   - `setCloudNetworkSettings(mode)`
+   - `runCloudNetworkDiagnostics()`
+3. 新建 `CloudNetworkDiagnosticsPanel.vue`：
+   - 顶部显示当前连接模式。
+   - 提供“检测连接”按钮。
+   - 用简洁列表显示 DNS、端口、HTTPS、代理、兼容模式结果。
+   - 只在“高级设置”中暴露连接模式选择。
+   - `compat_no_sni` 旁边显示提示：普通连接失败时才建议使用。
+4. 修改 `AppSettingsDialog.vue`：
+   - 在“章枢云账户”字段组下加入“网络连接”折叠区或二级区域。
+   - 避免把诊断详情铺满主设置页。
+5. 修改 `CloudAccountDialog.vue`：
+   - 登录/注册失败时，如果错误不是 401 账号密码错误，显示“运行连接诊断”按钮。
+   - 诊断后根据结果提示：
+     - “可能被校园/公司网络拦截”
+     - “可能需要使用系统代理”
+     - “云服务暂时不可达”
+     - “本地未配置云服务地址”
+
+## Phase 6: OSS 预签名 URL 防护
+
+1. 修改 `cloud-server/app/core/config.py`：
+
+```python
+oss_endpoint: str = "oss-cn-hangzhou.aliyuncs.com"
+oss_public_endpoint: str = ""
+oss_internal_endpoint: str = ""
+```
+
+2. 规则：
+   - public endpoint = `OSS_PUBLIC_ENDPOINT or OSS_ENDPOINT`
+   - internal endpoint = `OSS_INTERNAL_ENDPOINT or public endpoint`
+3. 修改 `cloud-server/app/infrastructure/oss_storage.py`：
+   - `_public_bucket` 用于 `generate_put_url()` 和 `generate_get_url()`。
+   - `_internal_bucket` 用于 `head_object()` 和 `delete_object()`。
+4. 在生成 presigned URL 后增加防御性检查：
+   - 如果 URL host 包含 `-internal.aliyuncs.com`，记录 error，并返回服务端错误：
+
+```json
+{"detail": "云存储上传地址配置为内网地址，桌面端无法访问，请联系管理员修正 OSS_PUBLIC_ENDPOINT。"}
+```
+
+5. 修改 `.env.example`：
+
+```env
+OSS_ENDPOINT=oss-cn-hangzhou.aliyuncs.com
+OSS_PUBLIC_ENDPOINT=oss-cn-hangzhou.aliyuncs.com
+OSS_INTERNAL_ENDPOINT=oss-cn-hangzhou-internal.aliyuncs.com
+```
+
+6. 修改 `README.md` 和 `deploy/README.md`：
+   - 明确“预签名 URL 给桌面端使用，必须公网可达”。
+   - 服务端自用可配置 internal endpoint。
+
+## Phase 7: 错误信息和日志收敛
+
+1. 后端 `CloudApiError` 增加可选字段：
+   - `status_code`
+   - `error_kind`
+   - `suggestion`
+2. 本地 API 捕获连接异常时，返回更具体但不暴露敏感信息的 detail。
+3. 日志规则：
+   - 不记录完整 Authorization。
+   - 不记录完整 presigned URL query。
+   - 不记录密码、refresh token。
+   - 可以记录 hostname、错误类型、耗时、策略模式。
+4. 上传 OSS 失败时：
+   - 若 response body 是 OSS XML，只提取 `Code` 和 `Message`，不要把完整 URL 打进日志。
+   - 403 时提示可能原因：签名过期、Content-Type 不匹配、CORS、endpoint 内外网错误。
+
+## Phase 8: 测试
+
+1. `backend/tests/test_cloud_api_client_network_modes.py`
+   - mock httpx，验证 `auto` 会先试 `secure_direct`。
+   - secure 成功时不会触发 `compat_no_sni`。
+   - secure 连接重置时会尝试 `system_proxy` / `compat_no_sni`。
+   - 手动 `secure_direct` 不会使用 No-SNI。
+   - 手动 `compat_no_sni` 会使用 Host 头。
+2. `backend/tests/test_cloud_network_diagnostics.py`
+   - 未配置 base URL 返回 `not_configured`。
+   - 远程 HTTP 地址返回 `insecure_remote_http`。
+   - `http://127.0.0.1:9000`、`http://localhost:9000`、`http://[::1]:9000` 不返回 `insecure_remote_http`。
+   - DNS 失败返回 `dns_failed`。
+   - TCP 不通返回 `tcp_unreachable`。
+   - TLS reset 分类为 `tls_reset_or_sni_filtered`。
+   - 诊断响应不包含 token。
+3. `backend/tests/test_cloud_api.py`
+   - 覆盖新增 `/api/cloud/network/settings`、`/api/cloud/network/diagnose`。
+4. `cloud-server/tests/test_oss_endpoint_config.py`
+   - public endpoint 生成的 presigned URL 不包含 `-internal.aliyuncs.com`。
+   - internal endpoint 用于 head/delete。
+   - 未设置 public endpoint 时回退到 `OSS_ENDPOINT`。
+5. 前端：
+   - 至少运行 type-check。
+   - 如项目已有前端测试基础，再补 CloudNetworkDiagnosticsPanel 的状态渲染测试。
 
 # Constraints
 
-- 不做大重构。
-- 不做工具页全面统一。
-- 不新增业务功能。
-- 不修改业务数据结构。
-- 不修改路由。
-- 不引入新依赖。
-- 不重写页面。
-- 不重写 Tauri 壳。
-- 不提交或保留本地打包产物。
-- 不提交 `data/`、`logs/`、`release/`、`frontend/src-tauri/target/`。
-- 只有确认存在 Tauri 壳兼容问题时才修改对应文件。
-- 所有修复必须是最小必要修复。
-- 如果打包失败是本机环境问题，应记录阻塞原因，不要用代码绕过。
+- 不要移除现有云登录、注册、备份 API 契约。
+- 不要把云网络诊断逻辑混入 UI 组件、登录服务或备份服务主体流程。
+- 不要继续默认所有 HTTPS 云请求都关闭证书验证。
+- 不要让用户在普通设置页里看到过多 TLS/SNI/HTTP2 技术细节；技术细节可放在诊断详情中。
+- 不要把代理账号密码、JWT、refresh token、OSS 签名 URL 写入日志。
+- 不要在客户端保存 OSS AccessKey。
+- 不要把 `compat_no_sni` 描述成“更安全”或“推荐模式”；它只是兼容模式。
+- 不要因为云服务连接失败阻断章枢本地写作功能。
+- 不要禁止本地开发使用 `http://localhost`、`http://127.0.0.1` 或 `http://[::1]` 连接本地 cloud-server；生产 HTTPS 约束只针对远程云 API。
+- 不要新增大型网络库，优先基于 `httpx`、`socket`、`ssl`、现有 AppConfig 实现。
+- 如果发现当前直接实现过的 No-SNI 代码存在安全风险，Claude Code 应修正为可控 fallback，而不是直接删除导致校园网用户再次不可用。
 
 # Verification Commands
 
-基础前端验证：
+## 桌面端后端
 
 ```powershell
-cd frontend
+cd F:\zhangshu\backend
+pytest tests/test_cloud_api.py -q
+pytest tests/test_cloud_backup_service.py -q
+pytest tests/test_cloud_api_client_network_modes.py -q
+pytest tests/test_cloud_network_diagnostics.py -q
+python -c "from app.main import app; print('ok')"
+```
+
+## 前端
+
+```powershell
+cd F:\zhangshu\frontend
 npm run type-check
 npm run build
 ```
 
-Tauri dev 验证：
+## 云服务端
 
 ```powershell
-cd frontend
-npm run tauri:dev
+cd F:\zhangshu\cloud-server
+pytest -q
+python -c "from app.main import app; print(app.title)"
 ```
 
-sidecar 构建：
+## 手动诊断建议
+
+在普通网络、代理网络、校园/公司网络中至少各做一轮：
 
 ```powershell
-cd frontend
-npm run tauri:build:backend
+Test-NetConnection api.emailbs.xin -Port 443
+Invoke-RestMethod https://api.emailbs.xin/health
 ```
 
-Tauri 打包验证：
+在章枢 UI 中：
 
-```powershell
-cd frontend
-npm run tauri:build
-```
-
-可选后端导入检查：
-
-```powershell
-cd backend
-python -c "import app.main; print('backend import ok')"
-```
-
-手动壳内 smoke test：
-
-- 打开项目列表。
-- 打开一个项目。
-- 打开搜索、检查、统计、导出备份、导入、版本、知识库页面。
-- 测试文件上传、文件夹上传、zip 上传。
-- 测试 TXT / MD / DOCX / 项目备份 zip 下载。
-- 测试更多菜单点击外部关闭和 Esc 关闭。
-- 测试默认、护眼、黑夜主题。
-- 测试最小窗口和 125% 缩放。
+1. 打开应用设置。
+2. 进入章枢云账户。
+3. 运行“云服务连接诊断”。
+4. 切换 `auto`、`secure_direct`、`system_proxy`、`compat_no_sni`，确认提示和结果一致。
+5. 登录或注册云账户。
+6. 触发一次云端备份。
+7. 如果 OSS 返回 403，确认 UI 提示能区分签名、CORS、endpoint 内外网问题。
 
 # Acceptance Criteria
 
-- `npm run type-check` 通过。
-- `npm run build` 通过。
-- `npm run tauri:dev` 能启动桌面窗口和 sidecar。
-- `npm run tauri:build` 能完成，或执行报告明确说明环境阻塞且不是项目配置问题。
-- 打包后的应用能启动并加载首屏。
-- 打包后的应用能访问 sidecar API，没有 CORS 或 API base 错误。
-- 搜索、检查、统计、导入、导出备份、版本、知识库页面在 Tauri 壳内能打开。
-- 文件上传、文件夹导入或 zip fallback 在 Tauri 壳内可用。
-- TXT / MD / DOCX / 项目备份 zip 下载在 Tauri 壳内可用，或报告明确记录当前 Tauri 下载限制和最小修复建议。
-- 更多菜单支持点击外部关闭、Esc 关闭、菜单项点击后关闭。
-- 关键选中态不依赖有兼容风险的 CSS `:has()`。
-- 最小窗口下无全局横向滚动，弹窗按钮不被裁切。
-- 默认、护眼、黑夜主题在壳内可读。
-- 中文应用名、窗口标题和错误日志不出现乱码。
-- 未进行大重构，未修改无关业务代码。
+- 活跃交接文件只剩新的 `docs/ai-handoff/CODEX_PLAN.md`。
+- 旧 `CODEX_PLAN.md` 和 `CLAUDE_EXECUTION_REPORT.md` 已归档到 `docs/ai-handoff/archive/2026-05-26-pre-network-resilience/`。
+- 默认云连接模式为 `auto`。
+- 普通 HTTPS 安全连接成功时，不使用 No-SNI，不关闭证书验证。
+- 远程生产云 API 使用 HTTP 时会被阻止或明确标记为高风险；本地 `localhost/127.0.0.1/::1` HTTP 联调不受影响。
+- 校园/公司网 SNI 过滤时，`auto` 能通过诊断或 fallback 找到 `compat_no_sni`，并给出用户可理解提示。
+- 用户可以在设置中手动选择连接模式。
+- 用户可以一键运行云连接诊断，诊断报告能区分 DNS、TCP、TLS/SNI、代理、云服务不可达、OSS endpoint 等问题。
+- 登录/注册失败时，不再只显示泛化失败文案；网络类失败能引导用户诊断。
+- 云备份上传的 OSS presigned URL 不会再返回阿里云内网 endpoint。
+- 云服务端支持 public/internal OSS endpoint 分离。
+- 所有新增诊断和日志不泄露 token、密码、API key、OSS AccessKey、完整签名 URL。
+- 本地写作功能在云服务不可用时不受影响。
+- 后端、前端、云服务端验证命令通过，或 Claude 执行报告说明无法运行的具体原因。
 
 # Risks and Watchpoints
 
-- Tauri production 的 origin 可能不同于 Web dev，CORS 需要实际验证后再修。
-- Tauri 静态资源协议可能暴露 API base 配置问题，不能只跑 Web `npm run build`。
-- 文件下载在 WebView2 中可能和浏览器下载行为不同，需要实际壳内验证。
-- `webkitdirectory` 在桌面 WebView 中应实测，不要假设完全等同浏览器。
-- 打包失败可能来自本机缺少构建工具，不一定是代码问题。
-- sidecar 端口 `8765` 可能被占用，需要确认错误提示清楚，但不要本任务扩展为动态端口架构。
-- 修改 CORS 时不要放开过宽 origin。
-- 修复菜单关闭逻辑时注意清理 document listener，避免内存泄漏或多次触发。
-- 不要为了兼容性检查顺手做工具页 UI 统一。
-- 不要提交 PyInstaller 输出、Tauri target、日志、数据库或本地配置。
+- 当前 `compat_no_sni` 使用 `CERT_NONE`，如果继续默认启用，会扩大中间人风险；必须收束为 fallback 或手动兼容模式。
+- `trust_env=False` 可以绕过代理干扰，但会让必须走代理的用户无法连接；因此需要 `system_proxy` 模式。
+- Windows GUI/Tauri 打包环境未必继承命令行的 `HTTP_PROXY/HTTPS_PROXY` 环境变量，`system_proxy` 模式不一定覆盖所有代理软件；UI 文案应提示用户可在代理软件中为 `api.emailbs.xin` 配置规则。
+- 一些校园/公司网会封 IP 直连或拦截 Host 头，`compat_no_sni` 也可能失败；诊断应给出“更换网络或使用可信代理”的建议。
+- No-SNI 兼容模式下证书验证不可用，不能用于传输高敏感操作以外的长期默认路径。
+- 生产 HTTP 不能因为“方便调试”被放行；但如果实现过严，把 `localhost` 也禁掉，会直接破坏本地 cloud-server 联调。
+- OSS presigned URL 的上传失败可能来自 Content-Type 不匹配、CORS、签名过期、endpoint 内外网、代理改写 header；错误分类要谨慎，不要误导用户。
+- 云服务端如果使用双 endpoint，public/internal bucket 初始化要避免配置混淆。
+- 日志中如打印 `response.url`，可能泄露 presigned URL 签名参数，必须避免。
+- 诊断接口可能被频繁点击，应设置合理 timeout，避免 UI 长时间卡住。
+- 如果新增 proxy URL 配置并允许账号密码，需要加密存储；V1 建议先不支持带认证的代理 URL。
 
 # Review Checklist
 
-- [ ] Claude Code 是否遵守“不做大重构，只做 Tauri 兼容性小修”？
-- [ ] 是否没有修改无关业务代码？
-- [ ] 是否没有修改数据库、Repository、Service、业务 Schema？
-- [ ] 是否执行并记录 `npm run type-check`？
-- [ ] 是否执行并记录 `npm run build`？
-- [ ] 是否执行并记录 `npm run tauri:dev`？
-- [ ] 是否执行并记录 `npm run tauri:build`，或说明环境阻塞？
-- [ ] 打包应用是否实际启动验证？
-- [ ] Tauri production 下 API base 是否正确？
-- [ ] 是否没有 CORS 错误？
-- [ ] 文件上传、文件夹导入或 zip fallback 是否可用？
-- [ ] TXT / MD / DOCX / 项目备份 zip 下载是否可用？
-- [ ] 更多菜单是否支持点击外部和 Esc 关闭？
-- [ ] 是否规避了关键 `:has()` 兼容风险？
-- [ ] 最小窗口和 125% 缩放下是否无全局横向滚动？
-- [ ] 弹窗底部按钮是否始终可见？
-- [ ] 默认、护眼、黑夜主题是否在壳内可读？
-- [ ] 中文窗口标题、应用名、日志是否正常？
-- [ ] 是否没有提交 `data/`、`logs/`、`release/`、`frontend/src-tauri/target/` 或本地打包产物？
+- [ ] 是否已阅读并遵循 `docs/Cloud_Service_Connection_Troubleshooting.md` 的问题复盘？
+- [ ] 是否把 No-SNI 从默认路径改为 fallback / 手动兼容模式？
+- [ ] `secure_direct` 是否保留完整证书验证？
+- [ ] `system_proxy` 是否允许系统代理参与请求？
+- [ ] `auto` 策略是否有清晰顺序和错误分类？
+- [ ] 网络诊断是否覆盖 DNS、TCP、HTTPS、代理、No-SNI、云 health？
+- [ ] 诊断结果是否用户可读，而不是只抛技术异常？
+- [ ] 远程生产云 API 使用 HTTP 时，是否被阻止或明确标记为高风险？
+- [ ] 本地 `localhost/127.0.0.1/::1` HTTP 联调是否不受影响？
+- [ ] 前端是否提供连接诊断入口？
+- [ ] 登录/注册失败是否能区分账号错误和网络错误？
+- [ ] 云备份 OSS 403 是否有更具体提示？
+- [ ] 云服务端是否支持 OSS public/internal endpoint 分离？
+- [ ] 预签名 URL 是否不会使用 `-internal.aliyuncs.com`？
+- [ ] 是否没有记录 JWT、refresh token、密码、OSS AccessKey、完整 presigned URL？
+- [ ] 是否没有修改无关业务模块？
+- [ ] 是否没有破坏现有 12 个云 API 契约？
+- [ ] 是否补充了后端、前端、云服务端相关测试？
+- [ ] Claude 执行报告是否说明哪些网络场景已验证、哪些需要用户实际网络环境复验？

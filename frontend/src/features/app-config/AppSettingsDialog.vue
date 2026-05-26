@@ -12,6 +12,9 @@ import type {
   TestDashScopeResponse,
   TestLLMResponse,
 } from '@/entities/app-config/types'
+import { getCloudAccountStatus, cloudLogout } from '@/entities/cloud/api'
+import type { CloudAccountStatus } from '@/entities/cloud/types'
+import CloudNetworkDiagnosticsPanel from '@/features/cloud/CloudNetworkDiagnosticsPanel.vue'
 
 const emit = defineEmits<{
   close: []
@@ -35,6 +38,10 @@ const llmBaseUrl = ref('')
 const isTestingLlm = ref(false)
 const llmTestResult = ref<TestLLMResponse | null>(null)
 
+// Cloud account
+const cloudStatus = ref<CloudAccountStatus | null>(null)
+const isCloudLoading = ref(false)
+
 const llmModelOptions = [
   { value: 'qwen-plus', label: 'qwen-plus（推荐）' },
   { value: 'qwen-turbo', label: 'qwen-turbo（快速）' },
@@ -53,7 +60,37 @@ onMounted(async () => {
   } finally {
     isLoading.value = false
   }
+
+  void loadCloudStatus()
 })
+
+async function loadCloudStatus() {
+  isCloudLoading.value = true
+  try {
+    cloudStatus.value = await getCloudAccountStatus()
+  } catch {
+    // Cloud not configured — silently ignore.
+  } finally {
+    isCloudLoading.value = false
+  }
+}
+
+async function handleCloudLogout() {
+  isCloudLoading.value = true
+  try {
+    await cloudLogout()
+    cloudStatus.value = {
+      logged_in: false,
+      cloud_available: cloudStatus.value?.cloud_available ?? false,
+      email: null,
+      display_name: null,
+    }
+  } catch {
+    errorMessage.value = '退出云账户失败。'
+  } finally {
+    isCloudLoading.value = false
+  }
+}
 
 // --- Computed ---
 const hasSavedKey = computed(() => savedMask.value?.has_value === true)
@@ -293,6 +330,46 @@ function handleClose() {
               </p>
             </template>
           </fieldset>
+
+          <!-- Cloud account section -->
+          <fieldset class="option-group">
+            <legend class="option-label">章枢云账户</legend>
+            <p class="option-hint">
+              登录后可为项目启用云端备份，数据会加密上传到章枢云。
+            </p>
+
+            <div v-if="isCloudLoading" class="cloud-loading">正在加载…</div>
+
+            <div v-else-if="cloudStatus?.logged_in" class="cloud-logged-in">
+              <div class="cloud-account-info">
+                <span class="cloud-label">已登录</span>
+                <span class="cloud-email">{{ cloudStatus.email ?? cloudStatus.display_name }}</span>
+              </div>
+              <button
+                class="zs-button zs-button-secondary"
+                type="button"
+                :disabled="isCloudLoading"
+                @click="handleCloudLogout"
+              >
+                退出登录
+              </button>
+            </div>
+
+            <div v-else class="cloud-not-logged-in">
+              <p v-if="!cloudStatus?.cloud_available" class="option-hint subtle">
+                云服务暂未配置，请联系管理员。
+              </p>
+              <p v-else class="option-hint">
+                尚未登录，请在项目列表页面点击"云账户"登录或注册。
+              </p>
+            </div>
+          </fieldset>
+
+          <!-- Network diagnostics section -->
+          <fieldset class="option-group">
+            <legend class="option-label">网络连接</legend>
+            <CloudNetworkDiagnosticsPanel />
+          </fieldset>
         </template>
       </div>
 
@@ -497,5 +574,39 @@ function handleClose() {
   outline: none;
   border-color: var(--zs-color-primary);
   box-shadow: var(--zs-shadow-focus);
+}
+
+.cloud-loading {
+  padding: var(--zs-space-2) 0;
+  color: var(--zs-color-text-muted);
+  font-size: 0.85rem;
+}
+
+.cloud-logged-in {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--zs-space-3);
+}
+
+.cloud-account-info {
+  display: grid;
+  gap: 2px;
+}
+
+.cloud-label {
+  color: var(--zs-color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.cloud-email {
+  color: var(--zs-color-text);
+  font-weight: 800;
+}
+
+.cloud-not-logged-in {
+  display: grid;
+  gap: var(--zs-space-2);
 }
 </style>

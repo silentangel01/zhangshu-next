@@ -22,6 +22,10 @@ KEY_LLM_MODEL = "llm_model"
 KEY_LLM_BASE_URL = "llm_base_url"
 KEY_LLM_PROVIDER = "llm_provider"
 
+# Cloud network resilience keys (non-sensitive, stored in plaintext)
+KEY_CLOUD_NETWORK_MODE = "cloud_network_mode"
+KEY_CLOUD_LAST_WORKING_MODE = "cloud_last_working_mode"
+
 
 class AppConfigService:
     """Manages app configuration with transparent encryption."""
