@@ -23,6 +23,7 @@ import {
   VERSION_ENTITY_TYPE_LABELS,
   VERSION_SOURCE_LABELS,
 } from '@/entities/version/types'
+import { formatDateTime } from '@/shared/utils/formatDateTime'
 
 const route = useRoute()
 
@@ -253,13 +254,6 @@ function getSourceLabel(source: string): string {
   return VERSION_SOURCE_LABELS[source] ?? source
 }
 
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(value))
-}
-
 function getDiffClass(tag: DiffLine['tag']): string {
   switch (tag) {
     case 'insert':
@@ -351,7 +345,7 @@ onMounted(() => {
           <h3 class="version-title">{{ v.entity_title || '(无标题)' }}</h3>
           <p class="version-meta">
             <span v-if="v.label" class="version-label">{{ v.label }}</span>
-            <span>{{ formatDate(v.created_at) }}</span>
+            <span>{{ formatDateTime(v.created_at) }}</span>
           </p>
           <div class="version-actions-inline">
             <button
@@ -393,7 +387,7 @@ onMounted(() => {
               <p class="detail-meta">
                 {{ getTypeLabel(selectedVersion.entity_type) }} ·
                 {{ getSourceLabel(selectedVersion.source) }} ·
-                {{ formatDate(selectedVersion.created_at) }}
+                {{ formatDateTime(selectedVersion.created_at) }}
                 <span v-if="selectedVersion.is_pinned" class="pinned-badge">★ 已标记</span>
               </p>
             </div>

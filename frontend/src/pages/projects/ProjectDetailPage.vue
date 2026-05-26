@@ -42,6 +42,7 @@ import CreateVolumeDialog from '@/features/volumes/CreateVolumeDialog.vue'
 import EditVolumeDialog from '@/features/volumes/EditVolumeDialog.vue'
 import WritingAidPanel from '@/features/writing/WritingAidPanel.vue'
 import { safeReadJson, safeWriteJson } from '@/shared/storage/localWorkspaceState'
+import { formatDateTime } from '@/shared/utils/formatDateTime'
 
 const route = useRoute()
 
@@ -512,13 +513,6 @@ async function saveChange(action: () => Promise<void>, fallback: string) {
   }
 }
 
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(value))
-}
-
 const STATUS_LABELS: Record<string, string> = {
   planning: '筹备中',
   writing: '连载中',
@@ -667,7 +661,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
               </div>
               <div>
                 <dt>更新时间</dt>
-                <dd>{{ formatDate(project.updated_at) }}</dd>
+                <dd>{{ formatDateTime(project.updated_at) }}</dd>
               </div>
               <div>
                 <dt>分卷</dt>

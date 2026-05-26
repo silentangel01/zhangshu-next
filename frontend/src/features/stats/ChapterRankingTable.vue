@@ -1,17 +1,9 @@
 <script setup lang="ts">
 import type { WritingStatsChapterRankingItem } from '@/entities/writing-stats/types'
 import { formatNumber, formatSignedWords } from './statsFormatters'
+import { formatDateTime } from '@/shared/utils/formatDateTime'
 
 defineProps<{ rankings: WritingStatsChapterRankingItem[] }>()
-
-function formatUpdatedAt(value: string): string {
-  return new Intl.DateTimeFormat('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(value))
-}
 </script>
 
 <template>
@@ -35,7 +27,7 @@ function formatUpdatedAt(value: string): string {
           <td class="num" :class="item.delta_words_7d < 0 ? 'negative' : item.delta_words_7d > 0 ? 'positive' : ''">
             {{ formatSignedWords(item.delta_words_7d) }}
           </td>
-          <td class="num muted">{{ formatUpdatedAt(item.updated_at) }}</td>
+          <td class="num muted">{{ formatDateTime(item.updated_at) }}</td>
         </tr>
       </tbody>
     </table>

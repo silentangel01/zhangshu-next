@@ -263,6 +263,11 @@ class BackupService:
             "_payload": payload,
         }
 
+    def build_project_backup_bytes(self, project_id: str) -> tuple[bytes, str]:
+        """Build a project backup zip and return ``(content_bytes, filename)``."""
+        backup_file = self.export_project_backup(project_id)
+        return backup_file.content.read(), backup_file.filename
+
     def restore_from_payload(
         self, payload: dict[str, Any]
     ) -> RestoreReport:

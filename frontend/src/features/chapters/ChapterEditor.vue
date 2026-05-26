@@ -18,6 +18,7 @@ import {
 import { formatChapterContent } from './chapterFormatting'
 import type { FirstLineIndentSpaces, ParagraphSpacingLines } from './chapterFormatting'
 import { safeReadJson, safeWriteJson } from '@/shared/storage/localWorkspaceState'
+import { formatDateTimeFull } from '@/shared/utils/formatDateTime'
 
 const props = defineProps<{
   chapter: Chapter
@@ -153,7 +154,7 @@ const sessionSpeedText = computed(() => {
 })
 const hasUnsavedChanges = computed(() => localContent.value !== originalContent.value)
 const isSaveInProgress = computed(() => isManualSaving.value || isAutosaving.value)
-const formattedLastSavedAt = computed(() => formatDateTime(lastSavedAt.value))
+const formattedLastSavedAt = computed(() => formatDateTimeFull(lastSavedAt.value))
 const saveStatusText = computed(() => {
   if (isManualSaving.value) {
     return '正在保存…'
@@ -586,12 +587,6 @@ function handleBeforeUnload(event: BeforeUnloadEvent) {
   event.returnValue = ''
 }
 
-function formatDateTime(value: string): string {
-  const date = new Date(value)
-  const pad = (part: number) => String(part).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
-}
-
 function isNetworkLikeError(error: unknown): boolean {
   return error instanceof TypeError || (error instanceof Error && error.message.includes('Failed to fetch'))
 }
@@ -847,7 +842,7 @@ function clearFormattingUndo() {
     <section v-if="pendingDraft" class="recovery-banner">
       <div>
         <h3>检测到未恢复的草稿</h3>
-        <p>草稿更新时间：{{ formatDateTime(pendingDraft.updated_at) }}，字数：{{ pendingDraft.word_count }}</p>
+        <p>草稿更新时间：{{ formatDateTimeFull(pendingDraft.updated_at) }}，字数：{{ pendingDraft.word_count }}</p>
       </div>
       <div class="recovery-actions">
         <button class="secondary-button" type="button" @click="showDraftPreview = !showDraftPreview">

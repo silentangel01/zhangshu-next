@@ -15,6 +15,7 @@ import {
   outlineStatusLabels,
 } from '@/entities/outline/types'
 import type { Volume } from '@/entities/volume/types'
+import { formatDateTime } from '@/shared/utils/formatDateTime'
 
 const props = defineProps<{
   outline: OutlineItem
@@ -84,13 +85,6 @@ function handleSave() {
     chapter_id: form.chapter_id || null,
     order_index: Number(form.order_index) || 0,
   })
-}
-
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(value))
 }
 </script>
 
@@ -183,11 +177,11 @@ function formatDate(value: string): string {
     <dl class="metadata-grid">
       <div>
         <dt>创建时间</dt>
-        <dd>{{ formatDate(outline.created_at) }}</dd>
+        <dd>{{ formatDateTime(outline.created_at) }}</dd>
       </div>
       <div>
         <dt>更新时间</dt>
-        <dd>{{ formatDate(outline.updated_at) }}</dd>
+        <dd>{{ formatDateTime(outline.updated_at) }}</dd>
       </div>
     </dl>
 

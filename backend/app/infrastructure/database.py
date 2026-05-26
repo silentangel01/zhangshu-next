@@ -409,6 +409,85 @@ def _ensure_writing_stat_event_columns() -> None:
         connection.execute(text("DROP TABLE writing_stat_events"))
 
 
+def _ensure_cloud_user_id_columns() -> None:
+    """Add cloud_user_id to cloud tables and backfill from stored auth config."""
+    inspector = inspect(engine)
+    table_names = inspector.get_table_names()
+
+    added_link_col = False
+    if "cloud_project_links" in table_names:
+        existing = {c["name"] for c in inspector.get_columns("cloud_project_links")}
+        with engine.begin() as conn:
+            if "cloud_user_id" not in existing:
+                conn.execute(
+                    text(
+                        "ALTER TABLE cloud_project_links "
+                        "ADD COLUMN cloud_user_id VARCHAR(255) NOT NULL DEFAULT ''"
+                    )
+                )
+                added_link_col = True
+
+    added_record_col = False
+    if "cloud_backup_records" in table_names:
+        existing = {c["name"] for c in inspector.get_columns("cloud_backup_records")}
+        with engine.begin() as conn:
+            if "cloud_user_id" not in existing:
+                conn.execute(
+                    text(
+                        "ALTER TABLE cloud_backup_records "
+                        "ADD COLUMN cloud_user_id VARCHAR(255) NOT NULL DEFAULT ''"
+                    )
+                )
+                added_record_col = True
+
+    if not (added_link_col or added_record_col):
+        return
+
+    # Backfill: read cloud_user_id from app_config (encrypted store)
+    stored_user_id = ""
+    if "app_config" in table_names:
+        with engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT config_value, is_encrypted FROM app_config "
+                    "WHERE config_key = 'cloud_user_id'"
+                )
+            ).first()
+            if row:
+                raw_value = row[0]
+                is_encrypted = bool(row[1])
+                if is_encrypted and raw_value:
+                    try:
+                        from app.infrastructure.config_crypto import decrypt_value
+
+                        stored_user_id = decrypt_value(raw_value)
+                    except Exception:
+                        stored_user_id = ""
+                else:
+                    stored_user_id = raw_value or ""
+
+    if not stored_user_id:
+        return
+
+    with engine.begin() as conn:
+        if added_link_col:
+            conn.execute(
+                text(
+                    "UPDATE cloud_project_links "
+                    "SET cloud_user_id = :uid WHERE cloud_user_id = ''"
+                ),
+                {"uid": stored_user_id},
+            )
+        if added_record_col:
+            conn.execute(
+                text(
+                    "UPDATE cloud_backup_records "
+                    "SET cloud_user_id = :uid WHERE cloud_user_id = ''"
+                ),
+                {"uid": stored_user_id},
+            )
+
+
 def _ensure_chapter_version_management_columns() -> None:
     inspector = inspect(engine)
     if "chapter_versions" not in inspector.get_table_names():
@@ -481,6 +560,8 @@ def init_database() -> None:
     from app.models import app_config  # noqa: F401
     from app.models import writing_stat_event  # noqa: F401
     from app.models import entity_version  # noqa: F401
+    from app.models import cloud_project_link  # noqa: F401
+    from app.models import cloud_backup_record  # noqa: F401
 
     ensure_database_directory()
     _ensure_writing_stat_event_columns()
@@ -492,6 +573,7 @@ def init_database() -> None:
     _ensure_timeline_edge_columns()
     _ensure_knowledge_index_profile_columns()
     _ensure_chapter_version_management_columns()
+    _ensure_cloud_user_id_columns()
     _backfill_timeline_tracks()
     if added_position_ratio:
         _backfill_timeline_event_position_ratios()

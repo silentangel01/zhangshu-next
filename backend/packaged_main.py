@@ -40,6 +40,7 @@ def prepare_environment() -> Path:
     os.environ.setdefault("ZHANGSHU_DATA_DIR", str(data_dir))
     os.environ.setdefault("ZHANGSHU_DB_FILENAME", "zhangshu.sqlite3")
     os.environ.setdefault("ZHANGSHU_FRONTEND_DIST", str(frontend_dist))
+    os.environ.setdefault("ZHANGSHU_CLOUD_API_BASE_URL", "https://api.emailbs.xin")
     return logs_dir
 
 

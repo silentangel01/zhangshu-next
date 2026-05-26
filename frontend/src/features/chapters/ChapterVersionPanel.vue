@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ChapterVersionListItem, ChapterVersionSource } from '@/entities/chapter-version/types'
+import { formatDateTimeFull } from '@/shared/utils/formatDateTime'
 
 defineProps<{
   versions: ChapterVersionListItem[]
@@ -24,12 +25,6 @@ function getSourceLabel(source: ChapterVersionSource): string {
 
   return labels[source]
 }
-
-function formatDateTime(value: string): string {
-  const date = new Date(value)
-  const pad = (part: number) => String(part).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
-}
 </script>
 
 <template>
@@ -53,7 +48,7 @@ function formatDateTime(value: string): string {
         <div class="version-main">
           <strong>{{ getSourceLabel(version.source) }}</strong>
           <span>字数：{{ version.word_count }}</span>
-          <span>创建时间：{{ formatDateTime(version.created_at) }}</span>
+          <span>创建时间：{{ formatDateTimeFull(version.created_at) }}</span>
           <p v-if="version.note">{{ version.note }}</p>
         </div>
         <div class="version-actions">

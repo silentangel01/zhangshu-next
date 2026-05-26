@@ -14,7 +14,13 @@ from cryptography.fernet import Fernet
 _APP_SALT = b"zhangshu-app-config-salt-v1"
 
 # Keys whose values must be encrypted before writing to SQLite
-SENSITIVE_KEYS: frozenset[str] = frozenset({"dashscope_api_key"})
+SENSITIVE_KEYS: frozenset[str] = frozenset({
+    "dashscope_api_key",
+    "cloud_access_token",
+    "cloud_refresh_token",
+    "cloud_user_id",
+    "cloud_user_email",
+})
 
 
 def _derive_fernet_key() -> bytes:

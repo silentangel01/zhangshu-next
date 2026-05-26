@@ -9,6 +9,7 @@ import {
   SEARCH_FILTER_OPTIONS,
 } from '@/entities/search/types'
 import { safeReadJson, safeWriteJson } from '@/shared/storage/localWorkspaceState'
+import { formatDateTime } from '@/shared/utils/formatDateTime'
 
 const route = useRoute()
 const router = useRouter()
@@ -136,14 +137,6 @@ function cleanSnippet(snippet: string): string {
   return snippet.replace(/>>>/g, '<mark>').replace(/<<</g, '</mark>')
 }
 
-function formatUpdatedAt(value: string | null): string {
-  if (!value) return ''
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(value))
-}
-
 function getTypeLabel(type: SearchEntityType): string {
   return SEARCH_ENTITY_TYPE_LABELS[type] ?? type
 }
@@ -239,7 +232,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
 
         <footer class="result-footer">
           <span v-if="result.updated_at" class="updated-at">
-            更新于 {{ formatUpdatedAt(result.updated_at) }}
+            更新于 {{ formatDateTime(result.updated_at) }}
           </span>
           <button class="secondary-button" type="button" @click="openResult(result)">
             打开

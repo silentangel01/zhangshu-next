@@ -10,6 +10,7 @@ import { downloadManuscriptExport } from '@/entities/project/exportApi'
 import type { ManuscriptExportFormat, ManuscriptExportScope } from '@/entities/project/exportTypes'
 import { listVolumes } from '@/entities/volume/api'
 import type { Volume } from '@/entities/volume/types'
+import CloudBackupPanel from '@/features/cloud/CloudBackupPanel.vue'
 
 const route = useRoute()
 
@@ -312,6 +313,10 @@ function getErrorMessage(error: unknown, fallback: string): string {
           <p v-if="backupFile" class="file-note">已选择：{{ backupFile.name }}</p>
         </div>
       </article>
+    </section>
+
+    <section v-if="projectId" class="page-layout">
+      <CloudBackupPanel :project-id="projectId" />
     </section>
 
     <section v-if="restoreReport" class="report-panel">
