@@ -212,6 +212,26 @@ docker compose restart
 docker stats --no-stream
 ```
 
+### 部署前检查
+
+```bash
+bash deploy/preflight.sh
+```
+
+自动检查 `.env` 配置、数据库连接、OSS 端点、磁盘空间等。
+
+### 数据库恢复
+
+```bash
+# 查看可用备份
+ls -lh backups/db_*.dump
+
+# 恢复 (需要显式确认)
+RESTORE_CONFIRM=yes bash deploy/restore-db.sh backups/db_XXXXXXXX_XXXXXX.dump
+```
+
+恢复前会自动备份当前数据库，详见 `docs/DISASTER_RECOVERY.md`。
+
 ## 故障排查
 
 ### 服务无法启动
@@ -282,3 +302,9 @@ docker compose restart
 3. 添加 Redis 缓存 (替换进程内限流)
 4. 使用 CDN 加速静态资源
 5. 配置负载均衡 (多台 API 实例)
+
+## 运维文档
+
+- [`docs/PRODUCTION_CHECKLIST.md`](../docs/PRODUCTION_CHECKLIST.md) — 生产部署检查清单
+- [`docs/INCIDENT_RUNBOOK.md`](../docs/INCIDENT_RUNBOOK.md) — 事故处置手册
+- [`docs/DISASTER_RECOVERY.md`](../docs/DISASTER_RECOVERY.md) — 灾备与恢复方案

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
+from app.core.audit import audit_event
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.backup import (
@@ -23,6 +24,14 @@ from app.services.project_service import ProjectError
 router = APIRouter(prefix="/api/projects", tags=["backups"])
 
 
+def _request_id(request: Request) -> str:
+    return getattr(request.state, "request_id", "")
+
+
+def _client_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
 @router.post(
     "/{project_id}/backups/init",
     response_model=InitBackupResponse,
@@ -30,6 +39,7 @@ router = APIRouter(prefix="/api/projects", tags=["backups"])
 def init_backup(
     project_id: str,
     body: InitBackupRequest,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -39,7 +49,26 @@ def init_backup(
             project_id, current_user.id, body.filename, body.size_bytes
         )
     except (BackupError, ProjectError) as exc:
+        audit_event(
+            "backup_init_failed",
+            request_id=_request_id(request),
+            client_ip=_client_ip(request),
+            user_id=current_user.id,
+            project_id=project_id,
+            result="failure",
+            reason_code=str(exc.status_code),
+            extra={"size_bytes": body.size_bytes},
+        )
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+    audit_event(
+        "backup_init",
+        request_id=_request_id(request),
+        client_ip=_client_ip(request),
+        user_id=current_user.id,
+        project_id=project_id,
+        extra={"file_name": body.filename, "size_bytes": body.size_bytes},
+    )
     return result
 
 
@@ -50,6 +79,7 @@ def init_backup(
 def complete_backup(
     project_id: str,
     body: CompleteBackupRequest,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -62,7 +92,25 @@ def complete_backup(
             body.checksum_sha256,
         )
     except (BackupError, ProjectError) as exc:
+        audit_event(
+            "backup_complete_failed",
+            request_id=_request_id(request),
+            client_ip=_client_ip(request),
+            user_id=current_user.id,
+            project_id=project_id,
+            result="failure",
+            reason_code=str(exc.status_code),
+        )
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+    audit_event(
+        "backup_complete",
+        request_id=_request_id(request),
+        client_ip=_client_ip(request),
+        user_id=current_user.id,
+        project_id=project_id,
+        backup_id=result.get("id", ""),
+    )
     return result
 
 
@@ -123,6 +171,7 @@ def get_download_url(
 def delete_backup(
     project_id: str,
     backup_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -130,5 +179,24 @@ def delete_backup(
     try:
         service.delete_backup(project_id, current_user.id, backup_id)
     except (BackupError, ProjectError) as exc:
+        audit_event(
+            "backup_delete_failed",
+            request_id=_request_id(request),
+            client_ip=_client_ip(request),
+            user_id=current_user.id,
+            project_id=project_id,
+            backup_id=backup_id,
+            result="failure",
+            reason_code=str(exc.status_code),
+        )
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+    audit_event(
+        "backup_deleted",
+        request_id=_request_id(request),
+        client_ip=_client_ip(request),
+        user_id=current_user.id,
+        project_id=project_id,
+        backup_id=backup_id,
+    )
     return Response(status_code=204)

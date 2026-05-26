@@ -90,6 +90,16 @@ MAX_BACKUP_SIZE_BYTES=524288000
 # --- CORS ---
 CORS_ORIGINS=http://localhost:5180,http://127.0.0.1:5180
 
+# --- 生产安全 ---
+ENVIRONMENT=production
+FORCE_HTTPS=true
+LOG_LEVEL=INFO
+ACCESS_LOG_JSON=true
+RATE_LIMIT_LOGIN_PER_5M=10
+RATE_LIMIT_BACKUP_INIT_PER_HOUR=30
+DEFAULT_STORAGE_QUOTA_BYTES=1073741824
+DEFAULT_BACKUP_COUNT_QUOTA=100
+
 # --- 域名 ---
 DOMAIN=${DOMAIN}
 EOF
@@ -285,8 +295,8 @@ echo -e "  ${GREEN}部署完成!${NC}"
 echo "========================================="
 echo ""
 
-# 本地健康检查
-HEALTH=$(curl -sf http://127.0.0.1:9000/health 2>/dev/null || echo "FAILED")
+# 本地健康检查 (use /ready for full check)
+HEALTH=$(curl -sf http://127.0.0.1:9000/ready 2>/dev/null || echo "FAILED")
 if echo "${HEALTH}" | grep -q '"ok"'; then
     log "本地健康检查通过: ${HEALTH}"
 else

@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
+from app.core.audit import audit_event
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.auth import (
@@ -54,6 +55,14 @@ def _rate_limit_key(request: Request, email: str = "") -> str:
     return f"{client_ip}:{email.lower().strip()}"
 
 
+def _request_id(request: Request) -> str:
+    return getattr(request.state, "request_id", "")
+
+
+def _client_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
 @router.post("/register", response_model=TokenResponse)
 def register(
     body: RegisterRequest,
@@ -68,7 +77,23 @@ def register(
     try:
         result = service.register(body.email, body.password, body.display_name)
     except AuthError as exc:
+        audit_event(
+            "register_failed",
+            request_id=_request_id(request),
+            client_ip=_client_ip(request),
+            result="failure",
+            reason_code=str(exc.status_code),
+            extra={"email_domain": body.email.split("@")[-1] if "@" in body.email else ""},
+        )
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+    audit_event(
+        "user_registered",
+        request_id=_request_id(request),
+        client_ip=_client_ip(request),
+        user_id=result.get("user_id", ""),
+        extra={"email_domain": body.email.split("@")[-1] if "@" in body.email else ""},
+    )
     return result
 
 
@@ -86,20 +111,50 @@ def login(
     try:
         result = service.login(body.email, body.password)
     except AuthError as exc:
+        audit_event(
+            "login_failed",
+            request_id=_request_id(request),
+            client_ip=_client_ip(request),
+            result="failure",
+            reason_code=str(exc.status_code),
+            extra={"email_domain": body.email.split("@")[-1] if "@" in body.email else ""},
+        )
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+    audit_event(
+        "login_success",
+        request_id=_request_id(request),
+        client_ip=_client_ip(request),
+        user_id=result.get("user_id", ""),
+    )
     return result
 
 
 @router.post("/refresh", response_model=TokenResponse)
 def refresh(
     body: RefreshRequest,
+    request: Request,
     db: Session = Depends(get_db),
 ):
     service = AuthService(db)
     try:
         result = service.refresh(body.refresh_token)
     except AuthError as exc:
+        audit_event(
+            "token_refresh_failed",
+            request_id=_request_id(request),
+            client_ip=_client_ip(request),
+            result="failure",
+            reason_code=str(exc.status_code),
+        )
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+    audit_event(
+        "token_refreshed",
+        request_id=_request_id(request),
+        client_ip=_client_ip(request),
+        user_id=result.get("user_id", ""),
+    )
     return result
 
 
