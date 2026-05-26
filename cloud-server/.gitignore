@@ -1,4 +1,6 @@
 .env
+.env.*
+!.env.example
 .venv/
 __pycache__/
 .pytest_cache/
@@ -10,6 +12,14 @@ htmlcov/
 dist/
 build/
 .eggs/
+*.db
+*.sqlite
 *.sqlite3
 postgres_data/
 .mypy_cache/
+
+# Local artifacts
+python-*.exe
+_oss_diag.py
+backups/
+*.dump

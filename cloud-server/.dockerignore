@@ -15,3 +15,15 @@ deploy/
 backups/
 *.md
 !requirements.txt
+
+# Sensitive / local artifacts
+*.db
+*.sqlite
+*.sqlite3
+*.dump
+python-*.exe
+_oss_diag.py
+postgres_data/
+docker-compose*.yml
+Dockerfile
+.dockerignore

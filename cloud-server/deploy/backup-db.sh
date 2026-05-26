@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # ============================================================
-# 章枢云 API — 数据库备份脚本
+# 章枢云 API — 数据库备份脚本 (v2)
 # ============================================================
 # 用法: bash deploy/backup-db.sh
+#
+# 环境变量:
+#   KEEP_DAYS    保留天数 (默认 30)
+#   APP_DIR      应用目录 (默认 /opt/zhangshu-cloud)
 #
 # 可配合 crontab 定时执行:
 #   0 3 * * * /opt/zhangshu-cloud/deploy/backup-db.sh
@@ -10,10 +14,10 @@
 
 set -euo pipefail
 
-APP_DIR="/opt/zhangshu-cloud"
+APP_DIR="${APP_DIR:-/opt/zhangshu-cloud}"
 BACKUP_DIR="${APP_DIR}/backups"
 TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
-KEEP_DAYS=30  # 保留天数
+KEEP_DAYS="${KEEP_DAYS:-30}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -29,7 +33,6 @@ cd "${APP_DIR}"
 
 # ---------- 1. 全量备份 (自定义格式，支持 pg_restore) ----------
 DUMP_FILE="${BACKUP_DIR}/db_${TIMESTAMP}.dump"
-SQL_FILE="${BACKUP_DIR}/db_${TIMESTAMP}.sql.gz"
 
 log "执行全量备份..."
 docker compose exec -T postgres pg_dump \
@@ -42,16 +45,10 @@ docker compose exec -T postgres pg_dump \
 DUMP_SIZE=$(du -h "${DUMP_FILE}" | cut -f1)
 log "全量备份完成: ${DUMP_FILE} (${DUMP_SIZE})"
 
-# ---------- 2. SQL 明文备份 (压缩) ----------
-log "导出 SQL 明文备份..."
-docker compose exec -T postgres pg_dump \
-    -U zhangshu \
-    -d zhangshu_cloud \
-    --format=plain \
-    | gzip > "${SQL_FILE}"
-
-SQL_SIZE=$(du -h "${SQL_FILE}" | cut -f1)
-log "SQL 备份完成: ${SQL_FILE} (${SQL_SIZE})"
+# ---------- 2. 生成 SHA256 校验 ----------
+CHECKSUM_FILE="${DUMP_FILE}.sha256"
+sha256sum "${DUMP_FILE}" > "${CHECKSUM_FILE}"
+log "校验文件: ${CHECKSUM_FILE}"
 
 # ---------- 3. 验证备份 ----------
 log "验证备份完整性..."
@@ -69,8 +66,10 @@ fi
 CLEANED=0
 while IFS= read -r -d '' file; do
     rm -f "$file"
+    # 也删除对应的校验文件
+    rm -f "${file}.sha256"
     CLEANED=$((CLEANED + 1))
-done < <(find "${BACKUP_DIR}" -name "db_*" -mtime +${KEEP_DAYS} -print0 2>/dev/null)
+done < <(find "${BACKUP_DIR}" -name "db_*.dump" -mtime +${KEEP_DAYS} -print0 2>/dev/null)
 
 if [[ $CLEANED -gt 0 ]]; then
     log "已清理 ${CLEANED} 个超过 ${KEEP_DAYS} 天的旧备份"
@@ -84,9 +83,9 @@ echo ""
 log "备份完成!"
 echo "  本次备份:"
 echo "    ${DUMP_FILE} (${DUMP_SIZE})"
-echo "    ${SQL_FILE} (${SQL_SIZE})"
+echo "    ${CHECKSUM_FILE}"
 echo "  备份目录: ${BACKUP_DIR} (${TOTAL_SIZE}, ${BACKUP_COUNT} 份)"
 echo ""
 echo "  恢复命令:"
-echo "    docker compose exec -T postgres pg_restore -U zhangshu -d zhangshu_cloud --clean < ${DUMP_FILE}"
+echo "    bash deploy/restore-db.sh ${DUMP_FILE}"
 echo ""

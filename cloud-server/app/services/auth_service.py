@@ -124,6 +124,7 @@ class AuthService:
         return {
             "access_token": new_access,
             "refresh_token": new_refresh_str,
+            "user_id": user.id,
         }
 
     def get_me(self, user_id: str) -> dict:

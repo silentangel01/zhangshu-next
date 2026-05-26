@@ -1,4 +1,4 @@
-"""Backup management service."""
+"""Backup management service with quota, rate limiting, and cleanup."""
 
 from __future__ import annotations
 
@@ -6,17 +6,22 @@ import logging
 from datetime import timedelta
 from uuid import uuid4
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.security import is_valid_sha256_hex
 from app.infrastructure.oss_storage import OSSError, OSSStorage
 from app.models.cloud_backup import CloudBackup
+from app.models.cloud_project import CloudProject
 from app.models.user import utc_now
 from app.repositories.cloud_backup_repo import CloudBackupRepository
 from app.services.project_service import ProjectError, ProjectService
 
 logger = logging.getLogger(__name__)
+
+# Stale uploads older than this are candidates for cleanup
+_STALE_UPLOAD_HOURS = 6
 
 
 class BackupError(Exception):
@@ -42,6 +47,103 @@ class BackupService:
                 status_code=503,
             )
 
+    # ------------------------------------------------------------------
+    # Quota and rate limit checks
+    # ------------------------------------------------------------------
+
+    def _check_storage_quota(self, user_id: str, additional_bytes: int) -> None:
+        """Raise BackupError if adding *additional_bytes* exceeds the user quota."""
+        quota = self._settings.default_storage_quota_bytes
+        total_used = self._db.scalar(
+            select(func.coalesce(func.sum(CloudBackup.size_bytes), 0)).where(
+                CloudBackup.status == "success",
+                CloudBackup.deleted_at.is_(None),
+                CloudBackup.project_id.in_(
+                    select(CloudProject.id).where(CloudProject.owner_id == user_id)
+                ),
+            )
+        ) or 0
+
+        if total_used + additional_bytes > quota:
+            max_mb = quota // (1024 * 1024)
+            raise BackupError(
+                f"云备份空间已达上限（{max_mb} MB），请删除旧备份后重试。"
+            )
+
+    def _check_count_quota(self, user_id: str) -> None:
+        """Raise BackupError if the user has reached the backup count limit."""
+        quota = self._settings.default_backup_count_quota
+
+        count = self._db.scalar(
+            select(func.count()).select_from(CloudBackup).where(
+                CloudBackup.status == "success",
+                CloudBackup.deleted_at.is_(None),
+                CloudBackup.project_id.in_(
+                    select(CloudProject.id).where(CloudProject.owner_id == user_id)
+                ),
+            )
+        ) or 0
+
+        if count >= quota:
+            raise BackupError(
+                f"备份数量已达上限（{quota} 个），请删除旧备份后重试。"
+            )
+
+    def _check_rate_limit(self, user_id: str) -> None:
+        """Raise BackupError if the user exceeded hourly backup init rate."""
+        limit = self._settings.rate_limit_backup_init_per_hour
+        since = utc_now() - timedelta(hours=1)
+
+        count = self._db.scalar(
+            select(func.count()).select_from(CloudBackup).where(
+                CloudBackup.created_at >= since,
+                CloudBackup.project_id.in_(
+                    select(CloudProject.id).where(CloudProject.owner_id == user_id)
+                ),
+            )
+        ) or 0
+
+        if count >= limit:
+            raise BackupError(
+                f"备份上传频率过高（每小时最多 {limit} 次），请稍后再试。",
+                status_code=429,
+            )
+
+    # ------------------------------------------------------------------
+    # Stale upload cleanup
+    # ------------------------------------------------------------------
+
+    def cleanup_stale_uploads(self) -> int:
+        """Mark uploading records older than threshold as failed.
+
+        Returns the number of records cleaned.
+        """
+        cutoff = utc_now() - timedelta(hours=_STALE_UPLOAD_HOURS)
+
+        stale = list(
+            self._db.scalars(
+                select(CloudBackup).where(
+                    CloudBackup.status == "uploading",
+                    CloudBackup.created_at < cutoff,
+                )
+            ).all()
+        )
+
+        for backup in stale:
+            self._repo.update(
+                backup,
+                {"status": "failed", "error_message": "上传超时，系统自动标记失败。"},
+            )
+
+        if stale:
+            logger.info("Cleaned up %d stale upload records", len(stale))
+
+        return len(stale)
+
+    # ------------------------------------------------------------------
+    # Core operations
+    # ------------------------------------------------------------------
+
     def init_upload(
         self,
         project_id: str,
@@ -59,6 +161,11 @@ class BackupService:
         if size_bytes > self._settings.max_backup_size_bytes:
             max_mb = self._settings.max_backup_size_bytes // (1024 * 1024)
             raise BackupError(f"文件大小不得超过 {max_mb} MB。")
+
+        # Quota and rate limit checks
+        self._check_storage_quota(user_id, size_bytes)
+        self._check_count_quota(user_id)
+        self._check_rate_limit(user_id)
 
         backup_id = str(uuid4())
         upload_id = str(uuid4())
