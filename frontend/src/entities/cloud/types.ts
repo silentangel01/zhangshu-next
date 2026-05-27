@@ -77,3 +77,99 @@ export interface CloudNetworkDiagnosticReport {
   summary: string
   steps: CloudNetworkDiagnosticStep[]
 }
+
+// ── Account & privacy ────────────────────────────────────────────────
+
+export interface CloudAccountProfile {
+  id: string
+  email: string
+  display_name: string
+  signature: string | null
+  avatar_url: string | null
+  avatar_updated_at: string | null
+  password_changed_at: string | null
+  created_at: string
+}
+
+export interface CloudSession {
+  id: string
+  user_agent: string | null
+  client_ip: string | null
+  last_used_at: string | null
+  created_at: string
+  revoked: boolean
+}
+
+export interface CloudSessionList {
+  sessions: CloudSession[]
+  total: number
+}
+
+export interface CloudChangePasswordRequest {
+  old_password: string
+  new_password: string
+}
+
+export interface CloudUpdateProfileRequest {
+  display_name?: string
+  signature?: string
+}
+
+export interface CloudAvatarResponse {
+  avatar_url: string
+  avatar_updated_at: string
+}
+
+// ── Usage ────────────────────────────────────────────────────────────
+
+export interface CloudUsage {
+  storage_used_bytes: number
+  storage_quota_bytes: number
+  backup_count: number
+  backup_count_quota: number
+  backup_init_used_last_hour: number
+  backup_init_limit_per_hour: number
+  max_backup_size_bytes: number
+}
+
+// ── Export & deletion ────────────────────────────────────────────────
+
+export interface CloudAccountExport {
+  account: {
+    id: string
+    email: string
+    display_name: string
+    created_at: string
+  }
+  projects: Array<{
+    id: string
+    title: string
+    created_at: string
+  }>
+  backups: Array<{
+    id: string
+    project_id: string
+    filename: string
+    size_bytes: number | null
+    checksum_sha256: string | null
+    status: string
+    created_at: string
+    uploaded_at: string | null
+  }>
+  usage: CloudUsage
+  exported_at: string
+}
+
+export interface CloudDeletionRequest {
+  request_id: string
+  expires_at: string
+  project_count: number
+  backup_count: number
+  total_size_bytes: number
+  confirmation_text: string
+}
+
+export interface CloudDeletionConfirmRequest {
+  request_id: string
+  confirmation_text: string
+}

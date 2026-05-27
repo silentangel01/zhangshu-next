@@ -24,6 +24,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 _DEFAULT_TIMEOUT = 30.0
+_AUTO_TIMEOUT = 8.0  # Shorter timeout per strategy in auto mode
 
 # Connection mode type — used in config storage and API responses
 CloudNetworkMode = Literal["auto", "secure_direct", "system_proxy", "compat_no_sni"]
@@ -152,24 +153,24 @@ class CloudApiClient:
         base_url: str | None = None,
         access_token: str | None = None,
         mode: CloudNetworkMode | None = None,
+        preferred_mode: str | None = None,
     ):
         original_url = (
             base_url or os.environ.get("ZHANGSHU_CLOUD_API_BASE_URL", "")
         ).rstrip("/")
         self._access_token = access_token or ""
         self._mode: CloudNetworkMode = mode or "auto"
+        self._preferred_mode = preferred_mode  # Try this first in auto mode
+        self._last_working_mode: str | None = None
 
         parsed = urlparse(original_url)
         self._original_base_url = original_url
         self._hostname = parsed.hostname or ""
         self._scheme = parsed.scheme or ""
 
-        # Pre-compute the IP-based URL for compat_no_sni mode
-        self._ip_base_url = original_url
-        if parsed.hostname and parsed.scheme == "https":
-            ip = _resolve_ip(parsed.hostname)
-            port = f":{parsed.port}" if parsed.port else ""
-            self._ip_base_url = f"{parsed.scheme}://{ip}{port}"
+        # Lazy-compute the IP-based URL for compat_no_sni mode
+        self._ip_base_url: str | None = None
+        self._parsed_url = parsed
 
     @property
     def is_configured(self) -> bool:
@@ -185,6 +186,24 @@ class CloudApiClient:
     @mode.setter
     def mode(self, value: CloudNetworkMode) -> None:
         self._mode = value
+
+    @property
+    def last_working_mode(self) -> str | None:
+        """The connection strategy that succeeded on the most recent request."""
+        return self._last_working_mode
+
+    def _get_ip_base_url(self) -> str:
+        """Lazily compute the IP-based URL for compat_no_sni mode."""
+        if self._ip_base_url is not None:
+            return self._ip_base_url
+        parsed = self._parsed_url
+        if parsed.hostname and parsed.scheme == "https":
+            ip = _resolve_ip(parsed.hostname)
+            port = f":{parsed.port}" if parsed.port else ""
+            self._ip_base_url = f"{parsed.scheme}://{ip}{port}"
+        else:
+            self._ip_base_url = self._original_base_url
+        return self._ip_base_url
 
     # ── Internal: URL security check ─────────────────────────────────
 
@@ -202,8 +221,12 @@ class CloudApiClient:
 
     # ── Internal: headers ────────────────────────────────────────────
 
-    def _base_headers(self, include_host: bool = False) -> dict[str, str]:
-        headers: dict[str, str] = {"Content-Type": "application/json"}
+    def _base_headers(
+        self, include_host: bool = False, *, method: str = "GET"
+    ) -> dict[str, str]:
+        headers: dict[str, str] = {}
+        if method.upper() not in ("GET", "HEAD"):
+            headers["Content-Type"] = "application/json"
         if include_host and self._hostname:
             headers["Host"] = self._hostname
         if self._access_token:
@@ -226,8 +249,8 @@ class CloudApiClient:
         Returns parsed JSON, None for empty responses, or raises on error.
         """
         if mode == "compat_no_sni":
-            url = f"{self._ip_base_url}{path}"
-            headers = self._base_headers(include_host=True)
+            url = f"{self._get_ip_base_url()}{path}"
+            headers = self._base_headers(include_host=True, method=method)
             client_kwargs: dict[str, Any] = dict(
                 timeout=timeout,
                 verify=_build_no_sni_context(),
@@ -235,12 +258,12 @@ class CloudApiClient:
             )
         elif mode == "system_proxy":
             url = f"{self._original_base_url}{path}"
-            headers = self._base_headers(include_host=False)
+            headers = self._base_headers(include_host=False, method=method)
             client_kwargs = dict(timeout=timeout, verify=True, trust_env=True)
         else:
             # secure_direct (and any unknown mode falls back to secure)
             url = f"{self._original_base_url}{path}"
-            headers = self._base_headers(include_host=False)
+            headers = self._base_headers(include_host=False, method=method)
             client_kwargs = dict(timeout=timeout, verify=True, trust_env=False)
 
         try:
@@ -275,6 +298,16 @@ class CloudApiClient:
 
     # ── Internal: main request dispatcher ────────────────────────────
 
+    _NETWORK_ERROR_KINDS = frozenset({
+        "tls_reset_or_sni_filtered",
+        "tls_failed",
+        "timeout",
+        "tcp_unreachable",
+        "dns_failed",
+        "proxy_required_or_interfered",
+        "cloud_unavailable",
+    })
+
     def _request(
         self,
         method: str,
@@ -292,69 +325,43 @@ class CloudApiClient:
             )
 
         # ── Auto strategy chain ──────────────────────────────────────
-        # 1) Try secure_direct (full TLS, no proxy)
-        try:
-            return self._request_with_mode(
-                "secure_direct", method, path, json=json, timeout=timeout
-            )
-        except CloudApiError as primary_error:
-            kind = primary_error.error_kind
-            # Non-network errors (401, 404, etc.) should not trigger fallback
-            if kind not in (
-                "tls_reset_or_sni_filtered",
-                "tls_failed",
-                "timeout",
-                "tcp_unreachable",
-                "dns_failed",
-                "proxy_required_or_interfered",
-                "cloud_unavailable",
-            ):
-                raise
+        # Use shorter timeout per strategy to avoid long waits
+        auto_timeout = min(_AUTO_TIMEOUT, timeout)
 
-            logger.info(
-                "Cloud API secure_direct failed (%s), trying system_proxy.",
-                kind,
-            )
+        # Build strategy order: preferred mode first (if set), then the rest
+        strategies = ["secure_direct", "system_proxy", "compat_no_sni"]
+        if self._preferred_mode and self._preferred_mode in strategies:
+            strategies.remove(self._preferred_mode)
+            strategies.insert(0, self._preferred_mode)
 
-        # 2) Try system_proxy (allows HTTP_PROXY/HTTPS_PROXY)
-        try:
-            return self._request_with_mode(
-                "system_proxy", method, path, json=json, timeout=timeout
-            )
-        except CloudApiError as proxy_error:
-            kind = proxy_error.error_kind
-            if kind not in (
-                "tls_reset_or_sni_filtered",
-                "tls_failed",
-                "timeout",
-                "tcp_unreachable",
-                "dns_failed",
-                "proxy_required_or_interfered",
-                "cloud_unavailable",
-            ):
-                raise
+        last_error: CloudApiError | None = None
+        for mode in strategies:
+            try:
+                result = self._request_with_mode(
+                    mode, method, path, json=json, timeout=auto_timeout
+                )
+                self._last_working_mode = mode
+                return result
+            except CloudApiError as exc:
+                kind = exc.error_kind
+                if kind not in self._NETWORK_ERROR_KINDS:
+                    raise
+                logger.info(
+                    "Cloud API %s failed (%s), trying next strategy.",
+                    mode, kind,
+                )
+                last_error = exc
 
-            logger.info(
-                "Cloud API system_proxy failed (%s), trying compat_no_sni.",
-                kind,
-            )
-
-        # 3) Try compat_no_sni (IP direct + Host header, no cert verification)
-        try:
-            return self._request_with_mode(
-                "compat_no_sni", method, path, json=json, timeout=timeout
-            )
-        except CloudApiError as compat_error:
-            # All strategies failed — raise the most informative error
-            raise CloudApiError(
-                str(compat_error),
-                status_code=compat_error.status_code,
-                error_kind=compat_error.error_kind,
-                suggestion=(
-                    "所有连接模式均失败。请检查云服务地址、网络环境，"
-                    "或在应用设置中手动切换连接模式。"
-                ),
-            ) from compat_error
+        # All strategies failed
+        raise CloudApiError(
+            str(last_error),
+            status_code=last_error.status_code if last_error else None,
+            error_kind=last_error.error_kind if last_error else "cloud_unavailable",
+            suggestion=(
+                "所有连接模式均失败。请检查云服务地址、网络环境，"
+                "或在应用设置中手动切换连接模式。"
+            ),
+        ) from last_error
 
     # ── Public API: configuration ────────────────────────────────────
 
@@ -496,6 +503,199 @@ class CloudApiClient:
 
     def get_cloud_projects(self) -> dict[str, Any]:
         return self._request("GET", "/api/projects")
+
+    # ── Public API: Account ──────────────────────────────────────────
+
+    def get_account_profile(self) -> dict[str, Any]:
+        return self._request("GET", "/api/account/profile")
+
+    def update_account_profile(
+        self,
+        display_name: str | None = None,
+        signature: str | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {}
+        if display_name is not None:
+            payload["display_name"] = display_name
+        if signature is not None:
+            payload["signature"] = signature
+        return self._request("PATCH", "/api/account/profile", json=payload)
+
+    def change_password(
+        self, old_password: str, new_password: str
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST", "/api/account/password/change",
+            json={"old_password": old_password, "new_password": new_password},
+        )
+
+    # ── Public API: Avatar ───────────────────────────────────────────
+
+    def init_avatar_upload(
+        self, filename: str, content_type: str, size_bytes: int
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            "/api/account/avatar/init",
+            json={
+                "filename": filename,
+                "content_type": content_type,
+                "size_bytes": size_bytes,
+            },
+        )
+
+    def upload_avatar(
+        self, upload_url: str, content: bytes, content_type: str, *, timeout: float = 60.0
+    ) -> None:
+        """Upload avatar bytes to a presigned URL (OSS).
+
+        Same pattern as upload_backup — connects to OSS, not cloud API.
+        """
+        self._ensure_configured()
+        trust_env = self._mode == "system_proxy"
+        try:
+            with httpx.Client(timeout=timeout, trust_env=trust_env) as client:
+                response = client.put(
+                    upload_url,
+                    content=content,
+                    headers={"Content-Type": content_type},
+                )
+        except httpx.HTTPError as exc:
+            kind, suggestion = _classify_error(exc)
+            raise CloudApiError(
+                f"上传头像失败：{exc}",
+                error_kind=kind,
+                suggestion=suggestion,
+            ) from exc
+        if response.status_code >= 400:
+            detail = _parse_oss_error(response.text)
+            raise CloudApiError(
+                f"上传头像失败 ({response.status_code})：{detail}",
+                status_code=response.status_code,
+                error_kind="oss_forbidden_or_signature_error",
+            )
+
+    def complete_avatar_upload(
+        self,
+        upload_id: str,
+        object_key: str,
+        content_type: str,
+        checksum_sha256: str,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            "/api/account/avatar/complete",
+            json={
+                "upload_id": upload_id,
+                "object_key": object_key,
+                "content_type": content_type,
+                "checksum_sha256": checksum_sha256,
+            },
+        )
+
+    def delete_avatar(self) -> dict[str, Any] | None:
+        return self._request("DELETE", "/api/account/avatar")
+
+    def list_sessions(self) -> dict[str, Any]:
+        return self._request("GET", "/api/account/sessions")
+
+    def revoke_all_sessions(self) -> dict[str, Any]:
+        return self._request("POST", "/api/account/sessions/revoke-all")
+
+    def get_usage(self) -> dict[str, Any]:
+        return self._request("GET", "/api/account/usage")
+
+    def export_account_data(self) -> dict[str, Any]:
+        return self._request("GET", "/api/account/export")
+
+    def request_account_deletion(self, password: str) -> dict[str, Any]:
+        return self._request(
+            "POST", "/api/account/delete-request",
+            json={"password": password},
+        )
+
+    def confirm_account_deletion(
+        self, request_id: str, confirmation_text: str
+    ) -> dict[str, Any]:
+        return self._request(
+            "DELETE", "/api/account",
+            json={"request_id": request_id, "confirmation_text": confirmation_text},
+        )
+
+    # ── Public API: Announcements ────────────────────────────────────
+
+    def list_announcements(
+        self,
+        platform: str | None = None,
+        app_version: str | None = None,
+    ) -> dict[str, Any]:
+        params: list[str] = []
+        if platform:
+            params.append(f"platform={platform}")
+        if app_version:
+            params.append(f"app_version={app_version}")
+        query = f"?{'&'.join(params)}" if params else ""
+        return self._request("GET", f"/api/announcements{query}")
+
+    # ── Public API: Feedback ─────────────────────────────────────────
+
+    def create_feedback(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request("POST", "/api/feedback", json=payload)
+
+    def upload_feedback_attachment(
+        self,
+        upload_url: str,
+        content: bytes,
+        content_type: str,
+        *,
+        timeout: float = 120.0,
+    ) -> None:
+        """Upload a feedback attachment to a presigned URL (OSS).
+
+        Same pattern as upload_backup — connects to OSS, not cloud API.
+        """
+        self._ensure_configured()
+        trust_env = self._mode == "system_proxy"
+        try:
+            with httpx.Client(timeout=timeout, trust_env=trust_env) as client:
+                response = client.put(
+                    upload_url,
+                    content=content,
+                    headers={"Content-Type": content_type},
+                )
+        except httpx.HTTPError as exc:
+            kind, suggestion = _classify_error(exc)
+            raise CloudApiError(
+                f"上传反馈附件失败：{exc}",
+                error_kind=kind,
+                suggestion=suggestion,
+            ) from exc
+        if response.status_code >= 400:
+            detail = _parse_oss_error(response.text)
+            raise CloudApiError(
+                f"上传反馈附件失败 ({response.status_code})：{detail}",
+                status_code=response.status_code,
+                error_kind="oss_forbidden_or_signature_error",
+            )
+
+    def complete_feedback(
+        self, feedback_id: str, uploads: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            f"/api/feedback/{feedback_id}/complete",
+            json={"uploads": uploads},
+        )
+
+    def list_feedback_replies(self, feedback_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/api/feedback/{feedback_id}/replies")
+
+    def list_user_feedback(
+        self, *, limit: int = 50, offset: int = 0
+    ) -> dict[str, Any]:
+        return self._request(
+            "GET", f"/api/feedback?limit={limit}&offset={offset}"
+        )
 
 
 # ── OSS error parsing ────────────────────────────────────────────────

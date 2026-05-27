@@ -7,8 +7,17 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.account import router as account_router
+from app.api.admin_announcements import router as admin_announcements_router
+from app.api.admin_auth import router as admin_auth_router
+from app.api.admin_dashboard import router as admin_dashboard_router
+from app.api.admin_feedback import router as admin_feedback_router
+from app.api.admin_monitoring import router as admin_monitoring_router
+from app.api.admin_users import router as admin_users_router
+from app.api.announcements import router as announcements_router
 from app.api.auth import router as auth_router
 from app.api.backups import router as backups_router
+from app.api.feedback import router as feedback_router
 from app.api.projects import router as projects_router
 from app.core.config import get_settings, validate_production_config
 from app.core.logging import RequestIDMiddleware, configure_logging
@@ -91,6 +100,15 @@ def _startup_checks():
 app.include_router(auth_router)
 app.include_router(projects_router)
 app.include_router(backups_router)
+app.include_router(account_router)
+app.include_router(announcements_router)
+app.include_router(feedback_router)
+app.include_router(admin_announcements_router)
+app.include_router(admin_auth_router)
+app.include_router(admin_dashboard_router)
+app.include_router(admin_feedback_router)
+app.include_router(admin_monitoring_router)
+app.include_router(admin_users_router)
 
 
 # ---------------------------------------------------------------------------

@@ -34,17 +34,21 @@ import app.models.user  # noqa: E402, F401
 import app.models.refresh_token  # noqa: E402, F401
 import app.models.cloud_project  # noqa: E402, F401
 import app.models.cloud_backup  # noqa: E402, F401
+import app.models.rate_limit_event  # noqa: E402, F401
+import app.models.account_deletion_request  # noqa: E402, F401
+import app.models.announcement  # noqa: E402, F401
+import app.models.feedback_ticket  # noqa: E402, F401
+import app.models.feedback_attachment  # noqa: E402, F401
 
 from app.main import app  # noqa: E402 — must come AFTER model imports
 
 
 @pytest.fixture(autouse=True)
 def _clear_rate_limit():
-    """Clear the in-process rate limiter before each test."""
-    from app.api.auth import _rate_limit_store
-    _rate_limit_store.clear()
+    """Clean up DB rate limit events after each test."""
     yield
-    _rate_limit_store.clear()
+    # DB rate limit table is recreated each test via create_all,
+    # so no explicit cleanup needed.
 
 
 @pytest.fixture

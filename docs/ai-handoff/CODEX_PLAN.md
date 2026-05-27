@@ -1,562 +1,878 @@
 # Task Summary
 
-本次任务是规划章枢云功能的网络适配与防护性改进，目标是在用户挂代理、使用校园网、公司网、运营商网络、网络 DNS/TLS/OSS endpoint 异常时，尽量避免登录、注册、云备份出现“只有开发者能排查”的连接问题。
+本次任务规划两个相关但边界不同的能力：
 
-重点不是新增云业务功能，而是增强现有云连接链路的鲁棒性：
+1. 章枢云后台管理系统：
+   - 面向开发者/管理员，不进入桌面客户端。
+   - 可以通过部署在服务器上的章枢云 API 查看生产数据。
+   - 首期重点是反馈管理、用户活跃情况、用户列表、公告管理和基础运营概览。
 
-- 把当前临时的 `IP 直连 + No-SNI + 关闭证书验证` 改造成可诊断、可回退、可配置的连接策略。
-- 为用户提供“云服务连接诊断”入口和可理解的错误提示。
-- 对代理、校园/公司网络 DPI/SNI 过滤、OSS 内外网 endpoint、TLS/HTTP2 兼容等场景增加防护。
-- 云服务端补齐 OSS 公网/内网双 endpoint，避免预签名 URL 再次返回内网地址。
-- 明确生产云 API 必须使用 HTTPS；仅允许 `localhost`、`127.0.0.1`、`::1` 等本地开发地址继续使用 HTTP，避免安全加固误伤本地联调。
+2. 客户端云账户体验升级：
+   - 优化登录/注册窗口 UI，解决表单组件左右边距贴边的问题。
+   - 新增独立个人页面，用户登录后可查看个人信息、软件版本号、云账户状态。
+   - 支持头像、签名、显示名等个人资料。
+   - 强化修改登录密码流程，尽力保护用户账号安全。
 
 Codex 未修改业务代码。本计划应由 Claude Code 执行。Claude Code 执行前应再次检查计划与实际代码是否冲突；如存在冲突，应停止并反馈，而不是强行实现。
 
 # Current Codebase Findings
 
-- 已阅读 `docs/ai-handoff/CLAUDE_EXECUTION_REPORT.md`，该活跃执行报告是“统一前端时间显示格式”，与当前云连接任务无直接关系，已按用户要求归档到：
-  - `docs/ai-handoff/archive/2026-05-26-pre-network-resilience/CLAUDE_EXECUTION_REPORT.md`
-- 已阅读并归档旧活跃计划：
-  - `docs/ai-handoff/archive/2026-05-26-pre-network-resilience/CODEX_PLAN.md`
-- 已阅读云服务连接问题文档：
-  - `docs/Cloud_Service_Connection_Troubleshooting.md`
-  - `docs/ai-handoff/CLOUD_DEPLOYMENT_LOG.md`
-- 两份云连接文档确认的关键问题：
-  - 国内服务器部署时 Docker、Docker Hub、PyPI 镜像源容易超时。
-  - Python / Nginx TLS 组合曾出现误导性 `bad key share` 日志。
-  - Clash / TUN / 系统代理可能影响 httpx 行为。
-  - 校园网 DPI 会根据 TLS SNI 字段重置 `api.emailbs.xin` 连接。
-  - 当前临时解决方式是 IP 直连、手动 Host 头、No-SNI、`CERT_NONE`、`trust_env=False`。
-  - OSS 预签名 URL 曾因 `OSS_ENDPOINT=oss-cn-hangzhou-internal.aliyuncs.com` 返回阿里云内网地址，导致桌面端公网环境上传 403。
-- 当前 `backend/app/infrastructure/cloud_api_client.py` 的状态：
-  - 所有 HTTPS 云 API 都会自动把域名解析为 IP。
-  - 所有请求都使用 No-SNI SSLContext。
-  - 当前 SSLContext 设置 `verify_mode = ssl.CERT_NONE`，会跳过证书验证。
-  - 当前强制 `maximum_version = ssl.TLSVersion.TLSv1_2`。
-  - 当前 `httpx.Client(..., trust_env=False)`，不读取系统代理环境变量。
-  - 该实现能绕过校园网 SNI 过滤，但作为默认路径安全性和适配性都不够理想。
-- 当前 `backend/app/api/cloud.py` 只有账号、登录、启用、备份相关 API，没有云网络诊断、网络模式设置或诊断报告 API。
-- 当前 `frontend/src/features/cloud/CloudAccountDialog.vue` 登录/注册失败只展示通用错误，没有引导用户进行连接诊断。
-- 当前 `frontend/src/features/app-config/AppSettingsDialog.vue` 有“章枢云账户”状态，但没有云网络连接策略、诊断入口或代理/校园网提示。
-- 当前 `cloud-server/app/infrastructure/oss_storage.py` 只有单一 `oss_endpoint`，既用于生成客户端预签名 URL，也用于服务端 `head_object/delete_object`。
-- 当前 `cloud-server/app/core/config.py` 没有 `OSS_PUBLIC_ENDPOINT` / `OSS_INTERNAL_ENDPOINT` 双 endpoint 配置。
+- 已按要求归档上一轮“公告通知 + 用户反馈模块”交接文件到：
+  - `docs/ai-handoff/archive/2026-05-27-announcements-feedback/CODEX_PLAN.md`
+  - `docs/ai-handoff/archive/2026-05-27-announcements-feedback/CLAUDE_EXECUTION_REPORT.md`
+- 当前 `docs/ai-handoff/` 根目录无活跃旧计划，可创建新的 `CODEX_PLAN.md`。
+- `cloud-server/` 已有公告和反馈基础能力：
+  - `cloud-server/app/api/admin_feedback.py`
+  - `cloud-server/app/api/admin_announcements.py`
+  - `cloud-server/app/api/feedback.py`
+  - `cloud-server/app/api/announcements.py`
+  - `cloud-server/app/models/feedback_ticket.py`
+  - `cloud-server/app/models/feedback_attachment.py`
+  - `cloud-server/app/models/announcement.py`
+  - `cloud-server/app/services/feedback_service.py`
+  - `cloud-server/app/services/announcement_service.py`
+- `cloud-server/app/api/deps.py` 已有 `require_admin_user`，基于 `users.is_admin` 或 `ADMIN_EMAILS` 白名单判断管理员权限。
+- 当前审计 `cloud-server/app/core/audit.py` 只写结构化日志，没有数据库审计/活跃事件表。要做“用户活跃情况”仪表盘，不能只依赖日志，需要新增持久化 activity/metric 数据或基于现有表计算基础指标。
+- 当前云账户资料仅包含：
+  - `id`
+  - `email`
+  - `display_name`
+  - `created_at`
+- `cloud-server/app/models/user.py` 已有：
+  - `is_active`
+  - `is_admin`
+  - `password_changed_at`
+  - 删除/匿名化相关字段
+  - 但没有头像、签名、最后活跃时间、最后登录时间、登录次数等字段。
+- 当前修改密码已具备基础安全能力：
+  - 需要旧密码。
+  - 服务端校验密码强度。
+  - 修改后撤销所有 refresh token。
+  - 本地 sidecar 调用后会清理本地 token，强制重新登录。
+- 当前修改密码仍可加强：
+  - 没有单独的密码修改限流。
+  - UI 侧提示和确认不足。
+  - 没有明确阻止新旧密码相同。
+  - 账号安全事件没有进入可查询的持久化活动表。
+- 当前客户端 UI：
+  - `frontend/src/features/cloud/CloudAccountDialog.vue` 是登录/注册弹窗。
+  - `.cloud-account-dialog` 只设置了 `max-width`、`display:grid` 和 `gap`，实际内边距依赖全局 `.zs-dialog-content`；用户反馈表单左右贴边，说明需要组件内增加稳定的 body padding 和表单布局。
+  - `frontend/src/features/cloud/CloudAccountPrivacyPanel.vue` 已包含显示名、修改密码、退出全部设备、导出数据、删除账号等能力，但它嵌在设置弹窗内，不是独立个人页面。
+- 当前前端路由没有个人页面：
+  - `frontend/src/router/index.ts` 没有 `/account` 或 `/profile` 路由。
+- 当前前端软件版本可从 `frontend/package.json` 得到 `0.0.0`，但运行时页面没有稳定版本展示入口。
 
 # Architecture Decision
 
-## 1. 云连接策略从“单一路径”升级为“策略链”
+## 1. 后台管理系统必须独立于桌面客户端
 
-新增桌面端云连接策略枚举：
+新增一个独立的管理前端项目：
 
-- `auto`：默认。先走安全直连，失败后按诊断结果尝试兼容路径。
-- `secure_direct`：域名 + SNI + 正常证书验证 + 不使用系统代理。
-- `system_proxy`：域名 + SNI + 正常证书验证 + 允许读取系统代理环境变量。
-- `compat_no_sni`：IP 直连 + Host 头 + No-SNI，作为校园/公司网 DPI 过滤的兼容路径。
+`cloud-admin/`
 
-默认模式必须是 `auto`。不允许继续把 `compat_no_sni` 作为所有 HTTPS 请求的无条件默认路径。
+原因：
 
-## 2. 安全优先级
+- 后台管理是开发者/管理员使用，不应该打包进 Tauri 桌面客户端。
+- 管理后台访问生产数据和反馈附件，风险比普通客户端更高。
+- 独立项目便于部署到云服务器同源路径，例如 `https://api.example.com/admin/` 或独立域名 `https://admin.example.com/`。
 
-连接策略优先级：
+后台管理前端只通过 `cloud-server` 的 admin API 访问数据，不允许浏览器直连 PostgreSQL，不允许暴露数据库账号、OSS AccessKey 或服务器环境变量。
 
-1. 优先使用完整 TLS 校验的安全路径。
-2. 只有在检测到 TLS 握手重置、SNI 疑似过滤等场景时，才允许自动尝试 `compat_no_sni`。
-3. `compat_no_sni` 必须被标记为“兼容模式”，并在 UI 中提示：该模式会降低证书校验强度，只应在普通连接失败时使用。
-4. 诊断日志不得记录 JWT、refresh token、密码、OSS 签名 URL 完整 query、API key。
+## 2. 管理端首期不做“万能后台”
 
-## 3. HTTPS 生产约束与本地豁免
+首期只做必要运营闭环：
 
-生产级章枢云 API 不允许使用明文 HTTP。`ZHANGSHU_CLOUD_API_BASE_URL` 如果指向公网域名或公网 IP，必须使用 `https://`。
+- 管理员登录。
+- 仪表盘概览。
+- 用户活跃统计。
+- 用户列表和用户详情只读查看。
+- 反馈列表、反馈详情、附件下载、状态流转。
+- 公告管理复用已实现 admin announcement API。
 
-允许 HTTP 的范围只限本地开发和测试：
+暂不做：
 
-- `http://localhost:<port>`
-- `http://127.0.0.1:<port>`
-- `http://[::1]:<port>`
+- 直接编辑用户密码。
+- 直接删除用户账号。
+- 批量封禁。
+- 财务/支付。
+- 权限组系统。
+- 任意 SQL 查询面板。
 
-这条规则不应影响章枢桌面端访问自己的本地 sidecar，也不应影响 Claude Code 在本机启动 `cloud-server` 做联调。它只用于阻止用户把生产云服务配置成 `http://api.example.com` 这类明文远程地址。
+## 3. 活跃统计使用服务端持久化活动事件
 
-如果用户显式配置了远程 HTTP 地址，客户端应：
+为避免只靠日志分析，新增数据库表：
 
-- 在账号登录、注册、云备份前阻止请求或至少给出高危警告。
-- 在诊断报告中标记为 `insecure_remote_http`。
-- 提示用户改为 HTTPS，或通过 Nginx / Caddy / 云负载均衡配置 TLS。
+`user_activity_events`
 
-## 4. 网络诊断是独立能力
+用来记录低敏、可统计的用户行为：
 
-新增独立的本地诊断服务，不把诊断逻辑塞进登录、注册或备份业务逻辑中。
+- 注册。
+- 登录成功。
+- token refresh。
+- 云备份 init/complete/delete。
+- 反馈提交。
+- 公告读取可选，不建议首期记录每次公告读取，避免噪音。
+- 个人资料更新。
+- 修改密码。
 
-建议分层：
+统计指标由 `AdminMetricsService` 聚合，不在 API router 中拼 SQL。
 
-- Infrastructure：HTTP/TCP/DNS/TLS/OSS URL 诊断工具。
-- Service：编排诊断流程，生成用户可读建议。
-- API：暴露诊断和网络设置接口。
-- Frontend：展示诊断结果和连接模式设置。
+## 4. 管理端认证要更严格
 
-## 5. 云服务端 OSS 双 endpoint
+推荐新增独立 admin auth 接口，使用 HttpOnly Secure Cookie 管理后台会话：
 
-云服务端应区分：
+- `POST /api/admin/auth/login`
+- `POST /api/admin/auth/refresh`
+- `POST /api/admin/auth/logout`
+- `GET /api/admin/auth/me`
 
-- `OSS_PUBLIC_ENDPOINT`：用于生成给桌面端使用的 presigned PUT/GET URL，必须公网可达。
-- `OSS_INTERNAL_ENDPOINT`：用于云服务端自身 `head_object/delete_object`，可选，用于阿里云内网访问以节省流量。
+管理后台部署时应与 cloud-server 同源或同站点，Cookie 设置：
 
-保留 `OSS_ENDPOINT` 作为兼容配置，但 README 应明确：如果只配置一个 endpoint，它必须是公网 endpoint。
+- `HttpOnly`
+- `Secure` 在 production 必须为 true
+- `SameSite=Lax`
+- 管理端 access token 有效期建议 30 分钟
+- 管理端 refresh token 有效期建议 8 小时或 24 小时，不沿用普通用户 30 天
+
+为兼容测试，可让 admin 依赖同时支持 Bearer token，但后台 Web UI 优先使用 Cookie。
+
+## 5. 客户端个人页面仍走本地 sidecar
+
+桌面客户端不直接调用 cloud-server。
+
+客户端个人页面应走：
+
+`frontend -> backend local sidecar -> cloud-server`
+
+这样可以继续复用本地加密 token、网络模式、代理/兼容模式、错误提示和 HTTPS 策略。
+
+## 6. 头像上传继续使用 presigned URL
+
+头像属于云账户资料，不存入本地业务数据库。
+
+流程：
+
+1. 前端在个人页面选择头像图片。
+2. 本地 sidecar 校验类型和大小。
+3. 本地 sidecar 调用 cloud-server 初始化头像上传，拿到 presigned PUT URL。
+4. 本地 sidecar 上传头像到 OSS。
+5. 本地 sidecar 调用 complete。
+6. cloud-server 保存 `avatar_object_key` 并返回短期 `avatar_url`。
+
+限制：
+
+- 只允许 `image/png`、`image/jpeg`、`image/webp`。
+- 单文件建议 2 MB。
+- 不引入图片裁剪依赖，首期只在前端用 CSS 圆形裁切预览。
+
+## 7. 修改密码作为高风险流程单独加固
+
+必须保留：
+
+- 当前密码。
+- 新密码。
+- 确认新密码。
+- 服务端密码强度校验。
+- 修改成功后撤销所有 refresh token。
+- 本地 sidecar 清理 token 并强制重新登录。
+
+必须新增：
+
+- 服务端密码修改限流。
+- 新密码不得与旧密码相同。
+- UI 明确提示“修改后所有设备需要重新登录”。
+- 二次确认或至少明确确认按钮文案。
+- 错误提示不得泄露账号状态细节。
+- 审计和活动事件记录，但不得记录密码。
 
 # Files to Create or Modify
 
-## 桌面端后端
+## cloud-server
 
-- 修改：`backend/app/infrastructure/cloud_api_client.py`
-  - 引入连接策略链。
-  - 不再默认所有 HTTPS 请求都使用 No-SNI + `CERT_NONE`。
-  - 增加错误分类和策略选择。
-  - 增加远程 HTTP 风险判断：公网远程地址必须 HTTPS，本地 `localhost/127.0.0.1/::1` 可继续 HTTP。
-- 新增：`backend/app/infrastructure/cloud_network_diagnostics.py`
-  - DNS、TCP、HTTPS、No-SNI、代理、OSS URL 可达性诊断。
-- 新增：`backend/app/services/cloud_network_service.py`
-  - 读取/保存云网络模式，编排诊断报告。
-- 修改：`backend/app/services/app_config_service.py`
-  - 增加云网络配置 key 常量。
-- 修改：`backend/app/infrastructure/config_crypto.py`
-  - 如果支持带账号密码的代理 URL，则将 `cloud_proxy_url` 加入 `SENSITIVE_KEYS`。
-  - 若 V1 不支持代理账号密码，则无需保存代理 URL，只保存 mode。
-- 新增或修改：`backend/app/schemas/cloud_network.py` 或 `backend/app/schemas/cloud.py`
-  - 增加网络设置和诊断响应 schema。
-- 修改：`backend/app/api/cloud.py`
-  - 增加云网络诊断与设置 API。
-- 修改：`backend/packaged_main.py`
-  - 保留 `ZHANGSHU_CLOUD_API_BASE_URL` 默认值。
-  - 不在这里硬编码网络兼容模式。
+新增：
 
-## 桌面端前端
+- `cloud-server/app/models/user_activity_event.py`
+- `cloud-server/app/repositories/user_activity_repo.py`
+- `cloud-server/app/services/activity_service.py`
+- `cloud-server/app/services/admin_metrics_service.py`
+- `cloud-server/app/services/admin_user_service.py`
+- `cloud-server/app/api/admin_auth.py`
+- `cloud-server/app/api/admin_dashboard.py`
+- `cloud-server/app/api/admin_users.py`
+- `cloud-server/app/schemas/admin_auth.py`
+- `cloud-server/app/schemas/admin_dashboard.py`
+- `cloud-server/app/schemas/admin_user.py`
+- `cloud-server/alembic/versions/004_admin_dashboard_profile.py`
+- `cloud-server/tests/test_admin_auth.py`
+- `cloud-server/tests/test_admin_dashboard.py`
+- `cloud-server/tests/test_admin_users.py`
+- `cloud-server/tests/test_profile_avatar_signature.py`
+- `cloud-server/tests/test_password_change_security.py`
 
-- 修改：`frontend/src/entities/cloud/types.ts`
-  - 增加 `CloudNetworkMode`、`CloudNetworkSettings`、`CloudNetworkDiagnosticReport` 类型。
-- 修改：`frontend/src/entities/cloud/api.ts`
-  - 增加获取/保存网络设置、运行诊断的 API 封装。
-- 新增：`frontend/src/features/cloud/CloudNetworkDiagnosticsPanel.vue`
-  - 诊断按钮、策略选择、结果展示、用户建议。
-- 修改：`frontend/src/features/cloud/CloudAccountDialog.vue`
-  - 登录/注册失败时展示“运行连接诊断”入口。
-  - 错误提示根据诊断类别区分代理、网络拦截、服务端不可达、账号错误。
-- 修改：`frontend/src/features/app-config/AppSettingsDialog.vue`
-  - 在“章枢云账户”区域增加“网络连接”二级区域。
-  - 不把诊断面板做成大段技术文档；只展示状态、建议和高级设置入口。
-- 可选修改：`frontend/src/features/cloud/CloudBackupPanel.vue`
-  - 云备份上传失败时识别 OSS 内网 endpoint、403、签名 URL 过期、网络超时，并显示更具体提示。
+修改：
 
-## 云服务端
+- `cloud-server/app/main.py`
+  - 注册 admin auth/dashboard/users routers。
+- `cloud-server/app/api/deps.py`
+  - 增加 admin cookie 读取依赖，保留 Bearer 测试路径。
+- `cloud-server/app/core/config.py`
+  - 新增 admin cookie、admin token、头像上传限制、管理后台 CORS/部署配置。
+- `cloud-server/app/models/user.py`
+  - 新增头像、签名、活跃统计字段。
+- `cloud-server/app/models/__init__.py`
+  - 导出新模型。
+- `cloud-server/app/schemas/account.py`
+  - 扩展 profile schema。
+- `cloud-server/app/api/account.py`
+  - 增加签名/头像相关接口，强化修改密码限流。
+- `cloud-server/app/services/account_service.py`
+  - 扩展资料更新、头像上传、密码修改安全逻辑。
+- `cloud-server/app/services/auth_service.py`
+  - 登录成功时更新 `last_login_at`、`last_seen_at`、`login_count`，记录 activity event。
+- `cloud-server/app/services/rate_limit_service.py`
+  - 新增 `password_change`、`admin_login` 限流类型。
+- `cloud-server/app/infrastructure/oss_storage.py`
+  - 新增 avatar object key builder。
 
-- 修改：`cloud-server/app/core/config.py`
-  - 增加 `oss_public_endpoint`、`oss_internal_endpoint`。
-  - 保留 `oss_endpoint` 作为旧配置兼容。
-- 修改：`cloud-server/app/infrastructure/oss_storage.py`
-  - 使用 public bucket 生成 presigned URL。
-  - 使用 internal bucket 执行 `head_object/delete_object`；未配置 internal 时回退 public。
-- 修改：`cloud-server/.env.example`
-  - 增加双 endpoint 示例。
-- 修改：`cloud-server/README.md`
-  - 增加公网/内网 endpoint 说明。
-  - 增加校园网/公司网/代理排查说明。
-- 修改：`cloud-server/deploy/README.md`
-  - 增加部署后检查项：公网 health、OSS public presigned URL、CORS。
-- 可选修改：`cloud-server/deploy/deploy.sh`
-  - 生成 `.env` 时写出 `OSS_PUBLIC_ENDPOINT` 和 `OSS_INTERNAL_ENDPOINT` 注释。
+## cloud-admin
 
-## 测试
+新增独立管理前端项目：
 
-- 新增：`backend/tests/test_cloud_api_client_network_modes.py`
-- 新增：`backend/tests/test_cloud_network_diagnostics.py`
-- 修改：`backend/tests/test_cloud_api.py`
-- 修改或新增：`cloud-server/tests/test_oss_endpoint_config.py`
-- 修改或新增前端类型检查相关测试，如项目已有 Vitest，则补：
-  - `frontend/src/features/cloud/__tests__/CloudNetworkDiagnosticsPanel.spec.ts`
+- `cloud-admin/package.json`
+- `cloud-admin/package-lock.json`
+- `cloud-admin/index.html`
+- `cloud-admin/vite.config.ts`
+- `cloud-admin/tsconfig.json`
+- `cloud-admin/tsconfig.app.json`
+- `cloud-admin/env.d.ts`
+- `cloud-admin/src/main.ts`
+- `cloud-admin/src/App.vue`
+- `cloud-admin/src/router/index.ts`
+- `cloud-admin/src/shared/api/client.ts`
+- `cloud-admin/src/shared/styles/base.css`
+- `cloud-admin/src/entities/admin-auth/api.ts`
+- `cloud-admin/src/entities/admin-auth/types.ts`
+- `cloud-admin/src/entities/admin-dashboard/api.ts`
+- `cloud-admin/src/entities/admin-dashboard/types.ts`
+- `cloud-admin/src/entities/admin-feedback/api.ts`
+- `cloud-admin/src/entities/admin-feedback/types.ts`
+- `cloud-admin/src/entities/admin-user/api.ts`
+- `cloud-admin/src/entities/admin-user/types.ts`
+- `cloud-admin/src/entities/admin-announcement/api.ts`
+- `cloud-admin/src/entities/admin-announcement/types.ts`
+- `cloud-admin/src/pages/LoginPage.vue`
+- `cloud-admin/src/pages/DashboardPage.vue`
+- `cloud-admin/src/pages/FeedbackListPage.vue`
+- `cloud-admin/src/pages/FeedbackDetailPage.vue`
+- `cloud-admin/src/pages/UsersPage.vue`
+- `cloud-admin/src/pages/UserDetailPage.vue`
+- `cloud-admin/src/pages/AnnouncementsPage.vue`
+- `cloud-admin/src/components/AdminLayout.vue`
+- `cloud-admin/src/components/StatTile.vue`
+- `cloud-admin/src/components/DataTable.vue`
+
+约束：
+
+- 使用 Vue 3 + TypeScript + Vite。
+- 不引入大型 UI 库。
+- 不接入 Tauri。
+- 页面风格应是后台工具，不做营销式首页。
+
+## backend local sidecar
+
+新增：
+
+- `backend/app/schemas/cloud_profile.py`
+- `backend/app/services/cloud_profile_service.py`
+- `backend/tests/test_cloud_profile_api.py`
+
+修改：
+
+- `backend/app/infrastructure/cloud_api_client.py`
+  - 新增 profile/avatar/signature/password 相关 API 方法。
+- `backend/app/api/cloud.py`
+  - 新增本地代理接口。
+- `backend/app/services/cloud_auth_service.py`
+  - 扩展 profile 方法，保持修改密码后本地 token 清理。
+- `backend/app/schemas/cloud.py`
+  - 或新增独立 schema 后只在 API 层引用，避免 cloud.py 继续膨胀。
+
+## frontend desktop client
+
+新增：
+
+- `frontend/src/pages/account/CloudProfilePage.vue`
+- `frontend/src/features/cloud/CloudProfileCard.vue`
+- `frontend/src/features/cloud/CloudAvatarUploader.vue`
+- `frontend/src/features/cloud/CloudSignatureEditor.vue`
+- `frontend/src/features/cloud/CloudPasswordChangePanel.vue`
+- `frontend/src/features/cloud/AppVersionPanel.vue`
+
+修改：
+
+- `frontend/src/features/cloud/CloudAccountDialog.vue`
+  - 优化登录/注册 UI 布局和左右内边距。
+- `frontend/src/features/cloud/CloudAccountPrivacyPanel.vue`
+  - 可拆分复用密码修改、会话、导出、删除等能力，避免重复逻辑。
+- `frontend/src/entities/cloud/api.ts`
+  - 新增 profile/avatar/signature API。
+- `frontend/src/entities/cloud/types.ts`
+  - 扩展 `CloudAccountProfile`、`CloudAccountStatus`。
+- `frontend/src/router/index.ts`
+  - 新增 `/account` 路由。
+- `frontend/src/pages/projects/ProjectsPage.vue`
+  - 在云账户入口旁增加“个人中心”入口，或登录后点击云账户进入个人页面。
+- `frontend/vite.config.ts`
+  - 注入软件版本号常量。
+- `frontend/env.d.ts`
+  - 声明版本常量类型。
+
+## docs
+
+新增：
+
+- `cloud-server/docs/CLOUD_ADMIN_DEPLOYMENT.md`
+- `docs/Cloud_Client_Profile_And_Admin_Plan.md`（可选，如果 Claude 认为需要沉淀说明）
 
 # Implementation Steps for Claude Code
 
-## Phase 1: 梳理现有临时方案并建立枚举
+## Phase 1: cloud-server 账号资料字段和迁移
 
-1. 读取 `backend/app/infrastructure/cloud_api_client.py`，保留现有 No-SNI 兼容逻辑，但不要让它无条件接管所有 HTTPS 请求。
-2. 在后端定义连接模式：
+1. 修改 `cloud-server/app/models/user.py`，新增字段：
+   - `avatar_object_key: String(512), nullable=True`
+   - `avatar_content_type: String(80), nullable=True`
+   - `avatar_updated_at: DateTime(timezone=True), nullable=True`
+   - `signature: String(160), nullable=True`
+   - `last_login_at: DateTime(timezone=True), nullable=True`
+   - `last_seen_at: DateTime(timezone=True), nullable=True`
+   - `login_count: Integer, nullable=False, default=0, server_default="0"`
 
-```python
-CloudNetworkMode = Literal["auto", "secure_direct", "system_proxy", "compat_no_sni"]
-```
+2. 新增 `cloud-server/app/models/user_activity_event.py`：
+   - `id: String(36), primary_key`
+   - `user_id: String(36), nullable=True, index=True`
+   - `event_type: String(64), nullable=False, index=True`
+   - `client_ip_hash: String(64), nullable=True`
+   - `user_agent: String(255), nullable=True`
+   - `metadata_json: Text, nullable=True`
+   - `created_at: DateTime(timezone=True), default=utc_now, index=True`
 
-3. 在 `AppConfigService` 增加 key：
+3. 新增 Alembic：
+   - `cloud-server/alembic/versions/004_admin_dashboard_profile.py`
+   - 注意兼容 SQLite 和 PostgreSQL。
+   - 对已有 users 表使用 `op.add_column`。
+   - 新建 `user_activity_events` 表和必要索引。
 
-```python
-KEY_CLOUD_NETWORK_MODE = "cloud_network_mode"
-KEY_CLOUD_LAST_WORKING_MODE = "cloud_last_working_mode"
-KEY_CLOUD_LAST_DIAGNOSTIC = "cloud_last_diagnostic"
-```
+4. 更新 `cloud-server/app/models/__init__.py` 导出新模型。
 
-4. 默认 `cloud_network_mode` 为 `auto`。
-5. 仅在用户明确选择或 `auto` 策略诊断命中时才使用 `compat_no_sni`。
+## Phase 2: cloud-server 活跃事件和指标服务
 
-## Phase 2: 重构 CloudApiClient 为策略链
+1. 新增 `cloud-server/app/repositories/user_activity_repo.py`：
+   - `create(event)`
+   - `count_distinct_users_since(since)`
+   - `count_events_by_day(event_type, since, days)`
+   - `list_recent_by_user(user_id, limit)`
 
-1. 在 `CloudApiClient.__init__` 中保留原始 base URL：
-   - `_original_base_url`
-   - `_hostname`
-   - `_scheme`
-2. 新增私有方法：
+2. 新增 `cloud-server/app/services/activity_service.py`：
+   - `record(user_id, event_type, request, metadata=None)`
+   - 对 IP 做 SHA-256 hash，不保存明文 IP。
+   - `metadata` 只允许白名单字段，例如 `status_code`、`category`、`size_bytes`。
+   - 不记录 token、密码、presigned URL、反馈正文。
 
-```python
-_build_secure_direct_client(timeout) -> httpx.Client
-_build_system_proxy_client(timeout) -> httpx.Client
-_build_compat_no_sni_client(timeout) -> tuple[httpx.Client, str]
-_is_local_development_url(url) -> bool
-_is_insecure_remote_http(url) -> bool
-_request_with_mode(mode, method, path, json, timeout)
-_classify_http_error(exc) -> CloudNetworkErrorKind
-```
+3. 在以下位置调用活动记录：
+   - `cloud-server/app/api/auth.py`
+     - 注册成功：`user_registered`
+     - 登录成功：`login_success`
+     - refresh 成功：`token_refreshed`
+   - `cloud-server/app/services/auth_service.py`
+     - 登录成功后更新 `last_login_at`、`last_seen_at`、`login_count`。
+   - `cloud-server/app/api/feedback.py`
+     - 反馈创建成功：`feedback_created`
+   - `cloud-server/app/api/backups.py`
+     - backup init/complete/delete。
+   - `cloud-server/app/api/account.py`
+     - profile update、password_changed。
 
-3. 在发起云 API 请求前做 URL 安全检查：
-   - 如果 base URL 是 `http://localhost`、`http://127.0.0.1` 或 `http://[::1]`，允许继续，用于本地开发和测试。
-   - 如果 base URL 是 `http://` 且 host 不是本地地址，返回明确错误：`生产云服务必须使用 HTTPS，请将 ZHANGSHU_CLOUD_API_BASE_URL 改为 https://...`。
-   - 不要阻止桌面端访问自己的本地 sidecar；本检查只针对 `CloudApiClient` 访问远程章枢云 API。
-4. `secure_direct`：
-   - URL 使用原始域名。
-   - `verify=True`。
-   - `trust_env=False`。
-5. `system_proxy`：
-   - URL 使用原始域名。
-   - `verify=True`。
-   - `trust_env=True`。
-   - 用于允许用户/系统代理接管请求。
-6. `compat_no_sni`：
-   - URL 使用解析后的 IP。
-   - Header 带 `Host: 原始域名`。
-   - `trust_env=False`。
-   - SSLContext 可复用当前 `_build_no_sni_context()`，但必须用注释明确这是兼容路径。
-7. `auto`：
-   - 优先尝试 `secure_direct`。
-   - 如果失败类型是代理/DNS/连接重置/SSL 握手失败，再尝试 `system_proxy`。
-   - 如果仍失败且错误疑似 SNI 过滤，再尝试 `compat_no_sni`。
-   - 如果某模式成功，可把 `cloud_last_working_mode` 保存为非敏感配置，但不要永久覆盖用户选择。
-8. 登录、注册、项目、备份 API 都使用该策略链。
-9. OSS `upload_backup(upload_url, content)` 不应使用 Cloud API 的 No-SNI 逻辑；它连接的是 OSS presigned URL，必须：
-   - `trust_env` 根据网络模式决定；
-   - 默认先直连；
-   - 如果用户选择 `system_proxy`，允许代理；
-   - 上传失败时解析 OSS 错误 XML，但不要输出完整签名 query。
+4. 新增 `cloud-server/app/services/admin_metrics_service.py`：
+   - `get_summary()`
+     - 总用户数。
+     - 近 24 小时活跃用户。
+     - 近 7 日活跃用户。
+     - 近 30 日活跃用户。
+     - 今日注册数。
+     - 总云项目数。
+     - 总云备份数。
+     - 总存储用量。
+     - open feedback 数。
+     - urgent/high feedback 数。
+   - `get_activity_series(days=14)`
+     - 每日活跃用户。
+     - 每日注册。
+     - 每日反馈。
+     - 每日备份成功数。
+   - `get_feedback_stats()`
+     - 按状态计数。
+     - 按分类计数。
 
-## Phase 3: 新增网络诊断服务
+5. 新增 `cloud-server/app/api/admin_dashboard.py`：
+   - prefix: `/api/admin/dashboard`
+   - `GET /summary`
+   - `GET /activity?days=14`
+   - `GET /feedback-stats`
+   - 全部依赖管理员权限。
 
-1. 新建 `backend/app/infrastructure/cloud_network_diagnostics.py`。
-2. 实现诊断步骤：
-   - `config_check`：确认 `ZHANGSHU_CLOUD_API_BASE_URL` 是否存在、scheme 是否为 http/https。
-   - `https_policy_check`：确认远程云 API 使用 HTTPS；本地 `localhost/127.0.0.1/::1` 允许 HTTP。
-   - `dns_check`：解析 hostname，返回 IP 列表和耗时。
-   - `tcp_check`：对 host:port 做 TCP 连接测试。
-   - `secure_https_check`：用域名 + SNI + 证书验证 GET `/health`。
-   - `system_proxy_check`：`trust_env=True` GET `/health`。
-   - `compat_no_sni_check`：IP + Host + No-SNI GET `/health`。
-   - `api_contract_check`：GET `/health` 或 `/api/auth/me`，无 token 时只验证服务是否可达。
-3. 每一步返回：
+## Phase 3: cloud-server 管理端认证
 
-```json
-{
-  "name": "secure_https",
-  "ok": false,
-  "latency_ms": 123,
-  "error_kind": "tls_reset_or_sni_filtered",
-  "message": "普通 HTTPS 连接被重置，可能是校园网或公司网拦截。",
-  "suggestion": "可尝试系统代理或兼容模式。"
-}
-```
+1. 新增 `cloud-server/app/schemas/admin_auth.py`：
+   - `AdminLoginRequest`
+   - `AdminMeResponse`
 
-4. 错误分类建议：
-   - `not_configured`
-   - `invalid_url`
-   - `dns_failed`
-   - `tcp_unreachable`
-   - `timeout`
-   - `tls_failed`
-   - `tls_reset_or_sni_filtered`
-   - `proxy_required_or_interfered`
-   - `http_status_error`
-   - `cloud_unavailable`
-   - `insecure_remote_http`
-   - `oss_internal_endpoint`
-   - `oss_forbidden_or_signature_error`
-   - `unknown`
-5. 诊断不得携带密码、token、refresh token。
-6. 诊断响应 schema 应保留机器可读字段和用户可读建议。
+2. 新增 `cloud-server/app/api/admin_auth.py`：
+   - `POST /api/admin/auth/login`
+     - request: `{ "email": str, "password": str }`
+     - 验证账号密码。
+     - 必须是 `is_admin` 或 `ADMIN_EMAILS`。
+     - 设置 HttpOnly Cookie。
+     - 返回 `{ "id", "email", "display_name" }`，不返回 token 给前端。
+   - `POST /api/admin/auth/refresh`
+     - 轮换 refresh cookie。
+   - `POST /api/admin/auth/logout`
+     - 撤销当前 refresh token 并清理 cookie。
+   - `GET /api/admin/auth/me`
+     - 返回当前管理员信息。
 
-## Phase 4: 新增本地 API
+3. 修改 `cloud-server/app/api/deps.py`：
+   - 新增 `get_current_user_from_admin_cookie`。
+   - 新增 `require_admin_user_cookie_or_bearer`。
+   - 现有 admin API 可逐步切换到新依赖。
+   - 测试中允许 Bearer，以便复用现有测试工具。
 
-在 `backend/app/api/cloud.py` 增加：
+4. 修改 `cloud-server/app/core/config.py`：
+   - `admin_cookie_secure: bool = True`
+   - `admin_access_token_expire_minutes: int = 30`
+   - `admin_refresh_token_expire_hours: int = 8`
+   - `admin_cookie_samesite: str = "lax"`
+   - production 下如果 `admin_cookie_secure=False` 应由 `validate_production_config` 报错。
 
-1. `GET /api/cloud/network/settings`
-   - 返回：
+5. 管理登录限流：
+   - 在 `RateLimitService` 中新增 `admin_login`。
+   - 按 IP + email 限流。
+   - 失败返回 429，不暴露账号是否存在。
 
-```json
-{
-  "mode": "auto",
-  "last_working_mode": "secure_direct",
-  "base_url_configured": true
-}
-```
+## Phase 4: cloud-server 管理用户 API
 
-2. `PUT /api/cloud/network/settings`
-   - 请求：
+1. 新增 `cloud-server/app/schemas/admin_user.py`：
+   - `AdminUserListItem`
+   - `AdminUserDetail`
+   - `AdminUserListResponse`
 
-```json
-{"mode": "auto"}
-```
+2. 新增 `cloud-server/app/services/admin_user_service.py`：
+   - `list_users(keyword, status, limit, offset)`
+   - `get_user_detail(user_id)`
+   - 详情包含：
+     - id、email、display_name、signature。
+     - is_active、is_admin。
+     - created_at、last_login_at、last_seen_at、login_count。
+     - 云项目数、云备份数、存储用量。
+     - 反馈数和最近反馈。
+     - 最近活动事件。
+   - 不返回 password_hash、refresh token、OSS object key 的完整敏感路径。
 
-   - 只允许四种 mode。
-   - 如果用户设置 `compat_no_sni`，后端允许保存，但前端必须显示安全提示。
-3. `POST /api/cloud/network/diagnose`
-   - 请求可为空，或支持：
+3. 新增 `cloud-server/app/api/admin_users.py`：
+   - `GET /api/admin/users?keyword=&status=&limit=&offset=`
+   - `GET /api/admin/users/{user_id}`
+   - 第一版保持只读，不做禁用/删除用户操作。
 
-```json
-{"include_oss": false}
-```
+## Phase 5: cloud-server 个人资料、头像、签名和密码安全
 
-   - 返回完整诊断报告。
-4. 不要让这些接口触发登录、注册或上传备份。
+1. 修改 `cloud-server/app/schemas/account.py`：
+   - `ProfileResponse` 增加：
+     - `signature: str | None`
+     - `avatar_url: str | None`
+     - `avatar_updated_at: datetime | None`
+     - `password_changed_at: datetime | None`
+   - `UpdateProfileRequest` 增加：
+     - `display_name: str | None`
+     - `signature: str | None`
+   - 新增：
+     - `AvatarInitRequest`
+     - `AvatarInitResponse`
+     - `AvatarCompleteRequest`
+     - `AvatarResponse`
 
-## Phase 5: 前端设置和诊断面板
+2. 修改 `cloud-server/app/services/account_service.py`：
+   - `update_profile` 支持显示名和签名。
+   - 显示名限制 1-128 字。
+   - 签名限制 0-160 字。
+   - `get_profile` 返回短期 avatar_url。
+   - 新增：
+     - `init_avatar_upload(user_id, filename, content_type, size_bytes)`
+     - `complete_avatar_upload(user_id, upload_id)`
+     - `delete_avatar(user_id)`
+   - 头像限制：
+     - MIME: `image/png`、`image/jpeg`、`image/webp`
+     - max size: 2 MB
+   - 上传完成后删除旧 avatar object，失败时不破坏旧头像。
 
-1. 在 `frontend/src/entities/cloud/types.ts` 增加类型：
-
-```ts
-export type CloudNetworkMode = 'auto' | 'secure_direct' | 'system_proxy' | 'compat_no_sni'
-
-export interface CloudNetworkSettings {
-  mode: CloudNetworkMode
-  last_working_mode: CloudNetworkMode | null
-  base_url_configured: boolean
-}
-
-export interface CloudNetworkDiagnosticStep {
-  name: string
-  ok: boolean
-  latency_ms: number | null
-  error_kind: string
-  message: string
-  suggestion: string
-}
-
-export interface CloudNetworkDiagnosticReport {
-  ok: boolean
-  recommended_mode: CloudNetworkMode
-  summary: string
-  steps: CloudNetworkDiagnosticStep[]
-}
-```
-
-2. 在 `frontend/src/entities/cloud/api.ts` 增加：
-   - `getCloudNetworkSettings()`
-   - `setCloudNetworkSettings(mode)`
-   - `runCloudNetworkDiagnostics()`
-3. 新建 `CloudNetworkDiagnosticsPanel.vue`：
-   - 顶部显示当前连接模式。
-   - 提供“检测连接”按钮。
-   - 用简洁列表显示 DNS、端口、HTTPS、代理、兼容模式结果。
-   - 只在“高级设置”中暴露连接模式选择。
-   - `compat_no_sni` 旁边显示提示：普通连接失败时才建议使用。
-4. 修改 `AppSettingsDialog.vue`：
-   - 在“章枢云账户”字段组下加入“网络连接”折叠区或二级区域。
-   - 避免把诊断详情铺满主设置页。
-5. 修改 `CloudAccountDialog.vue`：
-   - 登录/注册失败时，如果错误不是 401 账号密码错误，显示“运行连接诊断”按钮。
-   - 诊断后根据结果提示：
-     - “可能被校园/公司网络拦截”
-     - “可能需要使用系统代理”
-     - “云服务暂时不可达”
-     - “本地未配置云服务地址”
-
-## Phase 6: OSS 预签名 URL 防护
-
-1. 修改 `cloud-server/app/core/config.py`：
-
-```python
-oss_endpoint: str = "oss-cn-hangzhou.aliyuncs.com"
-oss_public_endpoint: str = ""
-oss_internal_endpoint: str = ""
-```
-
-2. 规则：
-   - public endpoint = `OSS_PUBLIC_ENDPOINT or OSS_ENDPOINT`
-   - internal endpoint = `OSS_INTERNAL_ENDPOINT or public endpoint`
 3. 修改 `cloud-server/app/infrastructure/oss_storage.py`：
-   - `_public_bucket` 用于 `generate_put_url()` 和 `generate_get_url()`。
-   - `_internal_bucket` 用于 `head_object()` 和 `delete_object()`。
-4. 在生成 presigned URL 后增加防御性检查：
-   - 如果 URL host 包含 `-internal.aliyuncs.com`，记录 error，并返回服务端错误：
+   - 新增 `build_avatar_object_key(user_id, avatar_id, filename)`：
+     - `avatars/{user_id}/{avatar_id}/{safe_filename}`
+   - 复用 PUT/GET signed URL。
 
-```json
-{"detail": "云存储上传地址配置为内网地址，桌面端无法访问，请联系管理员修正 OSS_PUBLIC_ENDPOINT。"}
-```
+4. 强化修改密码：
+   - `cloud-server/app/services/account_service.py`
+     - 校验新旧密码不能相同。
+     - 保留现有强度校验。
+     - 修改成功后撤销全部 refresh token。
+     - 更新 `password_changed_at`。
+   - `cloud-server/app/api/account.py`
+     - 在 change password 前调用 `RateLimitService.check_password_change`。
+     - 审计 `password_change_failed`、`password_changed`。
+   - 错误消息不要泄露过多安全细节。
 
-5. 修改 `.env.example`：
+## Phase 6: cloud-admin 前端项目
 
-```env
-OSS_ENDPOINT=oss-cn-hangzhou.aliyuncs.com
-OSS_PUBLIC_ENDPOINT=oss-cn-hangzhou.aliyuncs.com
-OSS_INTERNAL_ENDPOINT=oss-cn-hangzhou-internal.aliyuncs.com
-```
+1. 创建 `cloud-admin/`：
+   - 使用 Vue 3 + TypeScript + Vite。
+   - 复用项目偏好的朴素 CSS 和设计变量，不引入大型 UI 库。
+   - 配置：
+     - `VITE_CLOUD_ADMIN_API_BASE_URL`
+     - 默认同源为空字符串。
 
-6. 修改 `README.md` 和 `deploy/README.md`：
-   - 明确“预签名 URL 给桌面端使用，必须公网可达”。
-   - 服务端自用可配置 internal endpoint。
+2. `cloud-admin/src/shared/api/client.ts`：
+   - `fetch` 默认 `credentials: "include"`，用于 HttpOnly Cookie。
+   - 统一解析 `{"detail": "..."}`
+   - 401 自动跳转登录页。
+   - 不把错误堆栈显示给用户。
 
-## Phase 7: 错误信息和日志收敛
+3. 页面结构：
+   - `LoginPage.vue`
+     - 管理员登录。
+     - 明确“仅管理员使用”。
+   - `DashboardPage.vue`
+     - StatTile:
+       - 总用户数。
+       - 今日新增。
+       - 24h 活跃。
+       - 7d 活跃。
+       - open feedback。
+       - 总存储。
+     - 简单活动趋势表或轻量条形图，不引入图表库也可。
+   - `FeedbackListPage.vue`
+     - 筛选：状态、分类、优先级。
+     - 搜索：标题、邮箱、用户 ID。
+     - 列表字段：标题、分类、状态、优先级、附件数、创建时间。
+   - `FeedbackDetailPage.vue`
+     - 查看正文、诊断信息、附件列表。
+     - 更新状态、优先级、管理员备注。
+     - 获取附件下载 URL 后打开，不直接暴露永久链接。
+   - `UsersPage.vue`
+     - 用户列表、搜索邮箱/显示名。
+     - 显示注册时间、最后登录、最后活跃、项目数、备份数、反馈数。
+   - `UserDetailPage.vue`
+     - 查看用户资料、云用量、最近活动、最近反馈。
+     - 第一版只读。
+   - `AnnouncementsPage.vue`
+     - 复用现有 admin announcement API。
+     - 创建草稿、发布、归档、删除。
 
-1. 后端 `CloudApiError` 增加可选字段：
-   - `status_code`
-   - `error_kind`
-   - `suggestion`
-2. 本地 API 捕获连接异常时，返回更具体但不暴露敏感信息的 detail。
-3. 日志规则：
-   - 不记录完整 Authorization。
-   - 不记录完整 presigned URL query。
-   - 不记录密码、refresh token。
-   - 可以记录 hostname、错误类型、耗时、策略模式。
-4. 上传 OSS 失败时：
-   - 若 response body 是 OSS XML，只提取 `Code` 和 `Message`，不要把完整 URL 打进日志。
-   - 403 时提示可能原因：签名过期、Content-Type 不匹配、CORS、endpoint 内外网错误。
+4. `AdminLayout.vue`：
+   - 左侧导航：概览、反馈、用户、公告。
+   - 顶部显示当前管理员和退出。
+   - 不做大面积宣传式 hero，保持后台工具密度。
 
-## Phase 8: 测试
+5. 安全 UI：
+   - 登录页不记住密码。
+   - 退出时调用 `/api/admin/auth/logout`。
+   - 所有正文按纯文本展示，不使用 `v-html`。
+   - 附件下载按钮显示风险提示：不要打开可疑视频或图片中的外链内容。
 
-1. `backend/tests/test_cloud_api_client_network_modes.py`
-   - mock httpx，验证 `auto` 会先试 `secure_direct`。
-   - secure 成功时不会触发 `compat_no_sni`。
-   - secure 连接重置时会尝试 `system_proxy` / `compat_no_sni`。
-   - 手动 `secure_direct` 不会使用 No-SNI。
-   - 手动 `compat_no_sni` 会使用 Host 头。
-2. `backend/tests/test_cloud_network_diagnostics.py`
-   - 未配置 base URL 返回 `not_configured`。
-   - 远程 HTTP 地址返回 `insecure_remote_http`。
-   - `http://127.0.0.1:9000`、`http://localhost:9000`、`http://[::1]:9000` 不返回 `insecure_remote_http`。
-   - DNS 失败返回 `dns_failed`。
-   - TCP 不通返回 `tcp_unreachable`。
-   - TLS reset 分类为 `tls_reset_or_sni_filtered`。
-   - 诊断响应不包含 token。
-3. `backend/tests/test_cloud_api.py`
-   - 覆盖新增 `/api/cloud/network/settings`、`/api/cloud/network/diagnose`。
-4. `cloud-server/tests/test_oss_endpoint_config.py`
-   - public endpoint 生成的 presigned URL 不包含 `-internal.aliyuncs.com`。
-   - internal endpoint 用于 head/delete。
-   - 未设置 public endpoint 时回退到 `OSS_ENDPOINT`。
-5. 前端：
-   - 至少运行 type-check。
-   - 如项目已有前端测试基础，再补 CloudNetworkDiagnosticsPanel 的状态渲染测试。
+## Phase 7: backend sidecar 个人资料代理
+
+1. 修改 `backend/app/infrastructure/cloud_api_client.py`：
+   - 新增：
+     - `get_account_profile()`
+     - `update_account_profile(display_name=None, signature=None)`
+     - `init_avatar_upload(filename, content_type, size_bytes)`
+     - `upload_avatar(upload_url, content, content_type)`
+     - `complete_avatar_upload(upload_id, checksum_sha256)`
+     - `delete_avatar()`
+     - `change_password(old_password, new_password)`
+   - 如果已有同名方法，扩展参数和响应结构即可。
+
+2. 新增 `backend/app/services/cloud_profile_service.py`：
+   - 获取 profile。
+   - 更新 display_name/signature。
+   - 接收头像 UploadFile，校验类型和大小，计算 SHA256，调用云端上传。
+   - 修改密码后调用 `CloudAuthService.logout()` 清理本地 token。
+
+3. 修改 `backend/app/api/cloud.py`：
+   - 新增或扩展：
+     - `GET /api/cloud/account/profile`
+     - `PATCH /api/cloud/account/profile`
+     - `POST /api/cloud/account/avatar`
+     - `DELETE /api/cloud/account/avatar`
+     - `POST /api/cloud/account/password/change`
+   - 头像上传使用 multipart form。
+   - 错误返回保持 `{"detail": "错误信息"}`。
+
+4. 测试：
+   - profile 获取。
+   - 签名更新。
+   - 头像非法类型拒绝。
+   - 头像超大小拒绝。
+   - 修改密码成功后本地 token 被清理。
+   - 修改密码失败不清理本地 token。
+
+## Phase 8: frontend 登录/注册弹窗 UI 优化
+
+1. 修改 `frontend/src/features/cloud/CloudAccountDialog.vue`：
+   - 保留现有登录/注册逻辑。
+   - 增加稳定结构：
+     - `.dialog-header`
+     - `.dialog-body`
+     - `.dialog-footer` 如需要
+   - `.cloud-account-dialog` 设置：
+     - `width: min(460px, calc(100vw - 32px))`
+     - `box-sizing: border-box`
+     - 不让表单直接贴容器边。
+   - `.dialog-body` 设置：
+     - `padding: var(--zs-space-4) var(--zs-space-5)`
+     - mobile 降低为 `var(--zs-space-4)`
+   - `form`、`.auth-section`、`.not-configured`、`.logged-in-section` 不应左右贴边。
+   - 输入框和按钮宽度保持一致。
+   - 登录/注册切换 tab 高度稳定，不随文本变化跳动。
+   - 错误提示和诊断区域也放在 body 内部，不贴边。
+
+2. UI 文案：
+   - 登录失败显示通用错误。
+   - 网络失败显示“运行连接诊断”。
+   - 注册时提示密码规则：至少 10 个字符，避免过长。
+
+3. 不要在这一步重写整个登录流程，不要把个人中心塞进登录弹窗。
+
+## Phase 9: frontend 独立个人页面
+
+1. 新增 `frontend/src/pages/account/CloudProfilePage.vue`：
+   - 路由：`/account`
+   - 未登录：
+     - 显示云账户登录入口。
+     - 不阻止用户返回项目列表。
+   - 已登录：
+     - 头像。
+     - 显示名。
+     - 邮箱。
+     - 签名。
+     - 账号创建时间。
+     - 最近密码修改时间。
+     - 云存储用量。
+     - 软件版本号。
+     - 修改密码入口。
+     - 退出登录。
+     - 可链接到账户隐私/删除账号区域。
+
+2. 新增 `CloudAvatarUploader.vue`：
+   - 本地预览。
+   - 支持 png/jpg/webp。
+   - 超过 2 MB 前端直接提示。
+   - 上传成功后刷新 profile。
+
+3. 新增 `CloudSignatureEditor.vue`：
+   - 160 字以内。
+   - 显示剩余字数。
+   - 保存后刷新 profile。
+
+4. 新增 `CloudPasswordChangePanel.vue`：
+   - 当前密码。
+   - 新密码。
+   - 确认新密码。
+   - 密码规则提示。
+   - 新旧密码不能相同。
+   - 提交前提示“修改后所有设备将需要重新登录”。
+   - 成功后清理本地登录状态并跳转登录。
+
+5. 新增 `AppVersionPanel.vue`：
+   - 显示 `frontend/package.json` 注入的版本。
+   - 如 Tauri 环境后续可读取 Tauri 版本，首期不新增 Tauri API 依赖。
+
+6. 修改 `frontend/vite.config.ts`：
+   - 读取 `package.json` version。
+   - define:
+     - `__ZHANGSHU_APP_VERSION__`
+
+7. 修改 `frontend/env.d.ts`：
+   - 声明 `const __ZHANGSHU_APP_VERSION__: string`
+
+8. 修改 `frontend/src/router/index.ts`：
+   - 新增：
+     - `path: "/account"`
+     - `name: "cloud-account-profile"`
+     - `component: CloudProfilePage`
+
+9. 修改 `frontend/src/pages/projects/ProjectsPage.vue`：
+   - 登录后云账户入口可跳转 `/account`。
+   - 未登录仍打开登录/注册弹窗。
+   - 不要破坏项目列表布局。
+
+## Phase 10: 文档和部署
+
+1. 新增 `cloud-server/docs/CLOUD_ADMIN_DEPLOYMENT.md`：
+   - 如何设置管理员账号：
+     - `ADMIN_EMAILS=admin@example.com`
+     - 或数据库中 `users.is_admin=true`
+   - 如何构建 `cloud-admin`。
+   - 如何通过 Nginx 部署到 `/admin/`。
+   - Cookie、HTTPS、CORS 要求。
+   - 不要在文档中写真实 token、密钥、数据库密码。
+
+2. 更新 `cloud-server/README.md` 或只新增文档引用：
+   - 指向后台部署文档。
 
 # Constraints
 
-- 不要移除现有云登录、注册、备份 API 契约。
-- 不要把云网络诊断逻辑混入 UI 组件、登录服务或备份服务主体流程。
-- 不要继续默认所有 HTTPS 云请求都关闭证书验证。
-- 不要让用户在普通设置页里看到过多 TLS/SNI/HTTP2 技术细节；技术细节可放在诊断详情中。
-- 不要把代理账号密码、JWT、refresh token、OSS 签名 URL 写入日志。
-- 不要在客户端保存 OSS AccessKey。
-- 不要把 `compat_no_sni` 描述成“更安全”或“推荐模式”；它只是兼容模式。
-- 不要因为云服务连接失败阻断章枢本地写作功能。
-- 不要禁止本地开发使用 `http://localhost`、`http://127.0.0.1` 或 `http://[::1]` 连接本地 cloud-server；生产 HTTPS 约束只针对远程云 API。
-- 不要新增大型网络库，优先基于 `httpx`、`socket`、`ssl`、现有 AppConfig 实现。
-- 如果发现当前直接实现过的 No-SNI 代码存在安全风险，Claude Code 应修正为可控 fallback，而不是直接删除导致校园网用户再次不可用。
+- 本任务不得把后台管理能力打包进 Tauri 客户端。
+- 管理后台不得直接连接数据库；必须通过 cloud-server admin API 访问数据。
+- 管理后台不得暴露 OSS AccessKey、JWT_SECRET_KEY、数据库 URL、`.env`。
+- 用户列表和详情首期只读，不做删除用户、重置密码、封禁等高风险操作。
+- 管理端附件下载只能获取短期 presigned URL，不保存永久外链。
+- 管理端所有富文本/反馈正文/公告正文按纯文本展示，不使用不安全 `v-html`。
+- 活跃统计只记录低敏事件，不保存明文 IP，不保存 token、密码、presigned URL、反馈全文到活动表。
+- 客户端个人页面仍通过本地 sidecar 访问云服务，不直接绕过 sidecar。
+- 修改密码必须保留当前密码校验，成功后撤销所有 refresh token 并清理本地登录状态。
+- 头像只允许图片，签名只允许短文本。
+- 不引入大型 UI 库或复杂图表库；后台图表首期可用 CSS/表格实现。
+- 不做任务范围外的支付、权限组、客服 IM、邮件通知、任意 SQL 控制台。
 
 # Verification Commands
 
-## 桌面端后端
+## cloud-server
 
 ```powershell
-cd F:\zhangshu\backend
-pytest tests/test_cloud_api.py -q
-pytest tests/test_cloud_backup_service.py -q
-pytest tests/test_cloud_api_client_network_modes.py -q
-pytest tests/test_cloud_network_diagnostics.py -q
-python -c "from app.main import app; print('ok')"
+cd F:\zhangshu\cloud-server
+.\.venv\Scripts\python.exe -m pytest tests/test_admin_auth.py -q
+.\.venv\Scripts\python.exe -m pytest tests/test_admin_dashboard.py -q
+.\.venv\Scripts\python.exe -m pytest tests/test_admin_users.py -q
+.\.venv\Scripts\python.exe -m pytest tests/test_profile_avatar_signature.py -q
+.\.venv\Scripts\python.exe -m pytest tests/test_password_change_security.py -q
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -c "from app.main import app; print(app.title)"
 ```
 
-## 前端
+如 Alembic 可用：
 
 ```powershell
-cd F:\zhangshu\frontend
+cd F:\zhangshu\cloud-server
+.\.venv\Scripts\alembic.exe upgrade head
+```
+
+## cloud-admin
+
+```powershell
+cd F:\zhangshu\cloud-admin
+npm install
 npm run type-check
 npm run build
 ```
 
-## 云服务端
+如果 Claude Code 新增了 unit tests：
 
 ```powershell
-cd F:\zhangshu\cloud-server
-pytest -q
-python -c "from app.main import app; print(app.title)"
+cd F:\zhangshu\cloud-admin
+npm run test:unit
 ```
 
-## 手动诊断建议
-
-在普通网络、代理网络、校园/公司网络中至少各做一轮：
+## backend
 
 ```powershell
-Test-NetConnection api.emailbs.xin -Port 443
-Invoke-RestMethod https://api.emailbs.xin/health
+cd F:\zhangshu\backend
+.\.venv\Scripts\python.exe -m pytest tests/test_cloud_profile_api.py -q
+.\.venv\Scripts\python.exe -m pytest tests/ -q
+.\.venv\Scripts\python.exe -c "from app.main import app; print('ok')"
 ```
 
-在章枢 UI 中：
+## frontend
 
-1. 打开应用设置。
-2. 进入章枢云账户。
-3. 运行“云服务连接诊断”。
-4. 切换 `auto`、`secure_direct`、`system_proxy`、`compat_no_sni`，确认提示和结果一致。
-5. 登录或注册云账户。
-6. 触发一次云端备份。
-7. 如果 OSS 返回 403，确认 UI 提示能区分签名、CORS、endpoint 内外网问题。
+```powershell
+cd F:\zhangshu\frontend
+npm run type-check
+npm run test:unit
+npm run build
+```
+
+## manual smoke test
+
+- 使用管理员账号登录 `cloud-admin`。
+- 打开后台概览，确认用户数、活跃数、反馈数可显示。
+- 查看反馈列表，打开反馈详情，更新状态。
+- 对带附件反馈生成下载链接，确认链接短期可用。
+- 查看用户列表和用户详情，确认不显示 password_hash、token、OSS Key。
+- 客户端打开云账户登录/注册弹窗，确认左右边距正常。
+- 客户端登录后进入 `/account`，确认头像、签名、版本号显示。
+- 修改密码成功后，确认本地退出登录，旧 refresh token 不可用。
 
 # Acceptance Criteria
 
-- 活跃交接文件只剩新的 `docs/ai-handoff/CODEX_PLAN.md`。
-- 旧 `CODEX_PLAN.md` 和 `CLAUDE_EXECUTION_REPORT.md` 已归档到 `docs/ai-handoff/archive/2026-05-26-pre-network-resilience/`。
-- 默认云连接模式为 `auto`。
-- 普通 HTTPS 安全连接成功时，不使用 No-SNI，不关闭证书验证。
-- 远程生产云 API 使用 HTTP 时会被阻止或明确标记为高风险；本地 `localhost/127.0.0.1/::1` HTTP 联调不受影响。
-- 校园/公司网 SNI 过滤时，`auto` 能通过诊断或 fallback 找到 `compat_no_sni`，并给出用户可理解提示。
-- 用户可以在设置中手动选择连接模式。
-- 用户可以一键运行云连接诊断，诊断报告能区分 DNS、TCP、TLS/SNI、代理、云服务不可达、OSS endpoint 等问题。
-- 登录/注册失败时，不再只显示泛化失败文案；网络类失败能引导用户诊断。
-- 云备份上传的 OSS presigned URL 不会再返回阿里云内网 endpoint。
-- 云服务端支持 public/internal OSS endpoint 分离。
-- 所有新增诊断和日志不泄露 token、密码、API key、OSS AccessKey、完整签名 URL。
-- 本地写作功能在云服务不可用时不受影响。
-- 后端、前端、云服务端验证命令通过，或 Claude 执行报告说明无法运行的具体原因。
+- 后台管理：
+  - 有独立 `cloud-admin/` 前端项目。
+  - 管理员可以安全登录和退出。
+  - 非管理员不能访问后台 API。
+  - 后台可查看运营概览、用户活跃、用户列表、用户详情。
+  - 后台可查看用户反馈、反馈详情、附件下载、状态更新。
+  - 后台可管理公告。
+  - 管理后台不直接连接数据库。
+- 用户活跃：
+  - 服务端有可持久化的低敏 activity event。
+  - 可统计 24h、7d、30d 活跃用户。
+  - 可展示注册、反馈、备份等趋势。
+- 客户端云账户：
+  - 登录/注册弹窗左右边距正常，输入框不贴容器边。
+  - 登录/注册弹窗在窄屏下仍可用。
+  - 登录后可进入独立个人页面。
+  - 个人页面显示头像、邮箱、显示名、签名、软件版本号。
+  - 用户可更新头像、显示名、签名。
+  - 用户可修改登录密码。
+- 密码安全：
+  - 修改密码必须输入当前密码。
+  - 新密码符合强度规则。
+  - 新旧密码不能相同。
+  - 修改密码有服务端限流。
+  - 修改成功后所有 refresh token 被撤销，本地 token 被清理。
+  - 日志、审计、活动事件不包含密码。
+- 隐私和安全：
+  - 不提交 `.env`、数据库、日志、真实 token、OSS Key。
+  - 后台 API 不返回 password_hash、refresh token、presigned URL 长期链接。
+  - 头像上传限制大小和 MIME 类型。
 
 # Risks and Watchpoints
 
-- 当前 `compat_no_sni` 使用 `CERT_NONE`，如果继续默认启用，会扩大中间人风险；必须收束为 fallback 或手动兼容模式。
-- `trust_env=False` 可以绕过代理干扰，但会让必须走代理的用户无法连接；因此需要 `system_proxy` 模式。
-- Windows GUI/Tauri 打包环境未必继承命令行的 `HTTP_PROXY/HTTPS_PROXY` 环境变量，`system_proxy` 模式不一定覆盖所有代理软件；UI 文案应提示用户可在代理软件中为 `api.emailbs.xin` 配置规则。
-- 一些校园/公司网会封 IP 直连或拦截 Host 头，`compat_no_sni` 也可能失败；诊断应给出“更换网络或使用可信代理”的建议。
-- No-SNI 兼容模式下证书验证不可用，不能用于传输高敏感操作以外的长期默认路径。
-- 生产 HTTP 不能因为“方便调试”被放行；但如果实现过严，把 `localhost` 也禁掉，会直接破坏本地 cloud-server 联调。
-- OSS presigned URL 的上传失败可能来自 Content-Type 不匹配、CORS、签名过期、endpoint 内外网、代理改写 header；错误分类要谨慎，不要误导用户。
-- 云服务端如果使用双 endpoint，public/internal bucket 初始化要避免配置混淆。
-- 日志中如打印 `response.url`，可能泄露 presigned URL 签名参数，必须避免。
-- 诊断接口可能被频繁点击，应设置合理 timeout，避免 UI 长时间卡住。
-- 如果新增 proxy URL 配置并允许账号密码，需要加密存储；V1 建议先不支持带认证的代理 URL。
+- 后台管理系统一旦部署到公网，安全风险高于普通客户端，必须强制 HTTPS 和管理员权限。
+- 如果管理后台使用 localStorage 保存 token，XSS 风险更高；优先使用 HttpOnly Cookie。
+- 活跃统计不要过度采集隐私，尤其不要保存明文 IP 和完整 user-agent 指纹。
+- 反馈附件可能包含用户作品内容，后台展示和下载都要保持短期授权。
+- 头像上传如果不限制类型和大小，会造成 OSS 成本和安全风险。
+- 修改密码失败提示如果过细，可能帮助攻击者判断账号状态。
+- 修改密码成功后会让所有设备退出，UI 必须明确告知用户。
+- 新增 `cloud-admin/` 会带来一套独立构建流程，部署文档必须写清楚。
+- 不要为了后台图表引入大型依赖；首期用表格和轻量 CSS 足够。
+- 如果已有公告/反馈 API 和新计划冲突，Claude Code 应停止反馈，不要强行重写。
 
 # Review Checklist
 
-- [ ] 是否已阅读并遵循 `docs/Cloud_Service_Connection_Troubleshooting.md` 的问题复盘？
-- [ ] 是否把 No-SNI 从默认路径改为 fallback / 手动兼容模式？
-- [ ] `secure_direct` 是否保留完整证书验证？
-- [ ] `system_proxy` 是否允许系统代理参与请求？
-- [ ] `auto` 策略是否有清晰顺序和错误分类？
-- [ ] 网络诊断是否覆盖 DNS、TCP、HTTPS、代理、No-SNI、云 health？
-- [ ] 诊断结果是否用户可读，而不是只抛技术异常？
-- [ ] 远程生产云 API 使用 HTTP 时，是否被阻止或明确标记为高风险？
-- [ ] 本地 `localhost/127.0.0.1/::1` HTTP 联调是否不受影响？
-- [ ] 前端是否提供连接诊断入口？
-- [ ] 登录/注册失败是否能区分账号错误和网络错误？
-- [ ] 云备份 OSS 403 是否有更具体提示？
-- [ ] 云服务端是否支持 OSS public/internal endpoint 分离？
-- [ ] 预签名 URL 是否不会使用 `-internal.aliyuncs.com`？
-- [ ] 是否没有记录 JWT、refresh token、密码、OSS AccessKey、完整 presigned URL？
-- [ ] 是否没有修改无关业务模块？
-- [ ] 是否没有破坏现有 12 个云 API 契约？
-- [ ] 是否补充了后端、前端、云服务端相关测试？
-- [ ] Claude 执行报告是否说明哪些网络场景已验证、哪些需要用户实际网络环境复验？
+- [ ] 是否已归档上一轮交接文件？
+- [ ] 是否只在计划中要求新增实现，Codex 未改业务代码？
+- [ ] `cloud-admin/` 是否独立于桌面客户端？
+- [ ] 管理后台是否只通过 admin API 访问数据？
+- [ ] 管理员认证是否有权限校验、限流和安全 Cookie？
+- [ ] 非管理员访问 admin API 是否返回 403？
+- [ ] 用户活跃统计是否来自低敏持久化事件？
+- [ ] 活动事件是否不保存明文 IP、token、密码、presigned URL？
+- [ ] 用户列表/详情是否不返回 password_hash 和 refresh token？
+- [ ] 反馈附件下载是否使用短期 presigned URL？
+- [ ] 登录/注册弹窗是否修复左右贴边问题？
+- [ ] 个人页面是否独立路由，而不是继续塞进设置弹窗？
+- [ ] 头像上传是否限制类型和大小？
+- [ ] 签名长度是否有限制？
+- [ ] 修改密码是否要求当前密码、新密码确认、服务端强度校验？
+- [ ] 修改密码是否有服务端限流？
+- [ ] 修改密码成功后是否撤销 refresh token 并清理本地 token？
+- [ ] 是否补充 cloud-server、backend、frontend、cloud-admin 测试？
+- [ ] 是否运行计划中的验证命令？

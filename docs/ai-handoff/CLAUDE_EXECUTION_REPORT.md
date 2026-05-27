@@ -1,88 +1,89 @@
 ---
-date: 2026-05-26
-task: 云网络韧性增强 (Cloud Network Resilience Enhancement)
-codex_plan: docs/ai-handoff/CODEX_PLAN.md
+date: 2026-05-28
+task: admin-monitoring-dashboard
+codex_plan: plan file (quirky-fluttering-star.md)
 ---
 
 ## Task Summary
-
-将章枢云连接从"无条件 No-SNI/CERT_NONE 单一策略"升级为"策略链 + 网络诊断 + 双 endpoint"架构，覆盖桌面端后端、前端、云服务端共 8 个阶段。
+实现管理后台"运维监控"页面，展示阿里云 BSS 账户余额、OSS 存储详情、轻量应用服务器（SWAS）运行状态和实时监控数据（CPU/内存/磁盘/网络）。
 
 ## Files Changed
 
-### 桌面端后端
+### 后端 (cloud-server)
+- 修改：`cloud-server/app/core/config.py` — 新增 4 个监控配置字段（`aliyun_monitor_access_key_id`、`aliyun_monitor_access_key_secret`、`swas_instance_id`、`swas_region_id`）
+- 新增：`cloud-server/app/infrastructure/aliyun_monitor.py` — 三个阿里云 API 客户端类（`BSSMonitor`、`OSSMonitor`、`SWASMonitor`），封装 BSS 余额查询、OSS 存储统计、SWAS 实例信息和监控数据
+- 新增：`cloud-server/app/services/admin_monitoring_service.py` — 带内存缓存的聚合服务，类级别 `_cache` dict，每个模块独立 TTL（billing: 1h, oss: 1h, server: 5min），支持部分失败容错
+- 新增：`cloud-server/app/schemas/admin_monitoring.py` — Pydantic 响应模型（`ModuleResponse`、`MonitoringOverviewResponse`）
+- 新增：`cloud-server/app/api/admin_monitoring.py` — 两个路由（`GET /overview`、`POST /refresh`）
+- 修改：`cloud-server/app/main.py` — 注册 `admin_monitoring_router`
 
-- 新增：`backend/app/infrastructure/cloud_network_diagnostics.py` — 7 步网络诊断工具
-- 新增：`backend/app/services/cloud_network_service.py` — 网络设置与诊断编排服务
-- 修改：`backend/app/infrastructure/cloud_api_client.py` — 策略链重构 (auto → secure_direct → system_proxy → compat_no_sni)
-- 修改：`backend/app/services/cloud_auth_service.py` — 传播 error_kind/suggestion、网络模式管理
-- 修改：`backend/app/services/cloud_backup_service.py` — 传播 error_kind/suggestion
-- 修改：`backend/app/services/app_config_service.py` — 新增 cloud_network_mode / cloud_last_working_mode key
-- 修改：`backend/app/api/cloud.py` — 新增 3 个网络端点 + _build_error_detail 辅助函数
-- 修改：`backend/app/schemas/cloud.py` — 新增网络设置/诊断 schema
-
-### 桌面端前端
-
-- 新增：`frontend/src/features/cloud/CloudNetworkDiagnosticsPanel.vue` — 诊断面板组件
-- 修改：`frontend/src/entities/cloud/types.ts` — CloudNetworkMode/Settings/DiagnosticReport 类型
-- 修改：`frontend/src/entities/cloud/api.ts` — 3 个新 API 封装
-- 修改：`frontend/src/features/app-config/AppSettingsDialog.vue` — 集成诊断面板
-- 修改：`frontend/src/features/cloud/CloudAccountDialog.vue` — 登录失败时显示诊断入口
-- 修改：`frontend/src/features/cloud/CloudBackupPanel.vue` — OSS 错误识别
-
-### 云服务端
-
-- 修改：`cloud-server/app/core/config.py` — oss_public_endpoint / oss_internal_endpoint
-- 修改：`cloud-server/app/infrastructure/oss_storage.py` — 双 Bucket 模式
-- 修改：`cloud-server/.env.example` — 双 endpoint 示例
-- 修改：`cloud-server/README.md` — endpoint 文档
-- 修改：`cloud-server/deploy/README.md` — 部署后 OSS 端点验证
-
-### 测试
-
-- 新增：`backend/tests/test_cloud_api_client_network_modes.py` — 26 个测试
-- 新增：`backend/tests/test_cloud_network_diagnostics.py` — 12 个测试
-- 修改：`backend/tests/test_cloud_api.py` — 新增 6 个网络端点测试
-- 修改：`backend/tests/test_cloud_backup_service.py` — 修复 2 个预存测试问题
-- 新增：`cloud-server/tests/test_oss_endpoint_config.py` — 8 个测试
+### 前端 (cloud-admin)
+- 新增：`cloud-admin/src/entities/admin-monitoring/types.ts` — TypeScript 接口定义
+- 新增：`cloud-admin/src/entities/admin-monitoring/api.ts` — API 客户端封装
+- 新增：`cloud-admin/src/pages/MonitoringPage.vue` — 监控页面（四卡片布局：余额、OSS、服务器状态、资源监控）
+- 修改：`cloud-admin/src/router/index.ts` — 新增 `/monitoring` 路由
+- 修改：`cloud-admin/src/components/AdminLayout.vue` — 侧边栏新增"运维监控"链接
 
 ## Implementation Notes
 
-1. **策略链设计**：auto 模式按 secure_direct → system_proxy → compat_no_sni 顺序尝试。非网络错误 (401/403/404) 不触发 fallback，避免不必要的重试。
-2. **安全约束**：远程 HTTP 地址被 `_check_url_security()` 拒绝；localhost/127.0.0.1/::1 的 HTTP 联调不受影响。
-3. **错误传播链**：`CloudApiError.error_kind/suggestion` → `CloudAuthError`/`CloudBackupError` → API `_build_error_detail()` → 前端。当存在 error_kind 时，HTTP detail 从 string 变为 dict `{message, error_kind, suggestion}`。
-4. **OSS 双 Bucket**：presigned URL 使用 public bucket，head/delete 使用 internal bucket。生成 presigned URL 后防御性检查是否包含 `-internal.aliyuncs.com`。
-5. **日志安全**：不记录 Authorization、presigned URL query、密码、refresh token。`_parse_oss_error()` 只提取 Code/Message。
+### SDK 安装
+- `alibabacloud_bssopenapi20171214` — BSS 余额查询
+- `alibabacloud_swas_open20200601` — SWAS 服务器管理和监控
+- `oss2` — 已安装（OSS 存储统计）
+
+### 缓存设计
+- 使用类变量 `_cache: dict[str, _CacheEntry]`（进程级共享），不依赖 Redis
+- `threading.Lock` 保护缓存读写，避免并发请求重复调用阿里云 API
+- fetcher 在锁外执行，避免慢 API 调用阻塞其他线程
+- 每个模块独立 TTL：billing/oss 1h，server 5min（服务器状态变化更频繁）
+
+### AccessKey 回退逻辑
+- 优先使用 `aliyun_monitor_access_key_id`（RAM 只读子账号）
+- 如未配置，回退到 `oss_access_key_id`（方便开发环境复用同一 AK）
+
+### SWAS 监控指标
+- CPU: `cpu_total`、内存: `memory_usedutilization`
+- 磁盘读: `disk_readbytes`、磁盘写: `disk_writebytes`
+- 入网: `networkin_rate`、出网: `networkout_rate`
+- 查询最近 5 分钟数据，取最新数据点
+
+### 部分失败容错
+- 某个阿里云 API 调用失败时，该模块返回 `{ data: null, error: "错误消息" }`
+- 其他模块正常返回，不影响整个页面
+
+### 前端页面设计
+- 2×2 网格布局 + 底部跨两列的资源监控卡片
+- 每个卡片：加载态（全局 loading）、错误态（显示错误 + 重试按钮）、数据态
+- CPU/内存使用进度条（绿/黄/红三色），磁盘/网络吞吐数字展示
+- 服务器到期提醒（≤7天黄色警告，已过期红色标记）
+- 缓存时间显示 + 单模块刷新按钮 + 全局刷新按钮
 
 ## Deviations from Codex Plan
-
-- Codex Plan 中 Phase 1 提到 `KEY_CLOUD_LAST_DIAGNOSTIC` 配置 key，实际未实现。当前只保存 `cloud_network_mode` 和 `cloud_last_working_mode`。诊断报告不持久化存储，每次运行时生成。
-- Codex Plan 提到 `cloud_proxy_url` 加密存储，实际未实现代理 URL 配置功能（V1 不支持带认证的代理 URL）。
+无 Codex Plan（基于会话中的 plan file 实现）。
 
 ## Verification Commands Run
-
-- `python -c "from app.main import app; print('ok')"` → ✅ (backend)
-- `pytest tests/ -q` → ✅ 443 passed (backend)
-- `pytest tests/test_cloud_api_client_network_modes.py -q` → ✅ 26 passed
-- `pytest tests/test_cloud_network_diagnostics.py -q` → ✅ 12 passed
-- `pytest tests/test_cloud_api.py -q` → ✅ 14 passed
-- `pytest tests/ -q` → ✅ 45 passed (cloud-server)
-- `npm run type-check` → ✅ (frontend)
-- `npm run build` → ✅ (frontend)
+- `cd cloud-server && .venv/Scripts/python.exe -c "from app.infrastructure.aliyun_monitor import BSSMonitor, OSSMonitor, SWASMonitor"` → ✅
+- `cd cloud-server && .venv/Scripts/python.exe -c "from app.services.admin_monitoring_service import AdminMonitoringService"` → ✅
+- `cd cloud-server && .venv/Scripts/python.exe -c "from app.main import app"` → ✅
+- 路由验证：`/api/admin/monitoring/overview` 和 `/api/admin/monitoring/refresh` 已注册 → ✅
+- `cd cloud-admin && npx vue-tsc --build` → ✅
+- `cd cloud-admin && npx vite build` → ✅ (67 modules, 718ms)
 
 ## Verification Results
-
-全部验证通过。后端 443 测试、云服务端 45 测试、前端 type-check 和 build 均无错误。
+- 后端所有模块导入正常
+- 监控路由正确注册
+- 前端 TypeScript 类型检查通过
+- 前端生产构建成功
 
 ## Known Issues
-
-- `system_proxy` 模式在 Windows Tauri 打包环境中可能不继承 `HTTP_PROXY/HTTPS_PROXY` 环境变量，需要用户在代理软件中为 `api.emailbs.xin` 配置规则。
-- `compat_no_sni` 使用 `CERT_NONE`，存在中间人风险。UI 已标注为"兼容模式"并提示安全风险。
-- 手动验证（普通网络、代理网络、校园/公司网络各一轮）需用户在实际环境中完成。
+- SWAS 实例 ID（`swas_instance_id`）和区域 ID（`swas_region_id`）需要在 `.env` 中配置，用户尚未提供实例 ID
+- 阿里云 RAM 子账号需要附加 `AliyunBSSReadOnlyAccess`、`AliyunOSSReadOnlyAccess`、`AliyunSWASReadOnlyAccess` 策略
+- BSS 余额查询需要主账号或已开通"费用中心"权限的 RAM 子账号
+- `oss2.Bucket.get_bucket_stat()` 要求 bucket 开启统计功能（默认开启）
+- SWAS 监控数据有约 1-3 分钟延迟（阿里云侧限制）
 
 ## Suggested Next Review Points for Codex
-
-1. `error_kind` dict detail 是否影响前端已有的错误消息解析逻辑？需要确认前端 `getErrorMessage()` 能处理 dict 类型 detail。
-2. `KEY_CLOUD_LAST_DIAGNOSTIC` 是否需要实现？当前诊断报告不持久化。
-3. 代理 URL 配置是否需要在 V2 中支持？当前 V1 只支持模式切换。
-4. `compat_no_sni` 在 TLS 1.3 环境中的行为是否需要额外测试？
+- 缓存使用类变量（进程级），如果 cloud-server 改为多 worker 部署，缓存不共享——是否需要改为 Redis？
+- `_fetch_oss()` 使用 `effective_internal_endpoint`（内网），但 BSS/SWAS 使用公网 endpoint——是否需要在 VPC 外部署时回退到公网 OSS endpoint？
+- 前端 `MonitoringPage.vue` 在移动端（<768px）的 2 列网格可能需要调整为 1 列
+- 监控数据是否需要历史趋势图？当前只显示最新值

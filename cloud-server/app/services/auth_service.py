@@ -45,7 +45,13 @@ class AuthService:
         self._token_repo = RefreshTokenRepository(db)
 
     def register(
-        self, email: str, password: str, display_name: str
+        self,
+        email: str,
+        password: str,
+        display_name: str,
+        *,
+        user_agent: str | None = None,
+        client_ip: str | None = None,
     ) -> dict:
         normalized = normalize_email(email)
 
@@ -64,9 +70,16 @@ class AuthService:
         )
         self._user_repo.create(user)
 
-        return self._issue_tokens(user)
+        return self._issue_tokens(user, user_agent=user_agent, client_ip=client_ip)
 
-    def login(self, email: str, password: str) -> dict:
+    def login(
+        self,
+        email: str,
+        password: str,
+        *,
+        user_agent: str | None = None,
+        client_ip: str | None = None,
+    ) -> dict:
         normalized = normalize_email(email)
         user = self._user_repo.get_by_email(normalized)
 
@@ -76,12 +89,28 @@ class AuthService:
         if not user.is_active:
             raise AuthError("账号已被禁用。")
 
+        # Block deleted / anonymized accounts
+        if user.deleted_at is not None or user.anonymized_at is not None:
+            raise AuthError(_AUTH_FAILED_MESSAGE)
+
         if not verify_password(password, user.password_hash):
             raise AuthError(_AUTH_FAILED_MESSAGE)
 
-        return self._issue_tokens(user)
+        # Update activity tracking fields
+        now = utc_now()
+        user.last_login_at = now
+        user.last_seen_at = now
+        user.login_count = (user.login_count or 0) + 1
 
-    def refresh(self, refresh_token_str: str) -> dict:
+        return self._issue_tokens(user, user_agent=user_agent, client_ip=client_ip)
+
+    def refresh(
+        self,
+        refresh_token_str: str,
+        *,
+        user_agent: str | None = None,
+        client_ip: str | None = None,
+    ) -> dict:
         try:
             payload = decode_token(refresh_token_str, "refresh")
         except TokenError as exc:
@@ -102,8 +131,14 @@ class AuthService:
         if user is None or not user.is_active:
             raise AuthError("用户不存在或已被禁用。")
 
-        # Revoke old refresh token
-        self._token_repo.revoke(stored)
+        if user.deleted_at is not None or user.anonymized_at is not None:
+            raise AuthError("账号已被删除。")
+
+        # Update last_used_at on the old token before revoking
+        self._token_repo.update(stored, {"last_used_at": utc_now()})
+
+        # Revoke old refresh token with rotation reason
+        self._token_repo.revoke(stored, reason="rotated")
 
         # Issue new tokens
         new_access = create_access_token(user.id)
@@ -115,6 +150,8 @@ class AuthService:
             user_id=user.id,
             jti_hash=new_jti_h,
             expires_at=new_expires,
+            user_agent=user_agent,
+            client_ip=client_ip,
         )
         self._token_repo.create(new_rt)
 
@@ -137,7 +174,13 @@ class AuthService:
             "display_name": user.display_name,
         }
 
-    def _issue_tokens(self, user: User) -> dict:
+    def _issue_tokens(
+        self,
+        user: User,
+        *,
+        user_agent: str | None = None,
+        client_ip: str | None = None,
+    ) -> dict:
         access = create_access_token(user.id)
         refresh_str, jti, expires_at = create_refresh_token(user.id)
         jti_h = hash_jti(jti)
@@ -147,6 +190,8 @@ class AuthService:
             user_id=user.id,
             jti_hash=jti_h,
             expires_at=expires_at,
+            user_agent=user_agent,
+            client_ip=client_ip,
         )
         self._token_repo.create(rt)
 

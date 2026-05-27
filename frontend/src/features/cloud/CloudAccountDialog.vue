@@ -165,107 +165,112 @@ async function handleRunDiagnostics() {
         <button class="close-button" type="button" @click="emit('close')">×</button>
       </header>
 
-      <div v-if="isLoading" class="loading-state">正在加载…</div>
+      <div class="dialog-body">
+        <div v-if="isLoading" class="loading-state">正在加载…</div>
 
-      <template v-else>
-        <div v-if="!cloudAvailable" class="not-configured">
-          <p class="info-text">
-            云服务暂未配置。请联系管理员设置 <code>ZHANGSHU_CLOUD_API_BASE_URL</code>。
-          </p>
-        </div>
-
-        <div v-else-if="isLoggedIn" class="logged-in-section">
-          <div class="account-info">
-            <p class="info-label">已登录</p>
-            <p class="info-email">{{ accountStatus?.email ?? accountStatus?.display_name }}</p>
+        <template v-else>
+          <div v-if="!cloudAvailable" class="not-configured">
+            <p class="info-text">
+              云服务暂未配置。请联系管理员设置 <code>ZHANGSHU_CLOUD_API_BASE_URL</code>。
+            </p>
           </div>
+
+          <div v-else-if="isLoggedIn" class="logged-in-section">
+            <div class="account-info">
+              <p class="info-label">已登录</p>
+              <p class="info-email">{{ accountStatus?.email ?? accountStatus?.display_name }}</p>
+            </div>
+            <button
+              class="secondary-button"
+              type="button"
+              :disabled="isSubmitting"
+              @click="handleLogout"
+            >
+              {{ isSubmitting ? '正在退出…' : '退出登录' }}
+            </button>
+          </div>
+
+          <div v-else class="auth-section">
+            <div class="tab-bar">
+              <button
+                :class="['tab-button', { active: activeTab === 'login' }]"
+                type="button"
+                @click="switchTab('login')"
+              >
+                登录
+              </button>
+              <button
+                :class="['tab-button', { active: activeTab === 'register' }]"
+                type="button"
+                @click="switchTab('register')"
+              >
+                注册
+              </button>
+            </div>
+
+            <form @submit.prevent="activeTab === 'login' ? handleLogin() : handleRegister()">
+              <label>
+                <span>邮箱</span>
+                <input v-model.trim="email" type="email" required placeholder="your@email.com" />
+              </label>
+
+              <label v-if="activeTab === 'register'">
+                <span>显示名称</span>
+                <input v-model.trim="displayName" type="text" placeholder="可选" />
+              </label>
+
+              <label>
+                <span>密码</span>
+                <input v-model="password" type="password" required />
+                <span v-if="activeTab === 'register'" class="field-hint">
+                  至少 10 个字符，建议包含字母和数字
+                </span>
+              </label>
+
+              <button
+                class="primary-button"
+                type="submit"
+                :disabled="isSubmitting || !email.trim() || !password"
+              >
+                {{
+                  isSubmitting
+                    ? activeTab === 'login'
+                      ? '正在登录…'
+                      : '正在注册…'
+                    : activeTab === 'login'
+                      ? '登录'
+                      : '注册'
+                }}
+              </button>
+            </form>
+          </div>
+        </template>
+
+        <p v-if="errorMessage" class="error-text">{{ errorMessage }}</p>
+        <p v-if="successMessage" class="success-text">{{ successMessage }}</p>
+
+        <!-- Diagnostic button for non-auth failures -->
+        <div v-if="showDiagnosticButton && !isLoggedIn" class="diagnostic-section">
           <button
-            class="secondary-button"
+            class="diagnose-button"
             type="button"
-            :disabled="isSubmitting"
-            @click="handleLogout"
+            :disabled="isDiagnosing"
+            @click="handleRunDiagnostics"
           >
-            {{ isSubmitting ? '正在退出…' : '退出登录' }}
+            {{ isDiagnosing ? '正在检测...' : '运行连接诊断' }}
           </button>
-        </div>
 
-        <div v-else class="auth-section">
-          <div class="tab-bar">
-            <button
-              :class="['tab-button', { active: activeTab === 'login' }]"
-              type="button"
-              @click="switchTab('login')"
-            >
-              登录
-            </button>
-            <button
-              :class="['tab-button', { active: activeTab === 'register' }]"
-              type="button"
-              @click="switchTab('register')"
-            >
-              注册
-            </button>
+          <div v-if="diagnosticReport" class="diagnostic-result">
+            <p :class="['diagnostic-summary', diagnosticReport.ok ? 'ok' : 'failed']">
+              {{ diagnosticReport.summary }}
+            </p>
+            <ul class="diagnostic-steps">
+              <li v-for="step in diagnosticReport.steps.filter(s => !s.ok)" :key="step.name">
+                {{ step.message }}
+                <span v-if="step.suggestion" class="step-suggestion">— {{ step.suggestion }}</span>
+              </li>
+            </ul>
           </div>
-
-          <form @submit.prevent="activeTab === 'login' ? handleLogin() : handleRegister()">
-            <label>
-              <span>邮箱</span>
-              <input v-model.trim="email" type="email" required placeholder="your@email.com" />
-            </label>
-
-            <label v-if="activeTab === 'register'">
-              <span>显示名称</span>
-              <input v-model.trim="displayName" type="text" placeholder="可选" />
-            </label>
-
-            <label>
-              <span>密码</span>
-              <input v-model="password" type="password" required />
-            </label>
-
-            <button
-              class="primary-button"
-              type="submit"
-              :disabled="isSubmitting || !email.trim() || !password"
-            >
-              {{
-                isSubmitting
-                  ? activeTab === 'login'
-                    ? '正在登录…'
-                    : '正在注册…'
-                  : activeTab === 'login'
-                    ? '登录'
-                    : '注册'
-              }}
-            </button>
-          </form>
-        </div>
-      </template>
-
-      <p v-if="errorMessage" class="error-text">{{ errorMessage }}</p>
-      <p v-if="successMessage" class="success-text">{{ successMessage }}</p>
-
-      <!-- Diagnostic button for non-auth failures -->
-      <div v-if="showDiagnosticButton && !isLoggedIn" class="diagnostic-section">
-        <button
-          class="diagnose-button"
-          type="button"
-          :disabled="isDiagnosing"
-          @click="handleRunDiagnostics"
-        >
-          {{ isDiagnosing ? '正在检测...' : '运行连接诊断' }}
-        </button>
-
-        <div v-if="diagnosticReport" class="diagnostic-result">
-          <p :class="['diagnostic-summary', diagnosticReport.ok ? 'ok' : 'failed']">
-            {{ diagnosticReport.summary }}
-          </p>
-          <ul class="diagnostic-steps">
-            <li v-for="step in diagnosticReport.steps.filter(s => !s.ok)" :key="step.name">
-              {{ step.message }}
-              <span v-if="step.suggestion" class="step-suggestion">— {{ step.suggestion }}</span>
-            </li>
-          </ul>
         </div>
       </div>
     </div>
@@ -274,9 +279,10 @@ async function handleRunDiagnostics() {
 
 <style scoped>
 .cloud-account-dialog {
-  max-width: min(440px, calc(100vw - 32px));
+  width: min(460px, calc(100vw - 32px));
+  box-sizing: border-box;
   display: grid;
-  gap: var(--zs-space-4);
+  grid-template-rows: auto 1fr;
 }
 
 .dialog-header {
@@ -284,8 +290,22 @@ async function handleRunDiagnostics() {
   align-items: center;
   justify-content: space-between;
   gap: var(--zs-space-3);
-  padding-bottom: var(--zs-space-3);
+  padding: var(--zs-space-4) var(--zs-space-5);
   border-bottom: 1px solid var(--zs-color-border-soft);
+}
+
+.dialog-body {
+  display: grid;
+  gap: var(--zs-space-4);
+  padding: var(--zs-space-4) var(--zs-space-5);
+}
+
+@media (max-width: 480px) {
+  .dialog-header,
+  .dialog-body {
+    padding-left: var(--zs-space-4);
+    padding-right: var(--zs-space-4);
+  }
 }
 
 .dialog-header h2 {
@@ -428,6 +448,12 @@ input:focus {
   outline: none;
   border-color: var(--zs-color-primary);
   box-shadow: 0 0 0 3px rgba(var(--zs-color-primary-rgb, 59, 130, 246), 0.1);
+}
+
+.field-hint {
+  color: var(--zs-color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 500;
 }
 
 button {

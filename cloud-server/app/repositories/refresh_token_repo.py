@@ -28,9 +28,11 @@ class RefreshTokenRepository:
         return token
 
     def revoke(
-        self, token: RefreshToken, *, commit: bool = True
+        self, token: RefreshToken, *, reason: str | None = None, commit: bool = True
     ) -> RefreshToken:
         token.revoked_at = utc_now()
+        if reason:
+            token.revoked_reason = reason
         if commit:
             self.db.commit()
             self.db.refresh(token)

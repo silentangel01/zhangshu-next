@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 
 import defaultBookCover from '@/assets/default-book-cover.svg'
 import { getCloudAccountStatus } from '@/entities/cloud/api'
@@ -40,6 +40,8 @@ const BUILTIN_TAGS = [
   '长篇',
   '短篇',
 ]
+
+const router = useRouter()
 
 const STATUS_LABELS: Record<string, string> = {
   planning: '筹备中',
@@ -246,6 +248,14 @@ function getErrorMessage(error: unknown, fallback: string): string {
   }
   return fallback
 }
+
+function handleCloudAccountClick() {
+  if (cloudAccountStatus.value?.logged_in) {
+    router.push('/account')
+  } else {
+    showCloudDialog.value = true
+  }
+}
 </script>
 
 <template>
@@ -259,7 +269,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
         <button
           class="secondary-link cloud-account-button"
           type="button"
-          @click="showCloudDialog = true"
+          @click="handleCloudAccountClick"
         >
           {{ cloudAccountStatus?.logged_in ? cloudAccountStatus.email ?? '云账户' : '云账户' }}
         </button>

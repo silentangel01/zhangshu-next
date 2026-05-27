@@ -39,3 +39,17 @@ class RefreshToken(Base):
     replaced_by_id: Mapped[str | None] = mapped_column(
         String(36), nullable=True
     )
+
+    # Session tracking fields
+    user_agent: Mapped[str | None] = mapped_column(
+        String(512), nullable=True
+    )
+    client_ip: Mapped[str | None] = mapped_column(
+        String(45), nullable=True
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    revoked_reason: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )

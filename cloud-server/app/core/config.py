@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     oss_internal_endpoint: str = ""
     oss_presigned_url_expire_seconds: int = 1800
 
+    # Aliyun Monitor (RAM read-only sub-account)
+    aliyun_monitor_access_key_id: str = ""
+    aliyun_monitor_access_key_secret: str = ""
+    swas_instance_id: str = ""
+    swas_region_id: str = "cn-hangzhou"
+
     # Backup limits
     max_backup_size_bytes: int = 524_288_000  # 500 MB
 
@@ -58,6 +64,31 @@ class Settings(BaseSettings):
     default_storage_quota_bytes: int = 1_073_741_824  # 1 GB
     default_backup_count_quota: int = 100
 
+    # Admin
+    admin_emails: str = ""
+
+    # Admin auth (HttpOnly Cookie)
+    admin_access_token_expire_minutes: int = 30
+    admin_refresh_token_expire_hours: int = 8
+    admin_cookie_name: str = "zs_admin_token"
+    admin_refresh_cookie_name: str = "zs_admin_refresh"
+    admin_cookie_secure: bool = True
+    admin_cookie_samesite: str = "lax"
+    admin_cookie_path: str = "/api/admin"
+    rate_limit_admin_login_per_5m: int = 5
+
+    # Feedback limits
+    feedback_max_attachments: int = 5
+    feedback_max_attachment_size_bytes: int = 52_428_800  # 50 MB
+    feedback_max_total_size_bytes: int = 157_286_400  # 150 MB
+    feedback_allowed_content_types: str = (
+        "image/png,image/jpeg,image/webp,image/gif,"
+        "video/mp4,video/webm,video/quicktime"
+    )
+    rate_limit_feedback_create_per_hour: int = 5
+    rate_limit_feedback_upload_per_hour: int = 20
+    feedback_attachment_url_expire_seconds: int = 1800
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
@@ -71,6 +102,20 @@ class Settings(BaseSettings):
     def effective_internal_endpoint(self) -> str:
         """Endpoint for server-side OSS operations (head/delete). Falls back to public."""
         return self.oss_internal_endpoint or self.effective_public_endpoint
+
+    @property
+    def admin_email_list(self) -> list[str]:
+        """Whitelisted admin emails (comma-separated)."""
+        return [e.strip().lower() for e in self.admin_emails.split(",") if e.strip()]
+
+    @property
+    def feedback_allowed_content_type_set(self) -> set[str]:
+        """Allowed MIME types for feedback attachments."""
+        return {
+            ct.strip()
+            for ct in self.feedback_allowed_content_types.split(",")
+            if ct.strip()
+        }
 
 
 def get_settings() -> Settings:

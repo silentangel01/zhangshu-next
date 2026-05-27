@@ -62,6 +62,7 @@ export async function apiUpload<T>(
 ): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
+    method: 'POST',
     body: formData,
   })
 

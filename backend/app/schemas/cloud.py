@@ -108,3 +108,25 @@ class CloudNetworkDiagnosticReport(BaseModel):
 
 class CloudDiagnosticRunRequest(BaseModel):
     include_oss: bool = False
+
+
+# ── Account ──────────────────────────────────────────────────────────
+
+
+class CloudChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
+
+
+class CloudUpdateProfileRequest(BaseModel):
+    display_name: str | None = None
+    signature: str | None = None
+
+
+class CloudDeleteAccountRequest(BaseModel):
+    password: str
+
+
+class CloudConfirmDeleteRequest(BaseModel):
+    request_id: str
+    confirmation_text: str

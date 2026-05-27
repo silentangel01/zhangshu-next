@@ -71,6 +71,36 @@ class OSSStorage:
         safe = self._sanitize_filename(filename)
         return f"backups/{user_id}/{project_id}/{backup_id}/{safe}"
 
+    def build_feedback_object_key(
+        self,
+        feedback_id: str,
+        attachment_id: str,
+        filename: str,
+    ) -> str:
+        """Build an OSS object key for a feedback attachment.
+
+        Format: feedback/{yyyy}/{mm}/{feedback_id}/{attachment_id}/{safe_filename}
+        Does NOT include user email or original file path.
+        """
+        from app.models.feedback_ticket import utc_now
+
+        now = utc_now()
+        safe = self._sanitize_filename(filename)
+        return f"feedback/{now:%Y}/{now:%m}/{feedback_id}/{attachment_id}/{safe}"
+
+    def build_avatar_object_key(
+        self,
+        user_id: str,
+        avatar_id: str,
+        filename: str,
+    ) -> str:
+        """Build an OSS object key for a user avatar.
+
+        Format: avatars/{user_id}/{avatar_id}/{safe_filename}
+        """
+        safe = self._sanitize_filename(filename)
+        return f"avatars/{user_id}/{avatar_id}/{safe}"
+
     def generate_put_url(
         self,
         object_key: str,

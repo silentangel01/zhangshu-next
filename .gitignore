@@ -74,6 +74,7 @@ build/
 # release artifacts
 releases/
 release/
+!docs/release/
 
 # scripts
 scripts/
@@ -89,3 +90,7 @@ cloud-server/cloud_server.db
 cloud-server/.env
 cloud-server/.env.*
 !cloud-server/.env.example
+
+# Cloud admin
+cloud-admin/node_modules/
+cloud-admin/dist/

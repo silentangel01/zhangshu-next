@@ -20,6 +20,7 @@ from app.schemas.backup import (
 )
 from app.services.backup_service import BackupError, BackupService
 from app.services.project_service import ProjectError
+from app.services.activity_service import ActivityService
 
 router = APIRouter(prefix="/api/projects", tags=["backups"])
 
@@ -69,6 +70,10 @@ def init_backup(
         project_id=project_id,
         extra={"file_name": body.filename, "size_bytes": body.size_bytes},
     )
+    ActivityService(db).record(
+        current_user.id, "backup_init", request,
+        metadata={"cloud_project_id": project_id, "size_bytes": body.size_bytes},
+    )
     return result
 
 
@@ -110,6 +115,10 @@ def complete_backup(
         user_id=current_user.id,
         project_id=project_id,
         backup_id=result.get("id", ""),
+    )
+    ActivityService(db).record(
+        current_user.id, "backup_complete", request,
+        metadata={"cloud_project_id": project_id, "backup_id": result.get("id", "")},
     )
     return result
 
@@ -198,5 +207,9 @@ def delete_backup(
         user_id=current_user.id,
         project_id=project_id,
         backup_id=backup_id,
+    )
+    ActivityService(db).record(
+        current_user.id, "backup_deleted", request,
+        metadata={"cloud_project_id": project_id, "backup_id": backup_id},
     )
     return Response(status_code=204)

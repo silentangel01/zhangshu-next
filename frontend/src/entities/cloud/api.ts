@@ -1,14 +1,21 @@
-import { apiRequest } from '@/shared/api/client'
+import { apiRequest, apiUpload } from '@/shared/api/client'
 
 import type {
+  CloudAccountExport,
+  CloudAccountProfile,
   CloudAccountStatus,
+  CloudAvatarResponse,
   CloudBackupListResponse,
   CloudBackupRecord,
+  CloudDeletionConfirmRequest,
+  CloudDeletionRequest,
   CloudNetworkDiagnosticReport,
   CloudNetworkMode,
   CloudNetworkSettings,
   CloudProjectStatus,
   CloudRestoreReport,
+  CloudSessionList,
+  CloudUsage,
 } from './types'
 
 export function getCloudAccountStatus(): Promise<CloudAccountStatus> {
@@ -88,5 +95,69 @@ export function runCloudNetworkDiagnostics(): Promise<CloudNetworkDiagnosticRepo
   return apiRequest<CloudNetworkDiagnosticReport>('/api/cloud/network/diagnose', {
     method: 'POST',
     body: {},
+  })
+}
+
+// ── Account & privacy ────────────────────────────────────────────────
+
+export function getCloudAccountProfile(): Promise<CloudAccountProfile> {
+  return apiRequest<CloudAccountProfile>('/api/cloud/account/profile')
+}
+
+export function updateCloudAccountProfile(params: {
+  display_name?: string
+  signature?: string
+}): Promise<CloudAccountProfile> {
+  return apiRequest<CloudAccountProfile>('/api/cloud/account/profile', {
+    method: 'PATCH',
+    body: params,
+  })
+}
+
+export function uploadCloudAvatar(file: File): Promise<CloudAvatarResponse> {
+  const formData = new FormData()
+  formData.append('file', file)
+  return apiUpload<CloudAvatarResponse>('/api/cloud/account/avatar', formData)
+}
+
+export function deleteCloudAvatar(): Promise<void> {
+  return apiRequest<void>('/api/cloud/account/avatar', { method: 'DELETE' })
+}
+
+export function changeCloudPassword(oldPassword: string, newPassword: string): Promise<void> {
+  return apiRequest<void>('/api/cloud/account/password/change', {
+    method: 'POST',
+    body: { old_password: oldPassword, new_password: newPassword },
+  })
+}
+
+export function revokeAllCloudSessions(): Promise<{ revoked_count: number }> {
+  return apiRequest<{ revoked_count: number }>('/api/cloud/account/sessions/revoke-all', {
+    method: 'POST',
+  })
+}
+
+export function getCloudUsage(): Promise<CloudUsage> {
+  return apiRequest<CloudUsage>('/api/cloud/account/usage')
+}
+
+export function exportCloudAccountData(): Promise<CloudAccountExport> {
+  return apiRequest<CloudAccountExport>('/api/cloud/account/export')
+}
+
+export function requestCloudAccountDeletion(password: string): Promise<CloudDeletionRequest> {
+  return apiRequest<CloudDeletionRequest>('/api/cloud/account/delete-request', {
+    method: 'POST',
+    body: { password },
+  })
+}
+
+export function confirmCloudAccountDeletion(
+  requestId: string,
+  confirmationText: string,
+): Promise<{ deleted: boolean }> {
+  return apiRequest<{ deleted: boolean }>('/api/cloud/account', {
+    method: 'DELETE',
+    body: { request_id: requestId, confirmation_text: confirmationText },
   })
 }

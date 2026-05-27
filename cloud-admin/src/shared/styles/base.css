@@ -1,0 +1,125 @@
+:root {
+  --ca-bg: #f5f6fa;
+  --ca-surface: #ffffff;
+  --ca-border: #e2e5eb;
+  --ca-text: #1a1d23;
+  --ca-text-muted: #6b7280;
+  --ca-primary: #3b82f6;
+  --ca-primary-hover: #2563eb;
+  --ca-danger: #ef4444;
+  --ca-success: #10b981;
+  --ca-warning: #f59e0b;
+  --ca-radius: 6px;
+  --ca-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --ca-space-1: 4px;
+  --ca-space-2: 8px;
+  --ca-space-3: 12px;
+  --ca-space-4: 16px;
+  --ca-space-5: 20px;
+  --ca-space-6: 24px;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ca-text);
+  background: var(--ca-bg);
+}
+
+a {
+  color: var(--ca-primary);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+button {
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+input, select, textarea {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ca-space-2);
+  padding: var(--ca-space-2) var(--ca-space-4);
+  border: 1px solid var(--ca-border);
+  border-radius: var(--ca-radius);
+  background: var(--ca-surface);
+  color: var(--ca-text);
+  transition: all 0.15s ease;
+}
+.btn:hover {
+  border-color: var(--ca-primary);
+  color: var(--ca-primary);
+}
+
+.btn-primary {
+  background: var(--ca-primary);
+  border-color: var(--ca-primary);
+  color: #fff;
+}
+.btn-primary:hover {
+  background: var(--ca-primary-hover);
+  border-color: var(--ca-primary-hover);
+  color: #fff;
+}
+
+.btn-danger {
+  background: var(--ca-danger);
+  border-color: var(--ca-danger);
+  color: #fff;
+}
+.btn-danger:hover {
+  opacity: 0.9;
+  color: #fff;
+}
+
+.input {
+  width: 100%;
+  padding: var(--ca-space-2) var(--ca-space-3);
+  border: 1px solid var(--ca-border);
+  border-radius: var(--ca-radius);
+  background: var(--ca-surface);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.input:focus {
+  border-color: var(--ca-primary);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+}
+
+.card {
+  background: var(--ca-surface);
+  border: 1px solid var(--ca-border);
+  border-radius: var(--ca-radius);
+  box-shadow: var(--ca-shadow);
+  padding: var(--ca-space-5);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.badge-info { background: #dbeafe; color: #1d4ed8; }
+.badge-success { background: #d1fae5; color: #065f46; }
+.badge-warning { background: #fef3c7; color: #92400e; }
+.badge-danger { background: #fee2e2; color: #991b1b; }

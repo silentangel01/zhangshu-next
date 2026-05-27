@@ -214,6 +214,103 @@ API 返回 500，日志中出现 `sqlalchemy.exc.OperationalError`。
 
 ---
 
+## 滥用攻击：批量注册或登录
+
+### 症状
+- 短时间内大量注册或登录请求
+- `rate_limit_events` 表快速膨胀
+- 正常用户被误限流
+
+### 排查步骤
+
+1. **检查限流表**
+   ```bash
+   docker compose exec postgres psql -U zhangshu -d zhangshu_cloud \
+       -c "SELECT scope, COUNT(*) FROM rate_limit_events GROUP BY scope ORDER BY count DESC;"
+   ```
+
+2. **检查异常 IP**
+   ```bash
+   docker compose exec postgres psql -U zhangshu -d zhangshu_cloud \
+       -c "SELECT client_ip, COUNT(*) FROM rate_limit_events WHERE created_at > now() - interval '1 hour' GROUP BY client_ip ORDER BY count DESC LIMIT 10;"
+   ```
+
+3. **检查审计日志**
+   ```bash
+   docker compose logs --tail=200 cloud-api | grep "AUDIT.*rate_limited"
+   ```
+
+### 处置
+- 清理过期限流记录：数据库会自动清理 `expires_at < now()` 的记录
+- 手动清理：`DELETE FROM rate_limit_events WHERE expires_at < now();`
+- 临时封禁 IP：通过 Nginx/WAF 添加黑名单
+- 调整限流参数：修改 `.env` 中的频率限制配置
+
+---
+
+## 账号删除失败
+
+### 症状
+用户请求删除账号后返回错误，或部分 OSS 对象未删除。
+
+### 排查步骤
+
+1. **检查删除请求状态**
+   ```bash
+   docker compose exec postgres psql -U zhangshu -d zhangshu_cloud \
+       -c "SELECT id, user_id, expires_at, used_at FROM account_deletion_requests ORDER BY created_at DESC LIMIT 5;"
+   ```
+
+2. **检查用户状态**
+   ```bash
+   docker compose exec postgres psql -U zhangshu -d zhangshu_cloud \
+       -c "SELECT id, email, deleted_at, anonymized_at FROM users WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT 5;"
+   ```
+
+3. **检查审计日志**
+   ```bash
+   docker compose logs --tail=100 cloud-api | grep "account_delete"
+   ```
+
+### 处置
+- 如果 OSS 删除部分失败：
+  - 日志中会记录 `account_delete_partial_failed`
+  - 手动清理 OSS 对象：使用 `aliyun oss rm` 命令
+  - 确认数据库中标记为 `pending_deletion` 的备份已实际删除
+- 如果用户已匿名化但 OSS 残留：
+  - 根据 `user_id` 查找 OSS 前缀：`users/{user_id}/`
+  - 手动删除对应 OSS 对象
+- 如果删除请求过期未确认：
+  - 过期请求不会被执行，用户需重新发起
+
+---
+
+## 配额耗尽
+
+### 症状
+用户报告无法上传备份，返回 429 或配额相关错误。
+
+### 排查步骤
+
+1. **检查用户使用情况**
+   ```bash
+   docker compose exec postgres psql -U zhangshu -d zhangshu_cloud \
+       -c "SELECT u.email, COUNT(b.id) as backup_count, COALESCE(SUM(b.size_bytes), 0) as total_size FROM users u LEFT JOIN cloud_projects p ON p.user_id = u.id LEFT JOIN cloud_backups b ON b.project_id = p.id AND b.status = 'success' GROUP BY u.email ORDER BY total_size DESC LIMIT 10;"
+   ```
+
+2. **检查频率限制**
+   ```bash
+   docker compose exec postgres psql -U zhangshu -d zhangshu_cloud \
+       -c "SELECT key, scope, COUNT(*) FROM rate_limit_events WHERE scope = 'backup_init' AND created_at > now() - interval '1 hour' GROUP BY key, scope;"
+   ```
+
+### 处置
+- 引导用户删除旧备份释放空间
+- 如需调高配额：修改数据库中的用户配额字段（目前使用全局默认值）
+- 频率限制超限：等待限流窗口过期（默认 1 小时）
+
+---
+
 ## 紧急回滚流程
 
 1. **停止当前服务**
