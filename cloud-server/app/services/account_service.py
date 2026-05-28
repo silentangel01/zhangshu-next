@@ -512,6 +512,7 @@ class AccountService:
             user_id=user_id,
             result="success" if oss_failures == 0 else "partial",
             reason_code="oss_partial_failure" if oss_failures > 0 else "",
+            db=self._db,
         )
 
         result = {

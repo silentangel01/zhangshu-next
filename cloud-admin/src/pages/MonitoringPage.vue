@@ -2,19 +2,33 @@
 import { onMounted, ref, computed } from 'vue'
 import { getMonitoringOverview, refreshMonitoring } from '@/entities/admin-monitoring/api'
 import type { MonitoringOverview } from '@/entities/admin-monitoring/types'
+import { listAuditLogs } from '@/entities/admin-audit/api'
+import type { AuditLogEntry } from '@/entities/admin-audit/types'
+import { useToast } from '@/shared/composables/useToast'
 
+const toast = useToast()
 const overview = ref<MonitoringOverview | null>(null)
 const loading = ref(true)
 const refreshing = ref<Record<string, boolean>>({})
 
-onMounted(() => load())
+// Audit log state
+const auditLogs = ref<AuditLogEntry[]>([])
+const auditTotal = ref(0)
+const auditPage = ref(1)
+const auditPageSize = 20
+const auditLoading = ref(false)
+
+onMounted(() => {
+  load()
+  loadAuditLogs()
+})
 
 async function load() {
   loading.value = true
   try {
     overview.value = await getMonitoringOverview()
-  } catch {
-    /* handled by 401 redirect */
+  } catch (e: unknown) {
+    toast.error(e instanceof Error ? e.message : '加载监控数据失败')
   } finally {
     loading.value = false
   }
@@ -24,11 +38,32 @@ async function refreshModule(module: string) {
   refreshing.value = { ...refreshing.value, [module]: true }
   try {
     overview.value = await refreshMonitoring(module)
-  } catch {
-    /* ignore */
+  } catch (e: unknown) {
+    toast.error(e instanceof Error ? e.message : '刷新失败')
   } finally {
     refreshing.value = { ...refreshing.value, [module]: false }
   }
+}
+
+async function loadAuditLogs() {
+  auditLoading.value = true
+  try {
+    const res = await listAuditLogs({
+      limit: auditPageSize,
+      offset: (auditPage.value - 1) * auditPageSize,
+    })
+    auditLogs.value = res.items
+    auditTotal.value = res.total
+  } catch (e: unknown) {
+    toast.error(e instanceof Error ? e.message : '加载审计日志失败')
+  } finally {
+    auditLoading.value = false
+  }
+}
+
+function onAuditPageChange(p: number) {
+  auditPage.value = p
+  loadAuditLogs()
 }
 
 function formatBytes(bytes: number): string {
@@ -51,6 +86,21 @@ function formatCachedAt(iso: string): string {
   } catch {
     return iso
   }
+}
+
+function formatAuditTime(iso: string | null): string {
+  if (!iso) return '-'
+  try {
+    return new Date(iso).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'medium' })
+  } catch {
+    return iso
+  }
+}
+
+function resultBadge(result: string): string {
+  if (result === 'success') return 'badge-success'
+  if (result === 'failure') return 'badge-warning'
+  return 'badge-danger'
 }
 
 function daysUntil(iso: string): number | null {
@@ -304,6 +354,65 @@ const serverExpiredDays = computed(() => {
           </div>
         </section>
       </div>
+
+      <!-- ── 审计日志 ─────────────────────── -->
+      <section class="card audit-section">
+        <div class="card-header">
+          <h3>审计日志</h3>
+          <button class="btn btn-sm" :disabled="auditLoading" @click="loadAuditLogs">刷新</button>
+        </div>
+
+        <p v-if="auditLoading" class="loading-text">加载中...</p>
+        <div v-else-if="auditLogs.length === 0" class="audit-empty">暂无审计记录</div>
+        <template v-else>
+          <div class="audit-table-wrap">
+            <table class="audit-table">
+              <thead>
+                <tr>
+                  <th>事件</th>
+                  <th>结果</th>
+                  <th>用户</th>
+                  <th>IP</th>
+                  <th>时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="log in auditLogs" :key="log.id">
+                  <td class="event-cell">
+                    <span class="event-name">{{ log.event }}</span>
+                    <span v-if="log.reason_code" class="reason-code">{{ log.reason_code }}</span>
+                  </td>
+                  <td>
+                    <span class="badge" :class="resultBadge(log.result)">{{ log.result }}</span>
+                  </td>
+                  <td class="mono-cell">{{ log.user_id ? log.user_id.slice(0, 8) + '...' : '-' }}</td>
+                  <td class="mono-cell">{{ log.client_ip || '-' }}</td>
+                  <td class="time-cell">{{ formatAuditTime(log.created_at) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div v-if="auditTotal > auditPageSize" class="audit-pagination">
+            <button
+              class="btn btn-sm"
+              :disabled="auditPage <= 1"
+              @click="onAuditPageChange(auditPage - 1)"
+            >
+              &larr; 上一页
+            </button>
+            <span class="page-info">
+              第 {{ auditPage }} / {{ Math.ceil(auditTotal / auditPageSize) }} 页（共 {{ auditTotal }} 条）
+            </span>
+            <button
+              class="btn btn-sm"
+              :disabled="auditPage >= Math.ceil(auditTotal / auditPageSize)"
+              @click="onAuditPageChange(auditPage + 1)"
+            >
+              下一页 &rarr;
+            </button>
+          </div>
+        </template>
+      </section>
     </template>
   </div>
 </template>
@@ -473,4 +582,45 @@ const serverExpiredDays = computed(() => {
 }
 .monitor-unavailable p:first-child { font-weight: 500; color: var(--ca-warning); }
 .monitor-hint { font-size: 12px; margin-top: var(--ca-space-2); }
+
+/* ── Audit log ─────────────────────── */
+.audit-section { margin-top: var(--ca-space-4); }
+.audit-empty {
+  text-align: center;
+  color: var(--ca-text-muted);
+  padding: var(--ca-space-5);
+}
+.audit-table-wrap { overflow-x: auto; }
+.audit-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.audit-table th {
+  text-align: left;
+  padding: var(--ca-space-2) var(--ca-space-3);
+  background: var(--ca-bg);
+  color: var(--ca-text-muted);
+  font-weight: 500;
+  font-size: 12px;
+  border-bottom: 1px solid var(--ca-border);
+}
+.audit-table td {
+  padding: var(--ca-space-2) var(--ca-space-3);
+  border-bottom: 1px solid var(--ca-border);
+  vertical-align: middle;
+}
+.audit-table tr:last-child td { border-bottom: none; }
+.event-cell { display: flex; flex-direction: column; gap: 2px; }
+.event-name { font-weight: 500; font-size: 13px; }
+.reason-code { font-size: 11px; color: var(--ca-text-muted); }
+.mono-cell { font-family: monospace; font-size: 12px; color: var(--ca-text-muted); }
+.time-cell { font-size: 12px; color: var(--ca-text-muted); white-space: nowrap; }
+.audit-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--ca-space-3) 0 0;
+}
+.page-info { font-size: 13px; color: var(--ca-text-muted); }
 </style>

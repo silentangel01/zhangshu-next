@@ -171,6 +171,7 @@ def change_password(
             client_ip=_client_ip(request),
             user_id=current_user.id,
             result="failure",
+            db=db,
         )
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
@@ -179,6 +180,7 @@ def change_password(
         request_id=_request_id(request),
         client_ip=_client_ip(request),
         user_id=current_user.id,
+        db=db,
     )
     ActivityService(db).record(current_user.id, "password_changed", request)
     return result
@@ -231,6 +233,7 @@ def revoke_all_sessions(
         request_id=_request_id(request),
         client_ip=_client_ip(request),
         user_id=current_user.id,
+        db=db,
     )
     return result
 
@@ -269,6 +272,7 @@ def export_account(
         request_id=_request_id(request),
         client_ip=_client_ip(request),
         user_id=current_user.id,
+        db=db,
     )
     return data
 
@@ -308,6 +312,7 @@ def request_deletion(
         request_id=_request_id(request),
         client_ip=_client_ip(request),
         user_id=current_user.id,
+        db=db,
     )
     return result
 

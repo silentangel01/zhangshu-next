@@ -74,6 +74,7 @@ def create_feedback(
         client_ip=_client_ip(request),
         user_id=user.id if user else None,
         result="success",
+        db=db,
     )
     ActivityService(db).record(
         user.id if user else None,
@@ -107,6 +108,7 @@ def complete_feedback(
         request_id=_request_id(request),
         client_ip=_client_ip(request),
         result="success",
+        db=db,
     )
     return result
 

@@ -59,6 +59,7 @@ def init_backup(
             result="failure",
             reason_code=str(exc.status_code),
             extra={"size_bytes": body.size_bytes},
+            db=db,
         )
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
@@ -69,6 +70,7 @@ def init_backup(
         user_id=current_user.id,
         project_id=project_id,
         extra={"file_name": body.filename, "size_bytes": body.size_bytes},
+        db=db,
     )
     ActivityService(db).record(
         current_user.id, "backup_init", request,
@@ -105,6 +107,7 @@ def complete_backup(
             project_id=project_id,
             result="failure",
             reason_code=str(exc.status_code),
+            db=db,
         )
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
@@ -115,6 +118,7 @@ def complete_backup(
         user_id=current_user.id,
         project_id=project_id,
         backup_id=result.get("id", ""),
+        db=db,
     )
     ActivityService(db).record(
         current_user.id, "backup_complete", request,
@@ -197,6 +201,7 @@ def delete_backup(
             backup_id=backup_id,
             result="failure",
             reason_code=str(exc.status_code),
+            db=db,
         )
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
@@ -207,6 +212,7 @@ def delete_backup(
         user_id=current_user.id,
         project_id=project_id,
         backup_id=backup_id,
+        db=db,
     )
     ActivityService(db).record(
         current_user.id, "backup_deleted", request,

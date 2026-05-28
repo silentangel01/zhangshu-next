@@ -4,13 +4,17 @@ import { useRouter } from 'vue-router'
 import DataTable from '@/components/DataTable.vue'
 import { listFeedback } from '@/entities/admin-feedback/api'
 import type { FeedbackTicket } from '@/entities/admin-feedback/types'
+import { useToast } from '@/shared/composables/useToast'
 
 const router = useRouter()
+const toast = useToast()
 const items = ref<FeedbackTicket[]>([])
 const total = ref(0)
 const loading = ref(true)
 const keyword = ref('')
 const statusFilter = ref('')
+const page = ref(1)
+const pageSize = 20
 
 const columns = [
   { key: 'title', label: '标题' },
@@ -30,15 +34,27 @@ async function load() {
     const res = await listFeedback({
       keyword: keyword.value || undefined,
       status: statusFilter.value || undefined,
-      limit: 50,
+      limit: pageSize,
+      offset: (page.value - 1) * pageSize,
     })
     items.value = res.items
     total.value = res.total
-  } catch {
+  } catch (e: unknown) {
+    toast.error(e instanceof Error ? e.message : '加载反馈列表失败')
     items.value = []
   } finally {
     loading.value = false
   }
+}
+
+function search() {
+  page.value = 1
+  load()
+}
+
+function onPageChange(p: number) {
+  page.value = p
+  load()
 }
 
 function openDetail(id: string) {
@@ -68,8 +84,8 @@ function formatDate(d: string): string {
   <div>
     <h2 class="page-title">反馈管理 <span class="count">({{ total }})</span></h2>
     <div class="toolbar">
-      <input v-model="keyword" class="input search-input" placeholder="搜索标题、邮箱..." @keyup.enter="load" />
-      <select v-model="statusFilter" class="input status-select" @change="load">
+      <input v-model="keyword" class="input search-input" placeholder="搜索标题、邮箱..." @keyup.enter="search" />
+      <select v-model="statusFilter" class="input status-select" @change="search">
         <option value="">全部状态</option>
         <option value="open">待处理</option>
         <option value="in_progress">处理中</option>
@@ -78,7 +94,15 @@ function formatDate(d: string): string {
       </select>
     </div>
     <p v-if="loading" class="loading-text">加载中...</p>
-    <DataTable v-else :columns="columns" :rows="items as unknown as Record<string, unknown>[]">
+    <DataTable
+      v-else
+      :columns="columns"
+      :rows="items as unknown as Record<string, unknown>[]"
+      :total="total"
+      :page="page"
+      :page-size="pageSize"
+      @update:page="onPageChange"
+    >
       <template #title="{ row }">
         <a href="#" @click.prevent="openDetail((row as unknown as FeedbackTicket).id)">
           {{ (row as unknown as FeedbackTicket).title }}

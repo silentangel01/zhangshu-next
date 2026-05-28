@@ -3,7 +3,9 @@ import { onMounted, ref } from 'vue'
 import StatTile from '@/components/StatTile.vue'
 import { getDashboardSummary, getActivitySeries } from '@/entities/admin-dashboard/api'
 import type { DashboardSummary, ActivitySeries } from '@/entities/admin-dashboard/types'
+import { useToast } from '@/shared/composables/useToast'
 
+const toast = useToast()
 const summary = ref<DashboardSummary | null>(null)
 const activity = ref<ActivitySeries | null>(null)
 const loading = ref(true)
@@ -13,8 +15,8 @@ onMounted(async () => {
     const [s, a] = await Promise.all([getDashboardSummary(), getActivitySeries(14)])
     summary.value = s
     activity.value = a
-  } catch {
-    /* handled by 401 redirect */
+  } catch (e: unknown) {
+    toast.error(e instanceof Error ? e.message : '加载概览数据失败')
   } finally {
     loading.value = false
   }

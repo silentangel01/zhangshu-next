@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.core.security import hash_password
 from app.models.feedback_ticket import FeedbackTicket, utc_now
 from app.models.user import User
-from app.services.token_service import create_access_token
+from app.services.token_service import create_admin_access_token
 from tests.conftest import auth_headers
 
 
@@ -29,7 +29,7 @@ def _make_admin(db_session: Session, email: str = "fb-admin@example.com") -> str
     )
     db_session.add(user)
     db_session.commit()
-    return create_access_token(user.id)
+    return create_admin_access_token(user.id)
 
 
 def _create_feedback_ticket(db_session: Session, **kwargs) -> FeedbackTicket:
@@ -52,10 +52,22 @@ def _create_feedback_ticket(db_session: Session, **kwargs) -> FeedbackTicket:
 
 class TestAdminFeedback:
     def test_non_admin_rejected(self, client: TestClient, db_session: Session):
-        from tests.conftest import register_user
-
-        data = register_user(client, email="user@example.com")
-        headers = auth_headers(data["access_token"])
+        # Create a non-admin user with admin_access token type so it passes
+        # token validation but fails the admin check (403, not 401).
+        from app.services.token_service import create_admin_access_token
+        user = User(
+            id=str(uuid4()),
+            email="normal@example.com",
+            password_hash=hash_password("securepassword123"),
+            display_name="Normal",
+            is_active=True,
+            is_admin=False,
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        db_session.add(user)
+        db_session.commit()
+        headers = auth_headers(create_admin_access_token(user.id))
         response = client.get("/api/admin/feedback", headers=headers)
         assert response.status_code == 403
 

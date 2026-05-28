@@ -28,15 +28,32 @@ def _make_admin(db_session: Session, email: str = "admin@example.com") -> str:
     db_session.add(user)
     db_session.commit()
 
-    from app.services.token_service import create_access_token
-    token = create_access_token(user.id)
+    from app.services.token_service import create_admin_access_token
+    token = create_admin_access_token(user.id)
     return token
 
 
 class TestAdminAnnouncements:
     def test_non_admin_rejected(self, client: TestClient, db_session: Session):
-        data = register_user(client, email="user@example.com")
-        headers = auth_headers(data["access_token"])
+        # Create a non-admin user with admin_access token type so it passes
+        # token validation but fails the admin check (403, not 401).
+        from app.core.security import hash_password
+        from app.services.token_service import create_admin_access_token
+        from uuid import uuid4
+
+        user = User(
+            id=str(uuid4()),
+            email="normal@example.com",
+            password_hash=hash_password("securepassword123"),
+            display_name="Normal",
+            is_active=True,
+            is_admin=False,
+            created_at=utc_now(),
+            updated_at=utc_now(),
+        )
+        db_session.add(user)
+        db_session.commit()
+        headers = auth_headers(create_admin_access_token(user.id))
         response = client.get("/api/admin/announcements", headers=headers)
         assert response.status_code == 403
 

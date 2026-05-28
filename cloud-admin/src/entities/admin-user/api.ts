@@ -19,3 +19,17 @@ export function listUsers(params?: {
 export function getUserDetail(id: string) {
   return apiRequest<AdminUserDetail>(`/api/admin/users/${id}`)
 }
+
+export function toggleUserActive(id: string) {
+  return apiRequest<{ id: string; is_active: boolean }>(
+    `/api/admin/users/${id}/toggle-active`,
+    { method: 'POST' },
+  )
+}
+
+export function forceLogoutUser(id: string) {
+  return apiRequest<{ ok: boolean; tokens_revoked: number }>(
+    `/api/admin/users/${id}/force-logout`,
+    { method: 'POST' },
+  )
+}

@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.account import router as account_router
 from app.api.admin_announcements import router as admin_announcements_router
+from app.api.admin_audit import router as admin_audit_router
 from app.api.admin_auth import router as admin_auth_router
 from app.api.admin_dashboard import router as admin_dashboard_router
 from app.api.admin_feedback import router as admin_feedback_router
 from app.api.admin_monitoring import router as admin_monitoring_router
+from app.api.admin_search import router as admin_search_router
 from app.api.admin_users import router as admin_users_router
 from app.api.announcements import router as announcements_router
 from app.api.auth import router as auth_router
@@ -34,28 +37,13 @@ logger = logging.getLogger(__name__)
 # Configure bcrypt rounds from settings
 configure_bcrypt(settings.bcrypt_rounds)
 
-app = FastAPI(title="Zhangshu Cloud API", version="0.1.0")
-
 
 # ---------------------------------------------------------------------------
-# Middleware (order matters — outermost first)
+# Lifespan (replaces deprecated on_event("startup") / on_event("shutdown"))
 # ---------------------------------------------------------------------------
-app.add_middleware(RequestIDMiddleware)
-app.add_middleware(SecurityHeadersMiddleware)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origin_list,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-# ---------------------------------------------------------------------------
-# Startup
-# ---------------------------------------------------------------------------
-@app.on_event("startup")
-def _startup_checks():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # ── Startup ──────────────────────────────────────────────────────────
     # Log OSS configuration status (without secrets)
     has_key = bool(settings.oss_access_key_id)
     has_secret = bool(settings.oss_access_key_secret)
@@ -93,6 +81,28 @@ def _startup_checks():
         settings.log_level,
     )
 
+    yield
+
+    # ── Shutdown ─────────────────────────────────────────────────────────
+    logger.info("Cloud API shutting down.")
+
+
+app = FastAPI(title="Zhangshu Cloud API", version="0.1.0", lifespan=lifespan)
+
+
+# ---------------------------------------------------------------------------
+# Middleware (order matters — outermost first)
+# ---------------------------------------------------------------------------
+app.add_middleware(RequestIDMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origin_list,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 # ---------------------------------------------------------------------------
 # Routers
@@ -104,10 +114,12 @@ app.include_router(account_router)
 app.include_router(announcements_router)
 app.include_router(feedback_router)
 app.include_router(admin_announcements_router)
+app.include_router(admin_audit_router)
 app.include_router(admin_auth_router)
 app.include_router(admin_dashboard_router)
 app.include_router(admin_feedback_router)
 app.include_router(admin_monitoring_router)
+app.include_router(admin_search_router)
 app.include_router(admin_users_router)
 
 

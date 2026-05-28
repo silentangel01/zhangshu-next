@@ -1,89 +1,91 @@
 ---
 date: 2026-05-28
-task: admin-monitoring-dashboard
-codex_plan: plan file (quirky-fluttering-star.md)
+task: Admin 系统全面升级（高优先级 + 中优先级，共 10 步）
+codex_plan: 基于会话中生成的计划（plan file: toasty-churning-piglet.md）
 ---
 
 ## Task Summary
-实现管理后台"运维监控"页面，展示阿里云 BSS 账户余额、OSS 存储详情、轻量应用服务器（SWAS）运行状态和实时监控数据（CPU/内存/磁盘/网络）。
+
+按高优先级（Steps 1-5）→ 中优先级（Steps 6-10）的顺序完成了 cloud-server 后端和 cloud-admin 前端的全面升级，涵盖测试修复、Toast 通知、分页、Token 续期、lifespan 迁移、审计日志入库、用户管理操作、全局搜索和部署配置。
 
 ## Files Changed
 
-### 后端 (cloud-server)
-- 修改：`cloud-server/app/core/config.py` — 新增 4 个监控配置字段（`aliyun_monitor_access_key_id`、`aliyun_monitor_access_key_secret`、`swas_instance_id`、`swas_region_id`）
-- 新增：`cloud-server/app/infrastructure/aliyun_monitor.py` — 三个阿里云 API 客户端类（`BSSMonitor`、`OSSMonitor`、`SWASMonitor`），封装 BSS 余额查询、OSS 存储统计、SWAS 实例信息和监控数据
-- 新增：`cloud-server/app/services/admin_monitoring_service.py` — 带内存缓存的聚合服务，类级别 `_cache` dict，每个模块独立 TTL（billing: 1h, oss: 1h, server: 5min），支持部分失败容错
-- 新增：`cloud-server/app/schemas/admin_monitoring.py` — Pydantic 响应模型（`ModuleResponse`、`MonitoringOverviewResponse`）
-- 新增：`cloud-server/app/api/admin_monitoring.py` — 两个路由（`GET /overview`、`POST /refresh`）
-- 修改：`cloud-server/app/main.py` — 注册 `admin_monitoring_router`
+### 新建（14 个文件）
+- `cloud-server/tests/test_admin_auth.py` — 8 个 admin auth 端点测试
+- `cloud-server/tests/test_admin_dashboard.py` — 5 个 dashboard 端点测试
+- `cloud-server/tests/test_admin_users.py` — 6 个用户管理端点测试
+- `cloud-server/tests/test_admin_monitoring.py` — 4 个监控端点测试（mock 阿里云 API）
+- `cloud-server/app/models/audit_log.py` — AuditLog ORM 模型
+- `cloud-server/alembic/versions/006_audit_log.py` — 数据库迁移
+- `cloud-server/app/api/admin_audit.py` — GET /api/admin/audit 端点
+- `cloud-server/app/api/admin_search.py` — GET /api/admin/search 全局搜索端点
+- `cloud-admin/src/shared/composables/useToast.ts` — 模块级 reactive Toast 单例
+- `cloud-admin/src/shared/ui/ToastContainer.vue` — Toast 容器组件
+- `cloud-admin/src/entities/admin-audit/types.ts` — 审计日志类型定义
+- `cloud-admin/src/entities/admin-audit/api.ts` — 审计日志 API
+- `cloud-server/deploy/nginx/cloud-admin.conf` — Nginx 部署配置
+- `docs/CLOUD_ADMIN_DEPLOY.md` — 部署文档
 
-### 前端 (cloud-admin)
-- 新增：`cloud-admin/src/entities/admin-monitoring/types.ts` — TypeScript 接口定义
-- 新增：`cloud-admin/src/entities/admin-monitoring/api.ts` — API 客户端封装
-- 新增：`cloud-admin/src/pages/MonitoringPage.vue` — 监控页面（四卡片布局：余额、OSS、服务器状态、资源监控）
-- 修改：`cloud-admin/src/router/index.ts` — 新增 `/monitoring` 路由
-- 修改：`cloud-admin/src/components/AdminLayout.vue` — 侧边栏新增"运维监控"链接
+### 修改（~20 个文件）
+- `cloud-server/app/models/__init__.py` — 导出 FeedbackReply + AuditLog
+- `cloud-server/tests/conftest.py` — 添加 feedback_reply、user_activity_event、audit_log 模型导入
+- `cloud-server/tests/test_admin_feedback.py` — create_access_token → create_admin_access_token
+- `cloud-server/tests/test_admin_announcements.py` — 同上 token 修复
+- `cloud-server/app/main.py` — on_event("startup") → lifespan；注册 audit/search routers
+- `cloud-server/app/core/audit.py` — 添加 db 参数，支持 DB 持久化
+- `cloud-server/app/api/admin_auth.py` — audit_event 传 db=db
+- `cloud-server/app/api/admin_feedback.py` — audit_event 传 db=db
+- `cloud-server/app/api/admin_announcements.py` — audit_event 传 db=db
+- `cloud-server/app/api/admin_users.py` — 新增 toggle-active 和 force-logout 端点
+- `cloud-server/app/api/auth.py` — audit_event 传 db=db
+- `cloud-server/app/api/account.py` — audit_event 传 db=db
+- `cloud-server/app/api/backups.py` — audit_event 传 db=db
+- `cloud-server/app/api/feedback.py` — audit_event 传 db=db
+- `cloud-server/app/services/account_service.py` — audit_event 传 db=self._db
+- `cloud-server/app/services/admin_user_service.py` — 新增 toggle_active、force_logout 方法
+- `cloud-admin/src/components/AdminLayout.vue` — ToastContainer + Token 续期 + 全局搜索 UI
+- `cloud-admin/src/components/DataTable.vue` — 分页 props + 控件
+- `cloud-admin/src/entities/admin-announcement/api.ts` — 添加分页参数
+- `cloud-admin/src/entities/admin-user/api.ts` — 添加 toggleUserActive、forceLogoutUser
+- `cloud-admin/src/pages/DashboardPage.vue` — Toast 错误提示
+- `cloud-admin/src/pages/FeedbackListPage.vue` — Toast + 分页
+- `cloud-admin/src/pages/FeedbackDetailPage.vue` — Toast 错误提示
+- `cloud-admin/src/pages/UsersPage.vue` — Toast + 分页
+- `cloud-admin/src/pages/AnnouncementsPage.vue` — Toast + 分页
+- `cloud-admin/src/pages/MonitoringPage.vue` — Toast + 审计日志面板
+- `cloud-admin/src/pages/UserDetailPage.vue` — 管理操作按钮（禁用/启用、强制下线）
 
 ## Implementation Notes
 
-### SDK 安装
-- `alibabacloud_bssopenapi20171214` — BSS 余额查询
-- `alibabacloud_swas_open20200601` — SWAS 服务器管理和监控
-- `oss2` — 已安装（OSS 存储统计）
-
-### 缓存设计
-- 使用类变量 `_cache: dict[str, _CacheEntry]`（进程级共享），不依赖 Redis
-- `threading.Lock` 保护缓存读写，避免并发请求重复调用阿里云 API
-- fetcher 在锁外执行，避免慢 API 调用阻塞其他线程
-- 每个模块独立 TTL：billing/oss 1h，server 5min（服务器状态变化更频繁）
-
-### AccessKey 回退逻辑
-- 优先使用 `aliyun_monitor_access_key_id`（RAM 只读子账号）
-- 如未配置，回退到 `oss_access_key_id`（方便开发环境复用同一 AK）
-
-### SWAS 监控指标
-- CPU: `cpu_total`、内存: `memory_usedutilization`
-- 磁盘读: `disk_readbytes`、磁盘写: `disk_writebytes`
-- 入网: `networkin_rate`、出网: `networkout_rate`
-- 查询最近 5 分钟数据，取最新数据点
-
-### 部分失败容错
-- 某个阿里云 API 调用失败时，该模块返回 `{ data: null, error: "错误消息" }`
-- 其他模块正常返回，不影响整个页面
-
-### 前端页面设计
-- 2×2 网格布局 + 底部跨两列的资源监控卡片
-- 每个卡片：加载态（全局 loading）、错误态（显示错误 + 重试按钮）、数据态
-- CPU/内存使用进度条（绿/黄/红三色），磁盘/网络吞吐数字展示
-- 服务器到期提醒（≤7天黄色警告，已过期红色标记）
-- 缓存时间显示 + 单模块刷新按钮 + 全局刷新按钮
+1. **Token 类型不匹配修复**：admin 端点使用 `decode_token(token, "admin_access")` 验证，但旧测试用 `create_access_token()` 生成 type="access" 的 token。修复为 `create_admin_access_token()`。
+2. **TestClient Cookie 处理**：TestClient 不自动发送 `secure=True` 的 cookies，需手动从 login response 提取并传入后续请求。
+3. **Audit DB 持久化**：audit_event() 的 db 写入使用 try/except + rollback，确保审计失败不影响主业务。
+4. **None 值安全处理**：feedback.py 匿名反馈传 `user_id=None`，DB 写入时通过 `or ""` 转换为空字符串。
+5. **AdminMonitoringService 类级缓存**：测试中使用 `autouse` fixture 在每次测试前后清理 `_cache`。
 
 ## Deviations from Codex Plan
-无 Codex Plan（基于会话中的 plan file 实现）。
+
+无偏差。所有 10 步均按计划完成。
 
 ## Verification Commands Run
-- `cd cloud-server && .venv/Scripts/python.exe -c "from app.infrastructure.aliyun_monitor import BSSMonitor, OSSMonitor, SWASMonitor"` → ✅
-- `cd cloud-server && .venv/Scripts/python.exe -c "from app.services.admin_monitoring_service import AdminMonitoringService"` → ✅
-- `cd cloud-server && .venv/Scripts/python.exe -c "from app.main import app"` → ✅
-- 路由验证：`/api/admin/monitoring/overview` 和 `/api/admin/monitoring/refresh` 已注册 → ✅
-- `cd cloud-admin && npx vue-tsc --build` → ✅
-- `cd cloud-admin && npx vite build` → ✅ (67 modules, 718ms)
+- `cd cloud-server && .venv/Scripts/python.exe -m pytest tests/ -v` → 163 passed
+- `cd cloud-admin && npm run type-check` → 零错误
+- `cd cloud-admin && npm run build` → 生产构建成功（141KB JS + 22KB CSS）
+- `cd cloud-server && .venv/Scripts/python.exe -c "from app.main import app; print('ok')"` → ok
 
 ## Verification Results
-- 后端所有模块导入正常
-- 监控路由正确注册
-- 前端 TypeScript 类型检查通过
-- 前端生产构建成功
+
+全部通过。163 个测试通过，前端类型检查和生产构建均无错误。
 
 ## Known Issues
-- SWAS 实例 ID（`swas_instance_id`）和区域 ID（`swas_region_id`）需要在 `.env` 中配置，用户尚未提供实例 ID
-- 阿里云 RAM 子账号需要附加 `AliyunBSSReadOnlyAccess`、`AliyunOSSReadOnlyAccess`、`AliyunSWASReadOnlyAccess` 策略
-- BSS 余额查询需要主账号或已开通"费用中心"权限的 RAM 子账号
-- `oss2.Bucket.get_bucket_stat()` 要求 bucket 开启统计功能（默认开启）
-- SWAS 监控数据有约 1-3 分钟延迟（阿里云侧限制）
+
+1. `test_admin_auth.py` 中的 `test_refresh_success` 和 `test_me_success` 有 DeprecationWarning（TestClient per-request cookies），这是 Starlette 的 deprecation 提示，不影响功能。
+2. Alembic `path_separator` deprecation warning — 来自 alembic.ini 配置，不影响迁移。
+3. 审计日志迁移（006）尚未在开发数据库上执行 `alembic upgrade head`，需在部署时运行。
 
 ## Suggested Next Review Points for Codex
-- 缓存使用类变量（进程级），如果 cloud-server 改为多 worker 部署，缓存不共享——是否需要改为 Redis？
-- `_fetch_oss()` 使用 `effective_internal_endpoint`（内网），但 BSS/SWAS 使用公网 endpoint——是否需要在 VPC 外部署时回退到公网 OSS endpoint？
-- 前端 `MonitoringPage.vue` 在移动端（<768px）的 2 列网格可能需要调整为 1 列
-- 监控数据是否需要历史趋势图？当前只显示最新值
+
+1. 审计日志的 `_ALLOWED_EXTRA_KEYS` 白名单是否需要扩展（当前包含 tokens_revoked、target_user_id、feedback_id、announcement_id）
+2. 全局搜索的 ILIKE 查询在大量数据下的性能，是否需要全文索引
+3. Nginx 配置中的 SSL 证书路径需在实际部署时替换
+4. 管理员用户操作中 `toggle_active` 是否需要防止禁用最后一个管理员

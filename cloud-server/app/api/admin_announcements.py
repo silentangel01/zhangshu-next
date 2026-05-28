@@ -50,6 +50,7 @@ def create_announcement(
         client_ip=_client_ip(request),
         user_id=admin.id,
         result="success",
+        db=db,
     )
     return result
 
@@ -112,6 +113,7 @@ def publish_announcement(
         client_ip=_client_ip(request),
         user_id=admin.id,
         result="success",
+        db=db,
     )
     return result
 
@@ -135,6 +137,7 @@ def archive_announcement(
         client_ip=_client_ip(request),
         user_id=admin.id,
         result="success",
+        db=db,
     )
     return result
 
@@ -158,4 +161,5 @@ def delete_announcement(
         client_ip=_client_ip(request),
         user_id=admin.id,
         result="success",
+        db=db,
     )

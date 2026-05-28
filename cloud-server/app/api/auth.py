@@ -70,6 +70,7 @@ def register(
             client_ip=client_ip,
             result="failure",
             reason_code="rate_limited",
+            db=db,
         )
         raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试。")
 
@@ -87,6 +88,7 @@ def register(
             result="failure",
             reason_code=str(exc.status_code),
             extra={"email_domain": body.email.split("@")[-1] if "@" in body.email else ""},
+            db=db,
         )
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
@@ -96,6 +98,7 @@ def register(
         client_ip=client_ip,
         user_id=result.get("user_id", ""),
         extra={"email_domain": body.email.split("@")[-1] if "@" in body.email else ""},
+        db=db,
     )
     ActivityService(db).record(result.get("user_id"), "user_registered", request)
     return result
@@ -125,6 +128,7 @@ def login(
             client_ip=client_ip,
             result="failure",
             reason_code="rate_limited",
+            db=db,
         )
         raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试。")
 
@@ -142,6 +146,7 @@ def login(
             result="failure",
             reason_code=str(exc.status_code),
             extra={"email_domain": body.email.split("@")[-1] if "@" in body.email else ""},
+            db=db,
         )
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
@@ -150,6 +155,7 @@ def login(
         request_id=_request_id(request),
         client_ip=client_ip,
         user_id=result.get("user_id", ""),
+        db=db,
     )
     ActivityService(db).record(result.get("user_id"), "login_success", request)
     return result
@@ -177,6 +183,7 @@ def refresh(
             client_ip=client_ip,
             result="failure",
             reason_code=str(exc.status_code),
+            db=db,
         )
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
@@ -185,6 +192,7 @@ def refresh(
         request_id=_request_id(request),
         client_ip=client_ip,
         user_id=result.get("user_id", ""),
+        db=db,
     )
     ActivityService(db).record(result.get("user_id"), "token_refreshed", request)
     return result

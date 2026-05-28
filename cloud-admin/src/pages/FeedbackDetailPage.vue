@@ -14,9 +14,11 @@ import type {
   FeedbackAttachment,
   FeedbackReply,
 } from '@/entities/admin-feedback/types'
+import { useToast } from '@/shared/composables/useToast'
 
 const route = useRoute()
 const router = useRouter()
+const toast = useToast()
 const feedback = ref<FeedbackTicket | null>(null)
 const attachments = ref<FeedbackAttachment[]>([])
 const replies = ref<FeedbackReply[]>([])
@@ -56,8 +58,8 @@ async function save() {
       priority: newPriority.value || undefined,
       admin_note: newNote.value || undefined,
     })
-  } catch {
-    /* ignore */
+  } catch (e: unknown) {
+    toast.error(e instanceof Error ? e.message : '保存失败')
   } finally {
     saving.value = false
   }
@@ -72,8 +74,8 @@ async function submitReply() {
     })
     replies.value.push(reply)
     replyContent.value = ''
-  } catch {
-    /* ignore */
+  } catch (e: unknown) {
+    toast.error(e instanceof Error ? e.message : '发送回复失败')
   } finally {
     replySubmitting.value = false
   }
@@ -84,8 +86,8 @@ async function downloadAttachment(att: FeedbackAttachment) {
   try {
     const { download_url } = await getAttachmentDownloadUrl(feedback.value.id, att.id)
     window.open(download_url, '_blank')
-  } catch {
-    /* ignore */
+  } catch (e: unknown) {
+    toast.error(e instanceof Error ? e.message : '下载失败')
   }
 }
 

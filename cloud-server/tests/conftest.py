@@ -39,6 +39,9 @@ import app.models.account_deletion_request  # noqa: E402, F401
 import app.models.announcement  # noqa: E402, F401
 import app.models.feedback_ticket  # noqa: E402, F401
 import app.models.feedback_attachment  # noqa: E402, F401
+import app.models.feedback_reply  # noqa: E402, F401
+import app.models.user_activity_event  # noqa: E402, F401
+import app.models.audit_log  # noqa: E402, F401
 
 from app.main import app  # noqa: E402 — must come AFTER model imports
 

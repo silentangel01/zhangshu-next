@@ -80,6 +80,7 @@ def update_feedback(
         client_ip=_client_ip(request),
         user_id=admin.id,
         result="success",
+        db=db,
     )
     return result
 
@@ -108,6 +109,7 @@ def get_attachment_download_url(
         client_ip=_client_ip(request),
         user_id=admin.id,
         result="success",
+        db=db,
     )
     return result
 
@@ -149,6 +151,7 @@ def create_feedback_reply(
         client_ip=_client_ip(request),
         user_id=admin.id,
         result="success",
+        db=db,
     )
     return result
 
@@ -173,6 +176,7 @@ def delete_feedback_reply(
         client_ip=_client_ip(request),
         user_id=admin.id,
         result="success",
+        db=db,
     )
 
 
@@ -196,4 +200,5 @@ def delete_feedback(
         client_ip=_client_ip(request),
         user_id=admin.id,
         result="success",
+        db=db,
     )

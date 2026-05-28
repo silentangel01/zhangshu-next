@@ -10,6 +10,8 @@ from app.models.announcement import Announcement
 from app.models.feedback_ticket import FeedbackTicket
 from app.models.feedback_attachment import FeedbackAttachment
 from app.models.user_activity_event import UserActivityEvent
+from app.models.feedback_reply import FeedbackReply
+from app.models.audit_log import AuditLog
 
 __all__ = [
     "User",
@@ -22,4 +24,6 @@ __all__ = [
     "FeedbackTicket",
     "FeedbackAttachment",
     "UserActivityEvent",
+    "FeedbackReply",
+    "AuditLog",
 ]

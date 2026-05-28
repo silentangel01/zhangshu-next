@@ -9,9 +9,14 @@ import {
   deleteAnnouncement,
 } from '@/entities/admin-announcement/api'
 import type { Announcement } from '@/entities/admin-announcement/types'
+import { useToast } from '@/shared/composables/useToast'
 
+const toast = useToast()
 const items = ref<Announcement[]>([])
+const total = ref(0)
 const loading = ref(true)
+const page = ref(1)
+const pageSize = 20
 const showForm = ref(false)
 const newTitle = ref('')
 const newBody = ref('')
@@ -30,13 +35,23 @@ onMounted(() => load())
 async function load() {
   loading.value = true
   try {
-    const res = await listAdminAnnouncements()
+    const res = await listAdminAnnouncements({
+      limit: pageSize,
+      offset: (page.value - 1) * pageSize,
+    })
     items.value = res.items
-  } catch {
+    total.value = res.total
+  } catch (e: unknown) {
+    toast.error(e instanceof Error ? e.message : '加载公告列表失败')
     items.value = []
   } finally {
     loading.value = false
   }
+}
+
+function onPageChange(p: number) {
+  page.value = p
+  load()
 }
 
 async function submitNew() {
@@ -51,8 +66,8 @@ async function submitNew() {
     newBody.value = ''
     newSeverity.value = 'info'
     await load()
-  } catch {
-    /* ignore */
+  } catch (e: unknown) {
+    toast.error(e instanceof Error ? e.message : '创建公告失败')
   }
 }
 
@@ -111,7 +126,15 @@ function formatDate(d: string | null): string {
       <button class="btn btn-primary" :disabled="!newTitle || !newBody" @click="submitNew">创建草稿</button>
     </div>
     <p v-if="loading" class="loading-text">加载中...</p>
-    <DataTable v-else :columns="columns" :rows="items as unknown as Record<string, unknown>[]">
+    <DataTable
+      v-else
+      :columns="columns"
+      :rows="items as unknown as Record<string, unknown>[]"
+      :total="total"
+      :page="page"
+      :page-size="pageSize"
+      @update:page="onPageChange"
+    >
       <template #status="{ row }">
         <span class="badge" :class="(row as unknown as Announcement).status === 'published' ? 'badge-success' : 'badge-info'">
           {{ (row as unknown as Announcement).status }}

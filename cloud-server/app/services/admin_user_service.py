@@ -1,14 +1,15 @@
-"""Admin user management service — read-only user listing and detail."""
+"""Admin user management service — user listing, detail, and management actions."""
 
 from __future__ import annotations
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.models.cloud_backup import CloudBackup
 from app.models.cloud_project import CloudProject
 from app.models.feedback_ticket import FeedbackTicket
-from app.models.user import User
+from app.models.refresh_token import RefreshToken
+from app.models.user import User, utc_now
 from app.models.user_activity_event import UserActivityEvent
 from app.schemas.admin_user import (
     AdminRecentActivity,
@@ -198,3 +199,33 @@ class AdminUserService:
             recent_activity=recent_activity,
             recent_feedback=recent_feedback,
         )
+
+    # ── Management actions ──────────────────────────────────────────────
+
+    def toggle_active(self, user_id: str) -> User | None:
+        """Toggle a user's ``is_active`` flag. Returns the updated user or None."""
+        user = self._db.scalar(
+            select(User).where(User.id == user_id, User.deleted_at.is_(None))
+        )
+        if user is None:
+            return None
+        user.is_active = not user.is_active
+        user.updated_at = utc_now()
+        self._db.commit()
+        self._db.refresh(user)
+        return user
+
+    def force_logout(self, user_id: str) -> int:
+        """Revoke all unexpired refresh tokens for a user. Returns count revoked."""
+        now = utc_now()
+        result = self._db.execute(
+            update(RefreshToken)
+            .where(
+                RefreshToken.user_id == user_id,
+                RefreshToken.revoked_at.is_(None),
+                RefreshToken.expires_at > now,
+            )
+            .values(revoked_at=now, revoked_reason="admin_force_logout")
+        )
+        self._db.commit()
+        return result.rowcount

@@ -1,9 +1,23 @@
 <script setup lang="ts">
-defineProps<{
+import { computed } from 'vue'
+
+const props = defineProps<{
   columns: { key: string; label: string; width?: string }[]
   rows: Record<string, unknown>[]
   emptyText?: string
+  total?: number
+  page?: number
+  pageSize?: number
 }>()
+
+const emit = defineEmits<{
+  'update:page': [page: number]
+}>()
+
+const totalPages = computed(() => {
+  if (!props.total || !props.pageSize) return 1
+  return Math.max(1, Math.ceil(props.total / props.pageSize))
+})
 </script>
 
 <template>
@@ -29,6 +43,25 @@ defineProps<{
         </tr>
       </tbody>
     </table>
+    <div v-if="total !== undefined && totalPages > 1" class="pagination">
+      <button
+        class="btn btn-sm"
+        :disabled="!page || page <= 1"
+        @click="emit('update:page', (page ?? 1) - 1)"
+      >
+        &larr; 上一页
+      </button>
+      <span class="page-info">
+        第 {{ page ?? 1 }} / {{ totalPages }} 页（共 {{ total }} 条）
+      </span>
+      <button
+        class="btn btn-sm"
+        :disabled="!page || page >= totalPages"
+        @click="emit('update:page', (page ?? 1) + 1)"
+      >
+        下一页 &rarr;
+      </button>
+    </div>
   </div>
 </template>
 
@@ -71,5 +104,16 @@ defineProps<{
   text-align: center;
   color: var(--ca-text-muted);
   padding: var(--ca-space-6) !important;
+}
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--ca-space-3) var(--ca-space-4);
+  border-top: 1px solid var(--ca-border);
+}
+.page-info {
+  font-size: 13px;
+  color: var(--ca-text-muted);
 }
 </style>

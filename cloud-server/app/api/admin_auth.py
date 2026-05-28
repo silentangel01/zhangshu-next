@@ -103,6 +103,7 @@ def admin_login(
             request_id=_request_id(request),
             client_ip=client_ip,
             result="failure",
+            db=db,
         )
         raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试。")
 
@@ -121,6 +122,7 @@ def admin_login(
             client_ip=client_ip,
             result="failure",
             reason_code=str(exc.status_code),
+            db=db,
         )
         raise HTTPException(status_code=exc.status_code, detail="邮箱或密码错误。") from exc
 
@@ -141,6 +143,7 @@ def admin_login(
             user_id=user_id,
             result="failure",
             reason_code="not_admin",
+            db=db,
         )
         raise HTTPException(status_code=403, detail="需要管理员权限。")
 
@@ -167,6 +170,7 @@ def admin_login(
         request_id=_request_id(request),
         client_ip=client_ip,
         user_id=user_id,
+        db=db,
     )
     ActivityService(db).record(user_id, "admin_login", request)
 
