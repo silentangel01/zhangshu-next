@@ -214,3 +214,60 @@ def test_account_status_not_configured(db_session):
         status = auth_service.get_account_status()
         assert status["logged_in"] is False
         assert status["cloud_available"] is False
+
+
+# ── Phase 1: duplicate link protection ────────────────────────────
+
+
+def test_enable_cloud_rejects_cloud_project_linked_to_other_local_project(db_session):
+    """If cloud_project_id is already linked to another local project, enable_cloud should reject."""
+    project_id_a = _make_project(db_session)
+    project_id_b = _make_project(db_session)
+    _seed_login_tokens(db_session)
+
+    # First, link project A to a cloud project
+    link_a = CloudProjectLink(
+        id=str(uuid4()),
+        project_id=project_id_a,
+        cloud_project_id="cloud-shared-proj",
+        cloud_user_id="user-123",
+        cloud_enabled=True,
+        provider="zhangshu",
+        status="active",
+    )
+    db_session.add(link_a)
+    db_session.commit()
+
+    # Now try to link project B to the same cloud project
+    service = CloudBackupService(db_session)
+    with pytest.raises(CloudBackupError) as exc_info:
+        service.enable_cloud(project_id_b, cloud_project_id="cloud-shared-proj")
+
+    assert exc_info.value.error_kind == "cloud_project_already_linked"
+    assert "已关联" in str(exc_info.value) or "已在本机存在" in str(exc_info.value)
+
+
+def test_enable_cloud_allows_same_project_relink(db_session):
+    """If cloud_project_id is already linked to the SAME local project, enable_cloud should allow it."""
+    project_id = _make_project(db_session)
+    _seed_login_tokens(db_session)
+
+    # Pre-create the link
+    link = CloudProjectLink(
+        id=str(uuid4()),
+        project_id=project_id,
+        cloud_project_id="cloud-same-proj",
+        cloud_user_id="user-123",
+        cloud_enabled=True,
+        provider="zhangshu",
+        status="active",
+    )
+    db_session.add(link)
+    db_session.commit()
+
+    # enable_cloud should return the existing link without error
+    service = CloudBackupService(db_session)
+    result = service.enable_cloud(project_id, cloud_project_id="cloud-same-proj")
+    assert result.project_id == project_id
+    assert result.cloud_project_id == "cloud-same-proj"
+
