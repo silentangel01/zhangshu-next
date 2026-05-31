@@ -6,15 +6,18 @@ import {
   getCloudAccountStatus,
   getCloudStatus,
   listCloudBackups,
+  listRemoteCloudProjects,
   restoreCloudBackup,
+  runCloudSync,
   triggerCloudBackup,
 } from '@/entities/cloud/api'
 import type {
   CloudAccountStatus,
   CloudBackupRecord,
   CloudProjectStatus,
-  CloudRestoreReport,
+  CloudRemoteProject,
 } from '@/entities/cloud/types'
+import { ApiError } from '@/shared/api/client'
 import { formatDateTime } from '@/shared/utils/formatDateTime'
 
 const props = defineProps<{
@@ -24,9 +27,11 @@ const props = defineProps<{
 const isLoading = ref(true)
 const isEnabling = ref(false)
 const isBackingUp = ref(false)
+const isSyncing = ref(false)
 const isRestoring = ref('')
 const errorMessage = ref('')
 const successMessage = ref('')
+const syncMessage = ref('')
 
 const accountStatus = ref<CloudAccountStatus | null>(null)
 const cloudStatus = ref<CloudProjectStatus | null>(null)
@@ -34,6 +39,15 @@ const backups = ref<CloudBackupRecord[]>([])
 
 const isLoggedIn = ref(false)
 const cloudEnabled = ref(false)
+
+// ── Link existing cloud project state ──────────────────────────
+const showLinkDialog = ref(false)
+const isLinkDialogLoading = ref(false)
+const isLinking = ref(false)
+const isInitialSyncing = ref(false)
+const remoteProjects = ref<CloudRemoteProject[]>([])
+const linkErrorMessage = ref('')
+const linkSuggestionMessage = ref('')
 
 onMounted(async () => {
   try {
@@ -71,6 +85,112 @@ async function handleEnableCloud() {
     errorMessage.value = getErrorMessage(error, '启用云端保存失败。')
   } finally {
     isEnabling.value = false
+  }
+}
+
+// ── Link existing cloud project handlers ──────────────────────
+
+async function handleOpenLinkDialog() {
+  showLinkDialog.value = true
+  isLinkDialogLoading.value = true
+  linkErrorMessage.value = ''
+  linkSuggestionMessage.value = ''
+  remoteProjects.value = []
+
+  try {
+    remoteProjects.value = await listRemoteCloudProjects()
+  } catch (error) {
+    linkErrorMessage.value =
+      error instanceof Error ? error.message : '加载云端项目列表失败。'
+    if (error instanceof ApiError && error.suggestion) {
+      linkSuggestionMessage.value = error.suggestion
+    }
+  } finally {
+    isLinkDialogLoading.value = false
+  }
+}
+
+function handleCloseLinkDialog() {
+  showLinkDialog.value = false
+  linkErrorMessage.value = ''
+  linkSuggestionMessage.value = ''
+  remoteProjects.value = []
+}
+
+async function handleSelectCloudProject(project: CloudRemoteProject) {
+  isLinking.value = true
+  linkErrorMessage.value = ''
+  linkSuggestionMessage.value = ''
+
+  try {
+    const status = await enableCloud(props.projectId, project.id)
+    cloudStatus.value = status
+    cloudEnabled.value = true
+    showLinkDialog.value = false
+    remoteProjects.value = []
+  } catch (error) {
+    linkErrorMessage.value =
+      error instanceof Error ? error.message : '关联云端项目失败。'
+    if (error instanceof ApiError && error.suggestion) {
+      linkSuggestionMessage.value = error.suggestion
+    }
+    isLinking.value = false
+    return
+  }
+
+  isLinking.value = false
+
+  // Run initial bidirectional sync: push local dirty records + pull remote changes
+  isInitialSyncing.value = true
+  successMessage.value = '正在同步云端数据…'
+  try {
+    const syncResult = await runCloudSync(props.projectId)
+    const pushed = syncResult.pushed ?? 0
+    const pulled = syncResult.pulled ?? 0
+
+    if (pushed > 0 && pulled > 0) {
+      successMessage.value = `已关联并同步完成，上传 ${pushed} 条、拉取 ${pulled} 条更新。`
+    } else if (pushed > 0) {
+      successMessage.value = `已关联并上传本机数据。`
+    } else if (pulled > 0) {
+      successMessage.value = `已关联并拉取云端更新。`
+    } else {
+      successMessage.value = '已关联云端项目，本机数据已是最新。'
+    }
+
+    // Refresh cloud status and backups after sync
+    try {
+      const projStatus = await getCloudStatus(props.projectId)
+      cloudStatus.value = projStatus
+      const backupList = await listCloudBackups(props.projectId)
+      backups.value = backupList.items
+    } catch {
+      // ignore refresh failure
+    }
+  } catch (error) {
+    // Linking succeeded but sync failed — show partial success
+    successMessage.value = '已关联云端项目。'
+    errorMessage.value = '首次同步失败，本机内容已保留，可稍后点击"立即同步"重试。'
+  } finally {
+    isInitialSyncing.value = false
+  }
+}
+
+async function handleSyncNow() {
+  isSyncing.value = true
+  errorMessage.value = ''
+  successMessage.value = ''
+  syncMessage.value = ''
+
+  try {
+    const result = await runCloudSync(props.projectId)
+    const { syncMsg, errorMsg } = formatManualSyncResult(result)
+    syncMessage.value = syncMsg
+    errorMessage.value = errorMsg
+  } catch {
+    errorMessage.value = '同步失败，本机内容已保留，可稍后重试。'
+  } finally {
+    isSyncing.value = false
   }
 }
 
@@ -144,16 +264,61 @@ function getErrorMessage(error: unknown, fallback: string): string {
   }
   return fallback
 }
+
+function formatManualSyncResult(result: {
+  pushed: number
+  pulled: number
+  conflicts: number
+  errors: string[]
+}): { syncMsg: string; errorMsg: string } {
+  const pushed = result.pushed ?? 0
+  const pulled = result.pulled ?? 0
+
+  // Partial failure: errors exist
+  if (result.errors.length > 0) {
+    const summary =
+      pushed > 0 || pulled > 0
+        ? `已上传 ${pushed} 条、拉取 ${pulled} 条，但部分同步未完成。`
+        : '同步未完全完成。'
+    return {
+      syncMsg: summary,
+      errorMsg: '本机内容已保留，可稍后重试。',
+    }
+  }
+
+  // Conflicts
+  if (result.conflicts > 0) {
+    return {
+      syncMsg:
+        pushed > 0 || pulled > 0
+          ? `上传 ${pushed} 条、拉取 ${pulled} 条。部分内容存在多设备修改，请在备份面板中检查。`
+          : '部分内容存在多设备修改，请在备份面板中检查。',
+      errorMsg: '',
+    }
+  }
+
+  // Full success
+  if (pushed > 0 && pulled > 0) {
+    return { syncMsg: `同步完成，上传 ${pushed} 条、拉取 ${pulled} 条更新。`, errorMsg: '' }
+  }
+  if (pushed > 0) {
+    return { syncMsg: `同步完成，上传 ${pushed} 条。`, errorMsg: '' }
+  }
+  if (pulled > 0) {
+    return { syncMsg: `同步完成，拉取 ${pulled} 条更新。`, errorMsg: '' }
+  }
+  return { syncMsg: '数据已是最新。', errorMsg: '' }
+}
 </script>
 
 <template>
   <article class="action-panel cloud-backup-panel">
     <header>
       <p class="eyebrow">云端备份</p>
-      <h2>章枢云端保存</h2>
+      <h2>云端同步与备份</h2>
     </header>
     <p class="panel-copy">
-      将项目备份上传到章枢云，支持多端恢复。本地数据始终保留。
+      日常更改会通过增量同步自动保存到云端；完整备份用于手动留档和恢复。本机数据始终保留。
     </p>
 
     <div v-if="isLoading" class="loading-state">正在加载…</div>
@@ -174,6 +339,13 @@ function getErrorMessage(error: unknown, fallback: string): string {
         >
           {{ isEnabling ? '正在启用…' : '为本书启用云端保存' }}
         </button>
+        <button
+          class="secondary-button"
+          type="button"
+          @click="handleOpenLinkDialog"
+        >
+          关联已有云端项目
+        </button>
       </div>
 
       <!-- Enabled -->
@@ -182,18 +354,28 @@ function getErrorMessage(error: unknown, fallback: string): string {
           <button
             class="primary-button"
             type="button"
+            :disabled="isSyncing"
+            @click="handleSyncNow"
+          >
+            {{ isSyncing ? '正在同步…' : '立即同步' }}
+          </button>
+          <button
+            class="secondary-button"
+            type="button"
             :disabled="isBackingUp"
             @click="handleTriggerBackup"
           >
-            {{ isBackingUp ? '正在上传…' : '立即云端保存' }}
+            {{ isBackingUp ? '正在上传…' : '创建完整备份' }}
           </button>
           <p v-if="cloudStatus?.last_backup_at" class="last-backup">
             上次备份：{{ formatDateTime(cloudStatus.last_backup_at) }}
           </p>
         </div>
 
+        <p v-if="syncMessage" class="sync-message">{{ syncMessage }}</p>
+
         <div v-if="backups.length > 0" class="backup-list">
-          <h3>备份记录</h3>
+          <h3>完整备份记录</h3>
           <ul>
             <li v-for="record in backups" :key="record.id" class="backup-row">
               <div class="backup-info">
@@ -219,8 +401,67 @@ function getErrorMessage(error: unknown, fallback: string): string {
       </div>
     </template>
 
+    <div v-if="isInitialSyncing" class="syncing-banner">
+      <span class="syncing-spinner" />
+      <span>正在从云端拉取最新数据…</span>
+    </div>
+
     <p v-if="errorMessage" class="error-text">{{ errorMessage }}</p>
     <p v-if="successMessage" class="success-text">{{ successMessage }}</p>
+
+    <!-- Link existing cloud project dialog -->
+    <div v-if="showLinkDialog" class="dialog-overlay" @click.self="handleCloseLinkDialog">
+      <div class="dialog-panel">
+        <header class="dialog-header">
+          <h2>关联已有云端项目</h2>
+          <button class="close-button" type="button" @click="handleCloseLinkDialog">×</button>
+        </header>
+
+        <section v-if="linkErrorMessage" class="error-banner" role="alert">
+          <p class="error-banner-text">{{ linkErrorMessage }}</p>
+          <p v-if="linkSuggestionMessage" class="suggestion-text">{{ linkSuggestionMessage }}</p>
+        </section>
+
+        <section class="dialog-body">
+          <div v-if="isLinkDialogLoading" class="state-message">正在加载云端项目…</div>
+
+          <div v-else-if="remoteProjects.length === 0" class="state-message">
+            云端没有可关联的项目。
+          </div>
+
+          <ul v-else class="project-list">
+            <li v-for="project in remoteProjects" :key="project.id" class="project-item">
+              <div class="project-info">
+                <strong>{{ project.title }}</strong>
+                <span v-if="project.updated_at" class="project-date">
+                  更新于 {{ project.updated_at.slice(0, 10) }}
+                </span>
+                <span v-if="project.linked_locally" class="project-linked-badge">
+                  本机已有
+                </span>
+              </div>
+              <button
+                v-if="project.linked_locally"
+                class="small-button"
+                type="button"
+                disabled
+              >
+                已关联
+              </button>
+              <button
+                v-else
+                class="primary-button small-primary-button"
+                type="button"
+                :disabled="isLinking"
+                @click="handleSelectCloudProject(project)"
+              >
+                {{ isLinking ? '关联中…' : '关联此项目' }}
+              </button>
+            </li>
+          </ul>
+        </section>
+      </div>
+    </div>
   </article>
 </template>
 
@@ -350,6 +591,148 @@ button:disabled {
   color: var(--zs-color-on-primary);
 }
 
+.secondary-button {
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
+  border: 1px solid var(--zs-color-border);
+  font-weight: 600;
+}
+
+.secondary-button:hover {
+  background: var(--zs-color-surface-soft, #f5f5f5);
+}
+
+.small-primary-button {
+  min-height: 30px;
+  font-size: 0.85rem;
+  padding: 0 10px;
+}
+
+/* ── Link dialog styles ────────────────────────────────────────── */
+
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.dialog-panel {
+  width: 480px;
+  max-width: 90vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  background: var(--zs-color-surface);
+  box-shadow: var(--zs-shadow-lg, 0 8px 32px rgba(0, 0, 0, 0.18));
+}
+
+.dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--zs-color-border);
+}
+
+.dialog-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.close-button {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: var(--zs-color-text-muted);
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.dialog-body {
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+
+.error-banner {
+  margin: 0 20px;
+  padding: 10px 14px;
+  border: 1px solid var(--zs-color-danger);
+  border-radius: 8px;
+  background: var(--zs-color-danger-soft);
+  color: var(--zs-color-danger);
+  font-size: 0.86rem;
+}
+
+.error-banner-text {
+  margin: 0;
+  font-weight: 700;
+}
+
+.suggestion-text {
+  margin: 6px 0 0;
+  color: var(--zs-color-text-muted);
+  font-weight: 400;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.state-message {
+  text-align: center;
+  color: var(--zs-color-text-muted);
+  padding: 40px 0;
+}
+
+.project-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.project-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--zs-color-border);
+  border-radius: 8px;
+  background: var(--zs-color-surface-soft, #fafafa);
+}
+
+.project-info {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.project-info strong {
+  font-size: 0.92rem;
+}
+
+.project-date {
+  color: var(--zs-color-text-muted);
+  font-size: 0.78rem;
+}
+
+.project-linked-badge {
+  display: inline-block;
+  margin-top: 2px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--zs-color-success-soft, #f0fdf4);
+  color: var(--zs-color-success, #16a34a);
+  font-size: 0.72rem;
+  font-weight: 600;
+  width: fit-content;
+}
+
 .small-button {
   min-height: 30px;
   border: 1px solid var(--zs-color-border);
@@ -369,5 +752,41 @@ button:disabled {
   margin: 0;
   color: var(--zs-color-success);
   font-weight: 800;
+}
+
+.sync-message {
+  margin: 0;
+  color: var(--zs-color-text-muted);
+  font-size: 0.88rem;
+}
+
+.syncing-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--zs-color-primary);
+  border-radius: var(--zs-radius-md);
+  background: var(--zs-color-primary-soft, #eff6ff);
+  color: var(--zs-color-primary);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.syncing-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--zs-color-primary);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

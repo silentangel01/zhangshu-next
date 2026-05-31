@@ -12,9 +12,15 @@ import type {
   CloudNetworkDiagnosticReport,
   CloudNetworkMode,
   CloudNetworkSettings,
+  CloudProjectImportResult,
   CloudProjectStatus,
+  CloudRemoteProject,
   CloudRestoreReport,
   CloudSessionList,
+  CloudSyncConflict,
+  CloudSyncRunResult,
+  CloudSyncSnapshot,
+  CloudSyncStatus,
   CloudUsage,
 } from './types'
 
@@ -160,4 +166,59 @@ export function confirmCloudAccountDeletion(
     method: 'DELETE',
     body: { request_id: requestId, confirmation_text: confirmationText },
   })
+}
+
+// ── Incremental sync ──────────────────────────────────────────────
+
+export function getCloudSyncStatus(projectId: string): Promise<CloudSyncStatus> {
+  return apiRequest<CloudSyncStatus>(`/api/projects/${projectId}/cloud/sync/status`)
+}
+
+export function runCloudSync(projectId: string): Promise<CloudSyncRunResult> {
+  return apiRequest<CloudSyncRunResult>(`/api/projects/${projectId}/cloud/sync/run`, {
+    method: 'POST',
+    body: {},
+  })
+}
+
+export function pullCloudSync(projectId: string): Promise<CloudSyncRunResult> {
+  return apiRequest<CloudSyncRunResult>(`/api/projects/${projectId}/cloud/sync/pull`, {
+    method: 'POST',
+  })
+}
+
+export function listCloudSyncSnapshots(
+  projectId: string,
+  params: { entity_type: string; entity_id: string },
+): Promise<CloudSyncSnapshot[]> {
+  const query = `?entity_type=${encodeURIComponent(params.entity_type)}&entity_id=${encodeURIComponent(params.entity_id)}`
+  return apiRequest<CloudSyncSnapshot[]>(
+    `/api/projects/${projectId}/cloud/sync/snapshots${query}`,
+  )
+}
+
+export function listCloudSyncConflicts(
+  projectId: string,
+  resolved = false,
+): Promise<CloudSyncConflict[]> {
+  return apiRequest<CloudSyncConflict[]>(
+    `/api/projects/${projectId}/cloud/sync/conflicts?resolved=${resolved}`,
+  )
+}
+
+export async function listRemoteCloudProjects(): Promise<CloudRemoteProject[]> {
+  const result = await apiRequest<CloudRemoteProject[] | { items: CloudRemoteProject[] }>(
+    '/api/cloud/projects',
+  )
+  if (Array.isArray(result)) return result
+  return result.items ?? []
+}
+
+export function importRemoteCloudProject(
+  cloudProjectId: string,
+): Promise<CloudProjectImportResult> {
+  return apiRequest<CloudProjectImportResult>(
+    `/api/cloud/projects/${cloudProjectId}/import`,
+    { method: 'POST' },
+  )
 }

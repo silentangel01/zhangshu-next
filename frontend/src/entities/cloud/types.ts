@@ -173,3 +173,68 @@ export interface CloudDeletionConfirmRequest {
   request_id: string
   confirmation_text: string
 }
+
+// ── Incremental sync ──────────────────────────────────────────────
+
+export interface CloudSyncStatus {
+  cloud_logged_in: boolean
+  cloud_enabled: boolean
+  pending_count: number
+  last_cursor: number
+  last_sync_at: string | null
+  last_error: string | null
+  status: string
+  auto_sync_enabled: boolean
+  cloud_project_id: string | null
+  device_id: string
+}
+
+export interface CloudSyncRunResult {
+  pushed: number
+  pulled: number
+  new_cursor: number
+  conflicts: number
+  errors: string[]
+  duration_ms: number
+}
+
+export interface CloudSyncConflict {
+  entity_type: string
+  entity_id: string
+  winner_payload_json: string
+  loser_payload_json: string
+  winner_source: string
+  loser_source: string
+  winner_device_id: string
+  loser_device_id: string
+  resolved: boolean
+  created_at: string
+}
+
+export interface CloudSyncSnapshot {
+  entity_type: string
+  entity_id: string
+  cloud_version: number
+  payload_json: string
+  source: string
+  device_id: string
+  created_at: string
+}
+
+export interface CloudRemoteProject {
+  id: string
+  title: string
+  created_at: string | null
+  updated_at: string | null
+  linked_locally?: boolean
+  local_project_id?: string | null
+}
+
+export interface CloudProjectImportResult {
+  local_project_id: string
+  title: string
+  volumes_count: number
+  chapters_count: number
+  mode: string
+  message?: string | null
+}
