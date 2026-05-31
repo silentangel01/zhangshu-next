@@ -8,6 +8,7 @@ import {
   outlineItemTypeLabels,
   outlineStatusLabels,
 } from '@/entities/outline/types'
+import { cloudSyncManager } from '@/features/cloud/cloudSyncManager'
 import OutlineTreeNode from './OutlineTreeNode.vue'
 
 const props = defineProps<{
@@ -150,6 +151,7 @@ async function handleSave() {
     selectedOutlineId.value = saved.id
     outlines.value = outlines.value.map((outline) => (outline.id === saved.id ? saved : outline))
     applyOutlineToForm(saved)
+    cloudSyncManager.notifyDirty(props.projectId)
   } catch (error) {
     void error
     errorMessage.value = '保存章节细纲失败。'
@@ -176,6 +178,7 @@ async function handleDelete() {
     selectedOutlineId.value = null
     resetForm()
     await refreshOutlines()
+    cloudSyncManager.notifyDirty(props.projectId)
   } catch (error) {
     void error
     errorMessage.value = '删除章节细纲失败。'

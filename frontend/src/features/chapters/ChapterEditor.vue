@@ -19,6 +19,7 @@ import { formatChapterContent } from './chapterFormatting'
 import type { FirstLineIndentSpaces, ParagraphSpacingLines } from './chapterFormatting'
 import { safeReadJson, safeWriteJson } from '@/shared/storage/localWorkspaceState'
 import { formatDateTimeFull } from '@/shared/utils/formatDateTime'
+import { cloudSyncManager } from '@/features/cloud/cloudSyncManager'
 
 const props = defineProps<{
   chapter: Chapter
@@ -99,13 +100,13 @@ const EDITOR_APPEARANCE_STORAGE_KEY = 'zhangshu:editor:appearance'
 const WRITING_IDLE_TIMEOUT_MS = 3 * 60 * 1000
 const SESSION_SPEED_MIN_ACTIVE_MS = 10 * 1000
 const defaultAppearanceSettings: EditorAppearanceSettings = {
-  firstLineIndentSpaces: 0,
+  firstLineIndentSpaces: 2,
   lineHeight: 1.0,
   selectedFontPreset: 'system',
   customFontFamily: '',
   fontSize: 16,
   editorWidth: 'wide',
-  paragraphSpacingLines: 0,
+  paragraphSpacingLines: 1,
   textAlign: 'left',
   theme: 'plain',
 }
@@ -134,7 +135,6 @@ let autosaveTimer: ReturnType<typeof window.setTimeout> | null = null
 let writingIdleTimer: ReturnType<typeof window.setTimeout> | null = null
 let writingClockTimer: ReturnType<typeof window.setInterval> | null = null
 let isApplyingLoadedContent = false
-let skipNextAutosaveForAutoFormat = false
 
 const localWordCount = computed(() => calculateContentWordCount(localContent.value))
 const sessionActiveMilliseconds = computed(() => {
@@ -232,6 +232,25 @@ watch(
   { deep: true },
 )
 
+// Auto-apply formatting when the user changes indent or spacing settings.
+// Skips the initial value — only fires on subsequent user-initiated changes.
+watch(
+  () => appearanceSettings.value.firstLineIndentSpaces,
+  (indent) => {
+    if (localContent.value.trim()) {
+      applyFormatToContent(indent, appearanceSettings.value.paragraphSpacingLines)
+    }
+  },
+)
+watch(
+  () => appearanceSettings.value.paragraphSpacingLines,
+  (spacing) => {
+    if (localContent.value.trim()) {
+      applyFormatToContent(appearanceSettings.value.firstLineIndentSpaces, spacing)
+    }
+  },
+)
+
 window.addEventListener('beforeunload', handleBeforeUnload)
 
 onBeforeUnmount(() => {
@@ -243,8 +262,16 @@ onBeforeUnmount(() => {
   window.removeEventListener('beforeunload', handleBeforeUnload)
 })
 
+async function saveNow() {
+  if (hasUnsavedChanges.value) {
+    cancelPendingAutosave()
+    await saveCurrentContent('manual')
+  }
+}
+
 defineExpose({
   cancelPendingAutosave,
+  saveNow,
 })
 
 async function handleSave() {
@@ -318,6 +345,7 @@ async function saveCurrentContent(source: 'manual' | 'autosave') {
     emit('dirtyChange', false)
     emit('saved', savedChapter)
     saveStatus.value = source === 'autosave' ? 'autosaved' : 'manual-saved'
+    cloudSyncManager.notifyDirty(props.chapter.project_id)
     return
   }
 
@@ -440,11 +468,6 @@ async function ignorePendingDraft() {
 
 function scheduleAutosave() {
   if (isManualSaving.value || !hasUnsavedChanges.value) {
-    return
-  }
-
-  if (skipNextAutosaveForAutoFormat) {
-    skipNextAutosaveForAutoFormat = false
     return
   }
 
@@ -750,10 +773,24 @@ function getEditorMaxWidth(width: EditorWidth) {
 }
 
 function handleAutoFormat() {
+  applyFormatToContent(
+    appearanceSettings.value.firstLineIndentSpaces,
+    appearanceSettings.value.paragraphSpacingLines,
+  )
+}
+
+/**
+ * Core formatting logic — applies indent and spacing to the current content.
+ * Shared by the manual button and the settings-change watcher.
+ */
+function applyFormatToContent(
+  indent: FirstLineIndentSpaces,
+  spacing: ParagraphSpacingLines,
+) {
   const textarea = editorTextareaRef.value
   const result = formatChapterContent(localContent.value, {
-    firstLineIndentSpaces: appearanceSettings.value.firstLineIndentSpaces,
-    paragraphSpacingLines: appearanceSettings.value.paragraphSpacingLines,
+    firstLineIndentSpaces: indent,
+    paragraphSpacingLines: spacing,
   })
 
   if (!result.changed) {
@@ -768,10 +805,6 @@ function handleAutoFormat() {
     selectionEnd: textarea?.selectionEnd ?? 0,
     createdAt: Date.now(),
   }
-
-  // Prevent the upcoming localContent watcher from triggering autosave
-  cancelPendingAutosave()
-  skipNextAutosaveForAutoFormat = true
 
   // Apply formatted content
   localContent.value = result.content

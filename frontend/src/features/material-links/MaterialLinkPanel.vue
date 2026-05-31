@@ -24,6 +24,7 @@ import type { SettingItem } from '@/entities/setting/types'
 import { listProjectTimelineEvents } from '@/entities/timeline/api'
 import type { TimelineEvent } from '@/entities/timeline/types'
 import { ensureMaterialGraphNode, graphFocusRoute } from '@/features/graph/useMaterialGraphNode'
+import { cloudSyncManager } from '@/features/cloud/cloudSyncManager'
 
 type SourceType = Extract<
   MaterialLinkTargetType,
@@ -294,6 +295,7 @@ async function handleAdd(targetType: DisplayTargetType) {
     resetForm(targetType)
     await refreshLinks()
     successMessage.value = '关联已添加。'
+    cloudSyncManager.notifyDirty(props.projectId)
   } catch (error) {
     void error
     errorMessage.value = '添加关联失败，请检查资料是否属于同一项目。'
@@ -361,6 +363,7 @@ async function handleRemove(targetType: DisplayTargetType, item: LinkItem) {
     await persistRemoveLink(targetType, item)
     await refreshLinks()
     successMessage.value = '关联已移除。'
+    cloudSyncManager.notifyDirty(props.projectId)
   } catch (error) {
     void error
     errorMessage.value = '移除关联失败。'
@@ -422,6 +425,7 @@ async function openOrCreateGraphNode() {
     summary: '',
   })
 
+  cloudSyncManager.notifyDirty(props.projectId)
   window.location.href = graphFocusRoute(props.projectId, node.id)
 }
 
