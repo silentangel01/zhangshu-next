@@ -13,6 +13,7 @@ class ProjectNotFoundError(Exception):
 
 class ProjectService:
     def __init__(self, db: Session):
+        self.db = db
         self.repo = ProjectRepository(db)
 
     def list_projects(self) -> list[Project]:
@@ -29,7 +30,9 @@ class ProjectService:
             status=data.status,
             target_word_count=data.target_word_count,
         )
-        return self.repo.create(project)
+        created = self.repo.create(project)
+        self._mark_dirty(created.id, "upsert")
+        return created
 
     def get_project(self, project_id: str) -> Project:
         project = self.repo.get_active(project_id)
@@ -42,14 +45,29 @@ class ProjectService:
         values = data.model_dump(exclude_unset=True)
         if "tags" in values:
             values["tags"] = encode_tags(values["tags"])
-        return self.repo.update(project, values)
+        updated = self.repo.update(project, values)
+        self._mark_dirty(project_id, "upsert")
+        return updated
 
     def update_project_raw(
         self, project_id: str, values: dict[str, object]
     ) -> Project:
         project = self.get_project(project_id)
-        return self.repo.update(project, values)
+        updated = self.repo.update(project, values)
+        self._mark_dirty(project_id, "upsert")
+        return updated
 
     def delete_project(self, project_id: str) -> Project:
         project = self.get_project(project_id)
-        return self.repo.soft_delete(project)
+        deleted = self.repo.soft_delete(project)
+        self._mark_dirty(project_id, "delete")
+        return deleted
+
+    def _mark_dirty(self, project_id: str, action: str) -> None:
+        """Mark the project as dirty for cloud sync (best-effort, never raises)."""
+        try:
+            from app.services.sync_dirty_service import SyncDirtyService
+
+            SyncDirtyService(self.db).mark_dirty(project_id, "projects", project_id, action)
+        except Exception:
+            pass

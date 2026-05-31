@@ -1,9 +1,7 @@
-from __future__ import annotations
-
 import os
-from pathlib import Path
 import sys
 import traceback
+from pathlib import Path
 
 import uvicorn
 
@@ -41,6 +39,7 @@ def prepare_environment() -> Path:
     # Set environment defaults
     os.environ.setdefault("ZHANGSHU_DATA_DIR", str(data_dir))
     os.environ.setdefault("ZHANGSHU_DB_FILENAME", DEFAULT_DB_FILENAME)
+    os.environ.setdefault("ZHANGSHU_CLOUD_API_BASE_URL", "https://api.emailbs.xin")
 
     # Frontend dist: look in bundle first, then base directory
     bundle_dir = get_bundle_dir()
@@ -48,6 +47,10 @@ def prepare_environment() -> Path:
     if not frontend_dist.exists():
         frontend_dist = base_dir / "frontend" / "dist"
     os.environ.setdefault("ZHANGSHU_FRONTEND_DIST", str(frontend_dist))
+
+    # In packaged mode, skip .env loading (no .env file exists)
+    if getattr(sys, "frozen", False):
+        os.environ["ZHANGSHU_SKIP_DOTENV"] = "1"
 
     return logs_dir
 
@@ -64,11 +67,18 @@ def main() -> None:
     print(f"  Port: {port}")
     print(f"  Data Dir: {os.environ.get('ZHANGSHU_DATA_DIR')}")
 
+    # Port cleanup is handled by main.rs (Rust launcher).
+    # We skip duplicate port-killing here to save ~0.5s on startup.
+
     try:
         from app.main import app
 
         print(f"FastAPI app loaded, starting uvicorn...")
-        uvicorn.run(app, host=host, port=port, log_level="info")
+        config = uvicorn.Config(
+            app, host=host, port=port, log_level="warning", access_log=False
+        )
+        server = uvicorn.Server(config)
+        server.run()
     except OSError as e:
         # Port likely in use
         error_path = logs_dir / "startup_error.log"

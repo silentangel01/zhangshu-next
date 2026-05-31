@@ -93,7 +93,9 @@ class GraphService:
             size=data.size,
             visibility=data.visibility,
         )
-        return self.node_repo.create(node)
+        created = self.node_repo.create(node)
+        self._mark_dirty(project_id, created.id, "graph_nodes", "upsert")
+        return created
 
     def get_graph_node(self, node_id: str) -> GraphNode:
         node = self.node_repo.get_active(node_id)
@@ -109,14 +111,18 @@ class GraphService:
         bound_id = values.get("bound_id", node.bound_id)
         self._validate_bound_reference(node.project_id, bound_type, bound_id)
 
-        return self.node_repo.update(node, values)
+        updated = self.node_repo.update(node, values)
+        self._mark_dirty(node.project_id, node_id, "graph_nodes", "upsert")
+        return updated
 
     def delete_graph_node(self, node_id: str) -> GraphNode:
         node = self.get_graph_node(node_id)
         connected_edges = self.edge_repo.list_active_connected_to_node(node.id)
         for edge in connected_edges:
             self.edge_repo.soft_delete(edge, commit=False)
+            self._mark_dirty(node.project_id, edge.id, "graph_edges", "delete")
         deleted = self.node_repo.soft_delete(node, commit=False)
+        self._mark_dirty(node.project_id, node_id, "graph_nodes", "delete")
         self.db.commit()
         self.db.refresh(deleted)
         return deleted
@@ -152,7 +158,9 @@ class GraphService:
             line_style=data.line_style,
             visibility=data.visibility,
         )
-        return self.edge_repo.create(edge)
+        created = self.edge_repo.create(edge)
+        self._mark_dirty(project_id, created.id, "graph_edges", "upsert")
+        return created
 
     def get_graph_edge(self, edge_id: str) -> GraphEdge:
         edge = self.edge_repo.get_active(edge_id)
@@ -168,16 +176,29 @@ class GraphService:
         to_node_id = values.get("to_node_id", edge.to_node_id)
         self._validate_node_pair(edge.project_id, from_node_id, to_node_id)
 
-        return self.edge_repo.update(edge, values)
+        updated = self.edge_repo.update(edge, values)
+        self._mark_dirty(edge.project_id, edge_id, "graph_edges", "upsert")
+        return updated
 
     def delete_graph_edge(self, edge_id: str) -> GraphEdge:
         edge = self.get_graph_edge(edge_id)
-        return self.edge_repo.soft_delete(edge)
+        deleted = self.edge_repo.soft_delete(edge)
+        self._mark_dirty(edge.project_id, edge_id, "graph_edges", "delete")
+        return deleted
 
     def _ensure_project_exists(self, project_id: str) -> None:
         project = self.project_repo.get_active(project_id)
         if project is None:
             raise GraphProjectNotFoundError
+
+    def _mark_dirty(self, project_id: str, entity_id: str, entity_type: str, action: str) -> None:
+        """Mark a graph entity as dirty for cloud sync (best-effort, never raises)."""
+        try:
+            from app.services.sync_dirty_service import SyncDirtyService
+
+            SyncDirtyService(self.db).mark_dirty(project_id, entity_type, entity_id, action)
+        except Exception:
+            pass
 
     def _validate_bound_reference(
         self,

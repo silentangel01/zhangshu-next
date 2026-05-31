@@ -37,6 +37,7 @@ class TimelineSettingProjectMismatchError(Exception):
 
 class TimelineService:
     def __init__(self, db: Session):
+        self.db = db
         self.timeline_repo = TimelineRepository(db)
         self.project_repo = ProjectRepository(db)
         self.chapter_repo = ChapterRepository(db)
@@ -87,6 +88,7 @@ class TimelineService:
 
         event = TimelineEvent(id=str(uuid4()), project_id=project_id, **values)
         created = self.timeline_repo.create(event)
+        self._mark_dirty(project_id, created.id, "upsert")
         return self._to_read_payload(created)
 
     def get_timeline_event(self, event_id: str) -> dict[str, object]:
@@ -114,6 +116,7 @@ class TimelineService:
             values.pop("position_ratio")
 
         updated = self.timeline_repo.update(event, values)
+        self._mark_dirty(event.project_id, event_id, "upsert")
         return self._to_read_payload(updated)
 
     def delete_timeline_event(self, event_id: str) -> dict[str, object]:
@@ -121,12 +124,22 @@ class TimelineService:
         if event is None:
             raise TimelineEventNotFoundError
         deleted = self.timeline_repo.soft_delete(event)
+        self._mark_dirty(event.project_id, event_id, "delete")
         return self._to_read_payload(deleted)
 
     def _ensure_project_exists(self, project_id: str) -> None:
         project = self.project_repo.get_active(project_id)
         if project is None:
             raise TimelineProjectNotFoundError
+
+    def _mark_dirty(self, project_id: str, entity_id: str, action: str) -> None:
+        """Mark the timeline event as dirty for cloud sync (best-effort, never raises)."""
+        try:
+            from app.services.sync_dirty_service import SyncDirtyService
+
+            SyncDirtyService(self.db).mark_dirty(project_id, "timeline_events", entity_id, action)
+        except Exception:
+            pass
 
     def _validate_chapter(self, project_id: str, chapter_id: object) -> None:
         if chapter_id is None:

@@ -697,6 +697,57 @@ class CloudApiClient:
             "GET", f"/api/feedback?limit={limit}&offset={offset}"
         )
 
+    # ── Public API: Incremental Sync ────────────────────────────────
+
+    def sync_push(
+        self,
+        cloud_project_id: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Push local changes to the cloud sync endpoint."""
+        return self._request(
+            "POST",
+            f"/api/projects/{cloud_project_id}/sync/push",
+            json=payload,
+        )
+
+    def sync_pull(
+        self,
+        cloud_project_id: str,
+        cursor: int = 0,
+        limit: int = 200,
+    ) -> dict[str, Any]:
+        """Pull remote changes since cursor."""
+        return self._request(
+            "GET",
+            f"/api/projects/{cloud_project_id}/sync/pull?cursor={cursor}&limit={limit}",
+        )
+
+    def list_sync_snapshots(
+        self,
+        cloud_project_id: str,
+        entity_type: str,
+        entity_id: str,
+    ) -> list[dict[str, Any]]:
+        """List cloud sync snapshots for a specific entity."""
+        return self._request(
+            "GET",
+            f"/api/projects/{cloud_project_id}/sync/snapshots"
+            f"?entity_type={entity_type}&entity_id={entity_id}",
+        )
+
+    def list_sync_conflicts(
+        self,
+        cloud_project_id: str,
+        resolved: bool = False,
+    ) -> list[dict[str, Any]]:
+        """List cloud sync conflicts for a project."""
+        resolved_str = "true" if resolved else "false"
+        return self._request(
+            "GET",
+            f"/api/projects/{cloud_project_id}/sync/conflicts?resolved={resolved_str}",
+        )
+
 
 # ── OSS error parsing ────────────────────────────────────────────────
 

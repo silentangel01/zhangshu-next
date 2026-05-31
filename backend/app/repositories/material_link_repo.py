@@ -31,6 +31,7 @@ class MaterialLinkRepository:
             .join(Character, TimelineEventCharacter.character_id == Character.id)
             .where(
                 TimelineEventCharacter.timeline_event_id == event_id,
+                TimelineEventCharacter.deleted_at.is_(None),
                 Character.deleted_at.is_(None),
             )
             .order_by(TimelineEventCharacter.created_at.asc())
@@ -43,6 +44,7 @@ class MaterialLinkRepository:
             .join(SettingItem, TimelineEventSetting.setting_id == SettingItem.id)
             .where(
                 TimelineEventSetting.timeline_event_id == event_id,
+                TimelineEventSetting.deleted_at.is_(None),
                 SettingItem.deleted_at.is_(None),
             )
             .order_by(TimelineEventSetting.created_at.asc())
@@ -55,6 +57,7 @@ class MaterialLinkRepository:
             .join(Clue, TimelineEventClue.clue_id == Clue.id)
             .where(
                 TimelineEventClue.timeline_event_id == event_id,
+                TimelineEventClue.deleted_at.is_(None),
                 Clue.deleted_at.is_(None),
             )
             .order_by(TimelineEventClue.created_at.asc())
@@ -67,6 +70,7 @@ class MaterialLinkRepository:
             .join(Character, OutlineItemCharacter.character_id == Character.id)
             .where(
                 OutlineItemCharacter.outline_item_id == outline_item_id,
+                OutlineItemCharacter.deleted_at.is_(None),
                 Character.deleted_at.is_(None),
             )
             .order_by(OutlineItemCharacter.created_at.asc())
@@ -79,6 +83,7 @@ class MaterialLinkRepository:
             .join(SettingItem, OutlineItemSetting.setting_id == SettingItem.id)
             .where(
                 OutlineItemSetting.outline_item_id == outline_item_id,
+                OutlineItemSetting.deleted_at.is_(None),
                 SettingItem.deleted_at.is_(None),
             )
             .order_by(OutlineItemSetting.created_at.asc())
@@ -91,6 +96,7 @@ class MaterialLinkRepository:
             .join(Clue, OutlineItemClue.clue_id == Clue.id)
             .where(
                 OutlineItemClue.outline_item_id == outline_item_id,
+                OutlineItemClue.deleted_at.is_(None),
                 Clue.deleted_at.is_(None),
             )
             .order_by(OutlineItemClue.created_at.asc())
@@ -106,6 +112,7 @@ class MaterialLinkRepository:
             .join(TimelineEvent, OutlineItemTimelineEvent.timeline_event_id == TimelineEvent.id)
             .where(
                 OutlineItemTimelineEvent.outline_item_id == outline_item_id,
+                OutlineItemTimelineEvent.deleted_at.is_(None),
                 TimelineEvent.deleted_at.is_(None),
             )
             .order_by(OutlineItemTimelineEvent.created_at.asc())
@@ -119,11 +126,16 @@ class MaterialLinkRepository:
         source_id: str,
         target_field: str,
         target_id: str,
+        *,
+        include_deleted: bool = False,
     ) -> Any | None:
-        statement = select(model).where(
+        conditions = [
             getattr(model, source_field) == source_id,
             getattr(model, target_field) == target_id,
-        )
+        ]
+        if not include_deleted:
+            conditions.append(model.deleted_at.is_(None))
+        statement = select(model).where(*conditions)
         return self.db.scalar(statement)
 
     def create(self, link: Any) -> Any:
@@ -137,14 +149,37 @@ class MaterialLinkRepository:
             setattr(link, field, value)
 
         link.updated_at = utc_now()
+        link.version = (link.version or 0) + 1
         self.db.commit()
         self.db.refresh(link)
         return link
 
-    def delete(self, link: Any) -> None:
-        self.db.delete(link)
+    def revive(self, link: Any, values: dict[str, object]) -> Any:
+        """Revive a soft-deleted link by clearing deleted_at and applying new values."""
+        link.deleted_at = None
+        for field, value in values.items():
+            setattr(link, field, value)
+        link.updated_at = utc_now()
+        link.version = (link.version or 0) + 1
         self.db.commit()
+        self.db.refresh(link)
+        return link
+
+    def delete(self, link: Any) -> Any:
+        link.deleted_at = utc_now()
+        link.updated_at = utc_now()
+        link.version = (link.version or 0) + 1
+        self.db.commit()
+        self.db.refresh(link)
+        return link
 
     def count_by_project(self, model: type[Any], project_id: str) -> int:
-        statement = select(func.count()).select_from(model).where(model.project_id == project_id)
+        statement = (
+            select(func.count())
+            .select_from(model)
+            .where(
+                model.project_id == project_id,
+                model.deleted_at.is_(None),
+            )
+        )
         return int(self.db.scalar(statement) or 0)

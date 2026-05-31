@@ -27,6 +27,7 @@ class ClueSettingProjectMismatchError(Exception):
 
 class ClueSettingService:
     def __init__(self, db: Session):
+        self.db = db
         self.link_repo = ClueSettingRepository(db)
         self.clue_repo = ClueRepository(db)
         self.setting_repo = SettingRepository(db)
@@ -54,13 +55,16 @@ class ClueSettingService:
             relation_type=data.relation_type,
             note=data.note,
         )
-        return self._to_read_payload(self.link_repo.create(link), setting)
+        created = self.link_repo.create(link)
+        self._mark_dirty(clue.project_id, created.id, "upsert")
+        return self._to_read_payload(created, setting)
 
     def update_clue_setting(self, link_id: str, data: ClueSettingUpdate) -> dict[str, object]:
         link = self.link_repo.get(link_id)
         if link is None:
             raise ClueSettingLinkNotFoundError
         updated = self.link_repo.update(link, data.model_dump(exclude_unset=True))
+        self._mark_dirty(link.project_id, link.id, "upsert")
         setting = self.setting_repo.get_active(updated.setting_item_id)
         if setting is None:
             raise ClueSettingItemNotFoundError
@@ -70,7 +74,17 @@ class ClueSettingService:
         link = self.link_repo.get(link_id)
         if link is None:
             raise ClueSettingLinkNotFoundError
-        self.link_repo.delete(link)
+        deleted = self.link_repo.delete(link)
+        self._mark_dirty(link.project_id, deleted.id, "delete")
+
+    def _mark_dirty(self, project_id: str, entity_id: str, action: str) -> None:
+        """Mark a clue_setting as dirty for cloud sync (best-effort, never raises)."""
+        try:
+            from app.services.sync_dirty_service import SyncDirtyService
+
+            SyncDirtyService(self.db).mark_dirty(project_id, "clue_settings", entity_id, action)
+        except Exception:
+            pass
 
     def _to_read_payload(self, link: ClueSetting, setting) -> dict[str, object]:
         return {

@@ -90,6 +90,21 @@ class CloudBackupService:
                 ) from exc
             except Exception as exc:
                 raise CloudBackupError(f"创建云端项目失败：{exc}") from exc
+        else:
+            # Phase 3: Validate project identity before linking
+            from app.services.cloud_sync_service import CloudSyncError, CloudSyncService
+
+            try:
+                sync_svc = CloudSyncService(self._db)
+                sync_svc.validate_link_existing_project(
+                    project_id, cloud_project_id, cloud_user_id
+                )
+            except CloudSyncError as exc:
+                raise CloudBackupError(
+                    str(exc),
+                    error_kind=exc.error_kind,
+                    suggestion=exc.suggestion,
+                ) from exc
 
         link = CloudProjectLink(
             id=str(uuid4()),

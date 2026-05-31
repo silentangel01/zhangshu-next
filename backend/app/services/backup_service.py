@@ -23,10 +23,17 @@ from app.models.clue_setting import ClueSetting
 from app.models.graph_edge import GraphEdge
 from app.models.graph_node import GraphNode
 from app.models.outline_item import OutlineItem
+from app.models.outline_item_character import OutlineItemCharacter
+from app.models.outline_item_clue import OutlineItemClue
+from app.models.outline_item_setting import OutlineItemSetting
+from app.models.outline_item_timeline_event import OutlineItemTimelineEvent
 from app.models.project import Project
 from app.models.setting_item import SettingItem
 from app.models.timeline_edge import TimelineEdge
 from app.models.timeline_event import TimelineEvent
+from app.models.timeline_event_character import TimelineEventCharacter
+from app.models.timeline_event_clue import TimelineEventClue
+from app.models.timeline_event_setting import TimelineEventSetting
 from app.models.timeline_track import TimelineTrack
 from app.models.volume import Volume
 from app.schemas.backup import RestoreCounts, RestoreReport
@@ -73,6 +80,13 @@ ENTITY_MODELS = {
     "chapter_settings": ChapterSetting,
     "clue_characters": ClueCharacter,
     "clue_settings": ClueSetting,
+    "timeline_event_characters": TimelineEventCharacter,
+    "timeline_event_settings": TimelineEventSetting,
+    "timeline_event_clues": TimelineEventClue,
+    "outline_item_characters": OutlineItemCharacter,
+    "outline_item_settings": OutlineItemSetting,
+    "outline_item_clues": OutlineItemClue,
+    "outline_item_timeline_events": OutlineItemTimelineEvent,
 }
 
 
@@ -94,6 +108,13 @@ PROJECT_CHILDREN = [
     "chapter_settings",
     "clue_characters",
     "clue_settings",
+    "timeline_event_characters",
+    "timeline_event_settings",
+    "timeline_event_clues",
+    "outline_item_characters",
+    "outline_item_settings",
+    "outline_item_clues",
+    "outline_item_timeline_events",
 ]
 
 
@@ -115,6 +136,13 @@ RESTORE_ORDER = [
     "chapter_settings",
     "clue_characters",
     "clue_settings",
+    "timeline_event_characters",
+    "timeline_event_settings",
+    "timeline_event_clues",
+    "outline_item_characters",
+    "outline_item_settings",
+    "outline_item_clues",
+    "outline_item_timeline_events",
 ]
 
 
@@ -177,6 +205,41 @@ REFERENCE_FIELDS = {
         "project_id": "project",
         "clue_id": "clues",
         "setting_item_id": "settings",
+    },
+    "timeline_event_characters": {
+        "project_id": "project",
+        "timeline_event_id": "timeline_events",
+        "character_id": "characters",
+    },
+    "timeline_event_settings": {
+        "project_id": "project",
+        "timeline_event_id": "timeline_events",
+        "setting_id": "settings",
+    },
+    "timeline_event_clues": {
+        "project_id": "project",
+        "timeline_event_id": "timeline_events",
+        "clue_id": "clues",
+    },
+    "outline_item_characters": {
+        "project_id": "project",
+        "outline_item_id": "outlines",
+        "character_id": "characters",
+    },
+    "outline_item_settings": {
+        "project_id": "project",
+        "outline_item_id": "outlines",
+        "setting_id": "settings",
+    },
+    "outline_item_clues": {
+        "project_id": "project",
+        "outline_item_id": "outlines",
+        "clue_id": "clues",
+    },
+    "outline_item_timeline_events": {
+        "project_id": "project",
+        "outline_item_id": "outlines",
+        "timeline_event_id": "timeline_events",
     },
 }
 

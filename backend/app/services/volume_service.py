@@ -18,6 +18,7 @@ class VolumeProjectNotFoundError(Exception):
 
 class VolumeService:
     def __init__(self, db: Session):
+        self.db = db
         self.project_repo = ProjectRepository(db)
         self.volume_repo = VolumeRepository(db)
 
@@ -33,16 +34,22 @@ class VolumeService:
             title=data.title,
             order_index=data.order_index,
         )
-        return self.volume_repo.create(volume)
+        created = self.volume_repo.create(volume)
+        self._mark_dirty(project_id, created.id, "upsert")
+        return created
 
     def update_volume(self, volume_id: str, data: VolumeUpdate) -> Volume:
         volume = self.get_volume(volume_id)
         values = data.model_dump(exclude_unset=True)
-        return self.volume_repo.update(volume, values)
+        updated = self.volume_repo.update(volume, values)
+        self._mark_dirty(volume.project_id, volume_id, "upsert")
+        return updated
 
     def delete_volume(self, volume_id: str) -> Volume:
         volume = self.get_volume(volume_id)
-        return self.volume_repo.soft_delete(volume)
+        deleted = self.volume_repo.soft_delete(volume)
+        self._mark_dirty(volume.project_id, volume_id, "delete")
+        return deleted
 
     def get_volume(self, volume_id: str) -> Volume:
         volume = self.volume_repo.get_active(volume_id)
@@ -54,3 +61,12 @@ class VolumeService:
         project = self.project_repo.get_active(project_id)
         if project is None:
             raise VolumeProjectNotFoundError
+
+    def _mark_dirty(self, project_id: str, entity_id: str, action: str) -> None:
+        """Mark the volume as dirty for cloud sync (best-effort, never raises)."""
+        try:
+            from app.services.sync_dirty_service import SyncDirtyService
+
+            SyncDirtyService(self.db).mark_dirty(project_id, "volumes", entity_id, action)
+        except Exception:
+            pass

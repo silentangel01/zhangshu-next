@@ -21,6 +21,7 @@ class ChapterSettingRepository:
             .join(SettingItem, ChapterSetting.setting_item_id == SettingItem.id)
             .where(
                 ChapterSetting.chapter_id == chapter_id,
+                ChapterSetting.deleted_at.is_(None),
                 SettingItem.deleted_at.is_(None),
             )
             .order_by(
@@ -45,10 +46,15 @@ class ChapterSettingRepository:
             setattr(link, field, value)
 
         link.updated_at = utc_now()
+        link.version = (link.version or 0) + 1
         self.db.commit()
         self.db.refresh(link)
         return link
 
-    def delete(self, link: ChapterSetting) -> None:
-        self.db.delete(link)
+    def delete(self, link: ChapterSetting) -> ChapterSetting:
+        link.deleted_at = utc_now()
+        link.updated_at = utc_now()
+        link.version = (link.version or 0) + 1
         self.db.commit()
+        self.db.refresh(link)
+        return link

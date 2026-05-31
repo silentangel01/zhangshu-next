@@ -21,6 +21,7 @@ class ChapterCharacterRepository:
             .join(Character, ChapterCharacter.character_id == Character.id)
             .where(
                 ChapterCharacter.chapter_id == chapter_id,
+                ChapterCharacter.deleted_at.is_(None),
                 Character.deleted_at.is_(None),
             )
             .order_by(ChapterCharacter.created_at.asc())
@@ -42,10 +43,15 @@ class ChapterCharacterRepository:
             setattr(link, field, value)
 
         link.updated_at = utc_now()
+        link.version = (link.version or 0) + 1
         self.db.commit()
         self.db.refresh(link)
         return link
 
-    def delete(self, link: ChapterCharacter) -> None:
-        self.db.delete(link)
+    def delete(self, link: ChapterCharacter) -> ChapterCharacter:
+        link.deleted_at = utc_now()
+        link.updated_at = utc_now()
+        link.version = (link.version or 0) + 1
         self.db.commit()
+        self.db.refresh(link)
+        return link

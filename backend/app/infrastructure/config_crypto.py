@@ -9,8 +9,6 @@ import getpass
 import hashlib
 import platform
 
-from cryptography.fernet import Fernet
-
 _APP_SALT = b"zhangshu-app-config-salt-v1"
 
 # Keys whose values must be encrypted before writing to SQLite
@@ -32,7 +30,9 @@ def _derive_fernet_key() -> bytes:
     return base64.urlsafe_b64encode(dk[:32])
 
 
-def _fernet() -> Fernet:
+def _fernet():
+    from cryptography.fernet import Fernet
+
     return Fernet(_derive_fernet_key())
 
 
