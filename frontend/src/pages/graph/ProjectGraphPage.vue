@@ -41,6 +41,7 @@ import GraphCanvas, { type GraphViewportState } from '@/features/graph/GraphCanv
 import GraphInspector, { type EdgeDraft, type NodeDraft } from '@/features/graph/GraphInspector.vue'
 import GraphToolbar, { type GraphToolMode } from '@/features/graph/GraphToolbar.vue'
 import { safeReadJson, safeWriteJson } from '@/shared/storage/localWorkspaceState'
+import { cloudSyncManager } from '@/features/cloud/cloudSyncManager'
 
 type Point = { x: number; y: number }
 type BindingKey = 'character' | 'setting' | 'clue' | 'timeline_event'
@@ -419,6 +420,7 @@ async function createNodeAt(point: Point, overrides: Partial<GraphNodeCreatePayl
     mode.value = 'select'
     successMessage.value = '节点已创建'
     errorMessage.value = ''
+    cloudSyncManager.notifyDirty(projectId.value)
   } catch (error) {
     void error
     errorMessage.value = '节点保存失败，请重试。'
@@ -450,6 +452,7 @@ async function createEdgeBetween(fromNodeId: string, toNodeId: string) {
     mode.value = 'select'
     successMessage.value = '关系已创建'
     errorMessage.value = ''
+    cloudSyncManager.notifyDirty(projectId.value)
   } catch (error) {
     void error
     errorMessage.value = '关系保存失败，请重试。'
@@ -474,6 +477,7 @@ async function saveNodePosition(node: GraphNode, x: number, y: number, previous:
     upsertNode(saved)
     successMessage.value = '节点位置已保存'
     errorMessage.value = ''
+    cloudSyncManager.notifyDirty(projectId.value)
   } catch (error) {
     void error
     nodes.value.splice(index, 1, { ...node, x: previous.x, y: previous.y })
@@ -497,6 +501,7 @@ async function saveNodeSize(node: GraphNode, width: number, height: number, prev
     upsertNode(saved)
     successMessage.value = '节点大小已保存'
     errorMessage.value = ''
+    cloudSyncManager.notifyDirty(projectId.value)
   } catch (error) {
     void error
     nodes.value.splice(index, 1, { ...node, width: previous.width, height: previous.height })
@@ -544,6 +549,7 @@ async function saveSelectedNode() {
     selectNode(saved)
     successMessage.value = '已保存'
     errorMessage.value = ''
+    cloudSyncManager.notifyDirty(projectId.value)
   } catch (error) {
     void error
     errorMessage.value = '节点保存失败，请重试。'
@@ -577,6 +583,7 @@ async function saveSelectedEdge() {
     selectEdge(saved)
     successMessage.value = '已保存'
     errorMessage.value = ''
+    cloudSyncManager.notifyDirty(projectId.value)
   } catch (error) {
     void error
     errorMessage.value = '关系保存失败，请重试。'
@@ -604,6 +611,7 @@ async function deleteSelectedNode(node = selectedNode.value) {
     await refreshGraphData()
     successMessage.value = '节点已删除'
     errorMessage.value = ''
+    cloudSyncManager.notifyDirty(projectId.value)
   } catch (error) {
     errorMessage.value = `节点删除失败，请重试${getErrorSuffix(error)}`
   } finally {
@@ -629,6 +637,7 @@ async function deleteSelectedEdge(edge = selectedEdge.value) {
     await refreshGraphData()
     successMessage.value = '关系已删除'
     errorMessage.value = ''
+    cloudSyncManager.notifyDirty(projectId.value)
   } catch (error) {
     errorMessage.value = `关系删除失败，请重试${getErrorSuffix(error)}`
   } finally {
@@ -729,6 +738,7 @@ async function createMaterialFromSelectedNode() {
     await loadBindingData()
     successMessage.value = '已创建并绑定资料'
     errorMessage.value = ''
+    cloudSyncManager.notifyDirty(projectId.value)
   } catch (error) {
     errorMessage.value = `资料创建失败，请重试${getErrorSuffix(error)}`
   } finally {
@@ -801,6 +811,7 @@ async function bindNodeToMaterial(
   selectNode(saved)
   successMessage.value = message
   errorMessage.value = ''
+  cloudSyncManager.notifyDirty(projectId.value)
 }
 
 function handleBoundTypeChanged() {

@@ -41,6 +41,8 @@ import AppSettingsDialog from '@/features/app-config/AppSettingsDialog.vue'
 import CreateVolumeDialog from '@/features/volumes/CreateVolumeDialog.vue'
 import EditVolumeDialog from '@/features/volumes/EditVolumeDialog.vue'
 import WritingAidPanel from '@/features/writing/WritingAidPanel.vue'
+import CloudSyncStatusIndicator from '@/features/cloud/CloudSyncStatusIndicator.vue'
+import { cloudSyncManager } from '@/features/cloud/cloudSyncManager'
 import { safeReadJson, safeWriteJson } from '@/shared/storage/localWorkspaceState'
 import { formatDateTime } from '@/shared/utils/formatDateTime'
 
@@ -254,6 +256,7 @@ async function handleCreateVolume(payload: CreateVolumePayload) {
     await createVolume(projectId.value, payload)
     showCreateVolumeDialog.value = false
     await refreshVolumesAndChapters()
+    cloudSyncManager.notifyDirty(projectId.value)
   }, '新建分卷失败。')
 }
 
@@ -268,6 +271,7 @@ async function handleEditVolume(payload: UpdateVolumePayload) {
     await updateVolume(volume.id, payload)
     editingVolume.value = null
     await refreshVolumesAndChapters()
+    cloudSyncManager.notifyDirty(projectId.value)
   }, '更新分卷失败。')
 }
 
@@ -281,6 +285,7 @@ async function handleDeleteVolume(volume: Volume) {
   await saveChange(async () => {
     await deleteVolume(volume.id)
     await refreshVolumesAndChapters()
+    cloudSyncManager.notifyDirty(projectId.value)
   }, '删除分卷失败。')
 }
 
@@ -294,6 +299,7 @@ async function handleCreateChapter(payload: CreateChapterPayload) {
     showCreateChapterDialog.value = false
     createChapterVolumeId.value = null
     await refreshVolumesAndChapters()
+    cloudSyncManager.notifyDirty(projectId.value)
   }, '新建章节失败。')
 }
 
@@ -326,6 +332,7 @@ async function handleEditChapter(payload: UpdateChapterMetadataPayload) {
     editingChapter.value = null
     selectedChapter.value = selectedChapter.value?.id === updatedChapter.id ? updatedChapter : selectedChapter.value
     await refreshVolumesAndChapters()
+    cloudSyncManager.notifyDirty(projectId.value)
   }, '更新章节信息失败。')
 }
 
@@ -348,6 +355,7 @@ async function handleDeleteChapter(chapter: Chapter) {
       saveWorkspaceViewState({ selectedChapterId: null })
     }
     await refreshVolumesAndChapters()
+    cloudSyncManager.notifyDirty(projectId.value)
   }, '删除章节失败。')
 }
 
@@ -369,6 +377,7 @@ async function handleReorderChapters(payload: ReorderChaptersPayload) {
       treeMessageTone.value = 'success'
       treeMessage.value = '章节顺序已更新'
     }
+    cloudSyncManager.notifyDirty(projectId.value)
   }, '章节移动失败，请重试')
 }
 
@@ -378,13 +387,21 @@ async function handleSelectChapter(chapter: Chapter) {
   }
 
   if (isEditorDirty.value) {
-    const confirmed = window.confirm('当前章节有未保存内容，是否放弃更改并切换章节？')
+    const saveFirst = window.confirm(
+      '当前章节有未保存的更改，是否在切换前保存？\n\n点击"确定"保存后切换，点击"取消"放弃更改。',
+    )
 
-    if (!confirmed) {
-      return
+    if (saveFirst) {
+      try {
+        await chapterEditor.value?.saveNow?.()
+      } catch {
+        const force = window.confirm('保存失败，是否仍然切换章节？（未保存的更改将丢失）')
+        if (!force) return
+        chapterEditor.value?.cancelPendingAutosave()
+      }
+    } else {
+      chapterEditor.value?.cancelPendingAutosave()
     }
-
-    chapterEditor.value?.cancelPendingAutosave()
   }
 
   isChapterLoading.value = true
@@ -446,6 +463,7 @@ async function handleCreateVersionSnapshot() {
     })
     await loadChapterVersions(chapter.id)
     versionMessage.value = '版本快照已创建。'
+    cloudSyncManager.notifyDirty(projectId.value)
   } catch (error) {
     versionErrorMessage.value = getErrorMessage(error, '创建版本快照失败。')
   } finally {
@@ -493,6 +511,7 @@ async function handleRestoreVersion(versionId: string) {
     await refreshVolumesAndChapters()
     await loadChapterVersions(restoredChapter.id)
     versionMessage.value = '版本恢复成功。'
+    cloudSyncManager.notifyDirty(projectId.value)
   } catch (error) {
     versionErrorMessage.value = getErrorMessage(error, '版本恢复失败。')
   } finally {
@@ -547,6 +566,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
         <p class="eyebrow">写作工作区</p>
       </div>
       <div class="header-actions">
+        <CloudSyncStatusIndicator />
         <RouterLink class="toolbar-link" :to="`/projects/${projectId}/search`">搜索</RouterLink>
         <RouterLink class="toolbar-link" :to="`/projects/${projectId}/review`">检查</RouterLink>
         <RouterLink class="toolbar-link" :to="`/projects/${projectId}/stats`">统计</RouterLink>
@@ -635,7 +655,6 @@ function getErrorMessage(error: unknown, fallback: string): string {
                 {{ getStatusLabel(project.status) }}
               </span>
               <span class="status-pill">未选择章节</span>
-              <span v-if="project" class="version">v{{ project.version }}</span>
             </div>
           </header>
 
@@ -758,7 +777,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
   min-height: 100vh;
   box-sizing: border-box;
   overflow-x: hidden;
-  padding: var(--zs-space-6);
+  padding: var(--top-bar-clearance, var(--zs-space-6)) var(--zs-space-6) var(--zs-space-6);
   background: var(--zs-color-bg);
   color: var(--zs-color-text);
 }

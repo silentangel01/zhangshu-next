@@ -17,7 +17,7 @@
     "tauri:dev": "cross-env VITE_API_BASE_URL=http://127.0.0.1:8765 tauri dev",
     "tauri:build:frontend": "cross-env VITE_API_BASE_URL=http://127.0.0.1:8765 npm run build",
     "tauri:build": "npm run tauri:build:frontend && tauri build",
-    "tauri:build:backend": "cd .. && backend\\.venv\\Scripts\\python.exe -m PyInstaller --noconfirm --clean --onefile --name zhangshu-backend --distpath frontend/src-tauri/binaries --workpath build/pyinstaller-sidecar --specpath build/spec-sidecar backend/tauri_sidecar_main.py && node -e \"require('fs').copyFileSync('src-tauri/binaries/zhangshu-backend.exe','src-tauri/binaries/zhangshu-backend-x86_64-pc-windows-msvc.exe')\""
+    "tauri:build:backend": "cd .. && backend\\.venv\\Scripts\\python.exe -m PyInstaller --noconfirm --clean --onedir --name zhangshu-backend --distpath frontend/src-tauri/binaries --workpath build/pyinstaller-sidecar --specpath build/spec-sidecar backend/tauri_sidecar_main.py"
   },
   "dependencies": {
     "pinia": "^3.0.4",

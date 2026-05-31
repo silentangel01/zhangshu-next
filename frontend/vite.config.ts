@@ -14,8 +14,6 @@ export default defineConfig({
   cacheDir: `.vite-cache-${process.pid}`,
   define: {
     __ZHANGSHU_APP_VERSION__: JSON.stringify(pkg.version),
-    // API base URL is empty so requests go through Vite proxy to port 8000.
-    'import.meta.env.VITE_API_BASE_URL': JSON.stringify(''),
     'import.meta.env.VITE_APP_VERSION': JSON.stringify(pkg.version),
   },
   plugins: [

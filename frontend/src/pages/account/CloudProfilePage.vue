@@ -41,8 +41,12 @@ onMounted(async () => {
 
 async function loadProfile() {
   try {
-    profile.value = await getCloudAccountProfile()
-    usage.value = await getCloudUsage()
+    const [profileResult, usageResult] = await Promise.all([
+      getCloudAccountProfile(),
+      getCloudUsage(),
+    ])
+    profile.value = profileResult
+    usage.value = usageResult
   } catch (err: unknown) {
     const status = (err as { status?: number })?.status
     if (status === 401) {

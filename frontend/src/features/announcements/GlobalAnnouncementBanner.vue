@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 
 import { listAnnouncements } from '@/entities/announcement/api'
 import type { Announcement } from '@/entities/announcement/types'
@@ -11,6 +11,32 @@ const DISMISSED_KEY = 'zhangshu:dismissed-announcements'
 const currentAnnouncement = ref<Announcement | null>(null)
 const showDetail = ref(false)
 const isLoading = ref(true)
+const bannerEl = ref<HTMLElement | null>(null)
+
+/**
+ * Communicate banner height to the fixed top-bar via a CSS custom property
+ * on <html>. When the banner is hidden the value resets to 0.
+ */
+let ro: ResizeObserver | undefined
+
+function updateBannerHeight() {
+  const el = bannerEl.value
+  document.documentElement.style.setProperty(
+    '--banner-height',
+    el ? `${el.offsetHeight}px` : '0px',
+  )
+}
+
+watch(bannerEl, (el) => {
+  if (el && ro) {
+    ro.observe(el)
+    requestAnimationFrame(updateBannerHeight)
+  }
+})
+
+watch([currentAnnouncement, isLoading], () => {
+  requestAnimationFrame(updateBannerHeight)
+})
 
 onMounted(async () => {
   try {
@@ -28,6 +54,15 @@ onMounted(async () => {
   } finally {
     isLoading.value = false
   }
+
+  if (typeof ResizeObserver !== 'undefined') {
+    ro = new ResizeObserver(() => updateBannerHeight())
+  }
+})
+
+onUnmounted(() => {
+  ro?.disconnect()
+  document.documentElement.style.setProperty('--banner-height', '0px')
 })
 
 function dismiss() {
@@ -88,6 +123,7 @@ function severityLabel(severity: string): string {
   <Transition name="banner-slide">
     <div
       v-if="currentAnnouncement && !isLoading"
+      ref="bannerEl"
       :class="['announcement-banner', `severity-${currentAnnouncement.severity}`]"
     >
       <span class="banner-severity">{{ severityLabel(currentAnnouncement.severity) }}</span>

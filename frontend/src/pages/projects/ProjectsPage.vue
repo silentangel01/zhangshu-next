@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 
 import defaultBookCover from '@/assets/default-book-cover.svg'
 import { getCloudAccountStatus } from '@/entities/cloud/api'
 import type { CloudAccountStatus } from '@/entities/cloud/types'
 import CloudAccountDialog from '@/features/cloud/CloudAccountDialog.vue'
+import CloudProjectImportDialog from '@/features/cloud/CloudProjectImportDialog.vue'
 import {
   createProject,
   deleteProject,
@@ -75,6 +76,8 @@ const showCreateDialog = ref(false)
 const editingProject = ref<Project | null>(null)
 const isFilterPanelOpen = ref(false)
 const showCloudDialog = ref(false)
+const showImportDialog = ref(false)
+const showImportMenu = ref(false)
 const cloudAccountStatus = ref<CloudAccountStatus | null>(null)
 
 const searchKeyword = ref('')
@@ -95,7 +98,34 @@ const displayedProjects = computed(() => {
 onMounted(() => {
   void refreshProjects()
   void loadCloudStatus()
+  document.addEventListener('click', handleOutsideClick)
 })
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleOutsideClick)
+})
+
+function handleOutsideClick(event: MouseEvent) {
+  const target = event.target as HTMLElement
+  if (!target.closest('.import-dropdown')) {
+    showImportMenu.value = false
+  }
+}
+
+function toggleImportMenu(event: MouseEvent) {
+  event.stopPropagation()
+  showImportMenu.value = !showImportMenu.value
+}
+
+function handleFileImport() {
+  showImportMenu.value = false
+  router.push('/imports')
+}
+
+function handleCloudImport() {
+  showImportMenu.value = false
+  showImportDialog.value = true
+}
 
 async function loadCloudStatus() {
   try {
@@ -273,7 +303,24 @@ function handleCloudAccountClick() {
         >
           {{ cloudAccountStatus?.logged_in ? cloudAccountStatus.email ?? '云账户' : '云账户' }}
         </button>
-        <RouterLink class="secondary-link" to="/imports">导入作品</RouterLink>
+        <div class="import-dropdown">
+          <button
+            class="secondary-link import-trigger"
+            type="button"
+            @click="toggleImportMenu"
+          >
+            导入
+            <span class="caret" aria-hidden="true">▾</span>
+          </button>
+          <ul v-show="showImportMenu" class="import-menu">
+            <li>
+              <button type="button" @click="handleFileImport">从文件导入</button>
+            </li>
+            <li v-if="cloudAccountStatus?.logged_in">
+              <button type="button" @click="handleCloudImport">从云端恢复</button>
+            </li>
+          </ul>
+        </div>
         <RouterLink class="secondary-link" to="/backup">备份恢复</RouterLink>
         <button class="primary-button" type="button" :disabled="isSaving" @click="showCreateDialog = true">
           新建书籍
@@ -429,6 +476,12 @@ function handleCloudAccountClick() {
     <CloudAccountDialog
       v-if="showCloudDialog"
       @close="showCloudDialog = false; loadCloudStatus()"
+    />
+
+    <CloudProjectImportDialog
+      v-if="showImportDialog"
+      @close="showImportDialog = false"
+      @imported="refreshProjects()"
     />
   </main>
 </template>
@@ -701,6 +754,56 @@ h1 {
 .cloud-account-button {
   cursor: pointer;
   font: inherit;
+}
+
+.import-dropdown {
+  position: relative;
+}
+
+.import-trigger {
+  cursor: pointer;
+  font: inherit;
+  gap: 4px;
+}
+
+.import-trigger .caret {
+  font-size: 0.7em;
+  opacity: 0.6;
+}
+
+.import-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 100;
+  min-width: 140px;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  border: 1px solid var(--zs-color-border);
+  border-radius: 6px;
+  background: var(--zs-color-surface);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+.import-menu li button {
+  display: block;
+  width: 100%;
+  min-height: 36px;
+  border: none;
+  border-radius: 0;
+  padding: 0 14px;
+  background: none;
+  color: var(--zs-color-text);
+  font: inherit;
+  font-weight: 400;
+  font-size: 0.86rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.import-menu li button:hover {
+  background: var(--zs-color-surface-soft, #f5f5f5);
 }
 
 button {

@@ -9,6 +9,8 @@ import {
   listProjectCharacters,
   updateCharacter,
 } from '@/entities/character/api'
+import { cloudSyncManager } from '@/features/cloud/cloudSyncManager'
+import { useDebouncedAutosave } from '@/shared/composables/useDebouncedAutosave'
 import type {
   Character,
   CharacterImportance,
@@ -62,6 +64,69 @@ const form = reactive({
   notes: '',
 })
 
+let isApplyingForm = false
+let lastSavedPayload = ''
+
+function buildCharacterPayload() {
+  return {
+    name: form.name,
+    role: form.role,
+    importance: form.importance,
+    status: form.status,
+    faction: form.faction.trim() || null,
+    summary: form.summary,
+    biography: form.biography,
+    appearance: form.appearance,
+    personality: form.personality,
+    background: form.background,
+    ability: form.ability,
+    motivation: form.motivation,
+    secret: form.secret,
+    arc: form.arc,
+    notes: form.notes,
+  }
+}
+
+const autosave = useDebouncedAutosave({
+  delayMs: 3000,
+  canSave: () =>
+    !isCreating.value &&
+    selectedCharacter.value !== null &&
+    !!projectId.value &&
+    form.name.trim() !== '' &&
+    !isSaving.value,
+  hasChanges: () => JSON.stringify(buildCharacterPayload()) !== lastSavedPayload,
+  save: async () => {
+    const saved = await updateCharacter(selectedCharacter.value!.id, buildCharacterPayload())
+    selectedCharacter.value = saved
+    isApplyingForm = true
+    applyCharacterToForm(saved)
+    isApplyingForm = false
+    await refreshCharacters()
+    cloudSyncManager.notifyDirty(projectId.value)
+    lastSavedPayload = JSON.stringify(buildCharacterPayload())
+  },
+})
+
+const autosaveStatusText = computed(() => {
+  switch (autosave.status.value) {
+    case 'dirty': return '有未保存修改'
+    case 'saving': return '正在自动保存…'
+    case 'saved': return '已自动保存'
+    case 'error': return '自动保存失败，请手动保存'
+    default: return ''
+  }
+})
+
+watch(
+  () => ({ ...form }),
+  () => {
+    if (isApplyingForm) return
+    autosave.schedule()
+  },
+  { deep: true },
+)
+
 const roles: CharacterRole[] = [
   'protagonist',
   'deuteragonist',
@@ -83,7 +148,9 @@ onMounted(() => {
 })
 
 watch(projectId, () => {
+  autosave.cancel()
   selectedCharacter.value = null
+  lastSavedPayload = ''
   resetForm()
   void loadWorkspace()
 })
@@ -138,24 +205,36 @@ async function handleApplyFilters() {
 }
 
 async function handleSelectCharacter(character: Character) {
+  if (selectedCharacter.value && !isCreating.value) {
+    const flushed = await autosave.flush()
+    if (!flushed) return
+  }
+
+  autosave.cancel()
   errorMessage.value = ''
   successMessage.value = ''
 
   try {
     selectedCharacter.value = await getCharacter(character.id)
     isCreating.value = false
+    isApplyingForm = true
     applyCharacterToForm(selectedCharacter.value)
+    isApplyingForm = false
+    lastSavedPayload = JSON.stringify(buildCharacterPayload())
+    autosave.markSaved()
   } catch (error) {
     errorMessage.value = getErrorMessage(error, '加载人物详情失败。')
   }
 }
 
 function handleNewCharacter() {
+  autosave.cancel()
   selectedCharacter.value = null
   isCreating.value = true
   successMessage.value = ''
   errorMessage.value = ''
   resetForm()
+  lastSavedPayload = ''
 }
 
 async function handleSaveCharacter() {
@@ -163,24 +242,10 @@ async function handleSaveCharacter() {
     return
   }
 
+  autosave.cancel()
+
   await saveSafe(async () => {
-    const payload = {
-      name: form.name,
-      role: form.role,
-      importance: form.importance,
-      status: form.status,
-      faction: form.faction.trim() || null,
-      summary: form.summary,
-      biography: form.biography,
-      appearance: form.appearance,
-      personality: form.personality,
-      background: form.background,
-      ability: form.ability,
-      motivation: form.motivation,
-      secret: form.secret,
-      arc: form.arc,
-      notes: form.notes,
-    }
+    const payload = buildCharacterPayload()
 
     const saved = isCreating.value
       ? await createCharacter(projectId.value, payload)
@@ -188,9 +253,14 @@ async function handleSaveCharacter() {
 
     selectedCharacter.value = saved
     isCreating.value = false
+    isApplyingForm = true
     applyCharacterToForm(saved)
+    isApplyingForm = false
     await refreshCharacters()
     successMessage.value = '人物已保存。'
+    cloudSyncManager.notifyDirty(projectId.value)
+    lastSavedPayload = JSON.stringify(buildCharacterPayload())
+    autosave.markSaved()
   }, '保存人物失败。')
 }
 
@@ -199,18 +269,27 @@ async function handleDeleteCharacter() {
     return
   }
 
-  const confirmed = window.confirm(`确认删除人物“${selectedCharacter.value.name}”吗？`)
+  if (!isCreating.value) {
+    const flushed = await autosave.flush()
+    if (!flushed) return
+  }
+
+  const confirmed = window.confirm(`确认删除人物”${selectedCharacter.value.name}”吗？`)
   if (!confirmed) {
     return
   }
+
+  autosave.cancel()
 
   await saveSafe(async () => {
     await deleteCharacter(selectedCharacter.value!.id)
     selectedCharacter.value = null
     isCreating.value = true
     resetForm()
+    lastSavedPayload = ''
     await refreshCharacters()
     successMessage.value = '人物已删除。'
+    cloudSyncManager.notifyDirty(projectId.value)
   }, '删除人物失败。')
 }
 
@@ -227,6 +306,7 @@ async function handleOpenGraphNode() {
       title: selectedCharacter.value!.name,
       summary: selectedCharacter.value!.summary || selectedCharacter.value!.biography,
     })
+    cloudSyncManager.notifyDirty(projectId.value)
     await router.push(graphFocusRoute(projectId.value, node.id))
   }, '打开关系图节点失败。')
 }
@@ -418,6 +498,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
         </div>
 
         <footer class="editor-actions">
+          <span v-if="!isCreating && autosaveStatusText" class="autosave-status">{{ autosaveStatusText }}</span>
           <button
             class="secondary-button"
             type="button"
@@ -850,5 +931,11 @@ button:disabled {
   .material-layout {
     grid-template-columns: 1fr;
   }
+}
+
+.autosave-status {
+  margin-right: auto;
+  color: var(--zs-color-text-muted);
+  font-size: 0.85rem;
 }
 </style>

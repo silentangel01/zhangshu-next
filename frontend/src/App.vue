@@ -3,6 +3,9 @@ import GlobalAnnouncementBanner from '@/features/announcements/GlobalAnnouncemen
 import NotificationBell from '@/features/announcements/NotificationBell.vue'
 import FeedbackEntryButton from '@/features/feedback/FeedbackEntryButton.vue'
 import ThemeSwitcher from '@/shared/theme/ThemeSwitcher.vue'
+import { useCloudSyncLifecycle } from '@/features/cloud/useCloudSyncLifecycle'
+
+useCloudSyncLifecycle()
 </script>
 
 <template>
@@ -22,11 +25,12 @@ import ThemeSwitcher from '@/shared/theme/ThemeSwitcher.vue'
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  --top-bar-clearance: calc(var(--banner-height, 0px) + 64px);
 }
 
 .app-top-bar {
   position: fixed;
-  top: var(--zs-space-4);
+  top: calc(var(--banner-height, 0px) + var(--zs-space-4));
   right: var(--zs-space-4);
   z-index: 90;
   display: flex;
@@ -36,6 +40,7 @@ import ThemeSwitcher from '@/shared/theme/ThemeSwitcher.vue'
   border-radius: var(--zs-radius-md);
   background: var(--zs-color-surface);
   box-shadow: var(--zs-shadow-sm);
+  transition: top 0.3s ease;
 }
 
 @media (max-width: 720px) {
