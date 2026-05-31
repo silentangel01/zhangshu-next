@@ -1,17 +1,23 @@
-"""Aliyun service monitoring with in-memory caching.
+"""Aliyun service monitoring with shared cache backend.
 
 Aggregates BSS billing, OSS storage, and SWAS server metrics behind
 a single ``get_overview()`` call.  Each module is cached independently
 with its own TTL so that a slow or failing API does not block the others.
+
+Cache is stored via :class:`~app.core.cache.CacheBackend` — shared
+across workers in production (Redis) and per-process in development
+(memory).  This replaces the previous class-variable ``_cache`` which
+only worked within a single process.
 """
 
 from __future__ import annotations
 
 import logging
-import threading
 import time
+from datetime import datetime, timezone
 from typing import Any, Callable
 
+from app.core.cache import CacheBackend, get_cache_backend
 from app.core.config import Settings
 from app.infrastructure.aliyun_monitor import (
     AliyunMonitorError,
@@ -22,45 +28,11 @@ from app.infrastructure.aliyun_monitor import (
 
 logger = logging.getLogger(__name__)
 
-
-class _CacheEntry:
-    __slots__ = ("data", "error", "_mono", "_wall", "ttl_seconds")
-
-    def __init__(
-        self,
-        data: dict[str, Any] | None,
-        error: str | None,
-        ttl_seconds: int,
-    ):
-        self.data = data
-        self.error = error
-        self._mono = time.monotonic()
-        self._wall = time.time()
-        self.ttl_seconds = ttl_seconds
-
-    @property
-    def expired(self) -> bool:
-        return (time.monotonic() - self._mono) > self.ttl_seconds
-
-    def to_dict(self) -> dict[str, Any]:
-        from datetime import datetime, timezone
-
-        ts = datetime.fromtimestamp(self._wall, tz=timezone.utc).isoformat()
-        return {
-            "data": self.data,
-            "error": self.error,
-            "cached_at": ts,
-            "ttl_seconds": self.ttl_seconds,
-        }
+_CACHE_PREFIX = "monitoring:"
 
 
 class AdminMonitoringService:
-    """Aggregates Aliyun service metrics with in-memory caching.
-
-    Cache is stored as a **class variable** so it is shared across all
-    instances within the same process.  cloud-server runs as a single
-    process, so this is sufficient and avoids Redis/file dependencies.
-    """
+    """Aggregates Aliyun service metrics with shared cache backend."""
 
     _CACHE_TTLS: dict[str, int] = {
         "billing": 3600,  # 1 hour
@@ -68,11 +40,14 @@ class AdminMonitoringService:
         "server": 300,  # 5 minutes
     }
 
-    _cache: dict[str, _CacheEntry] = {}
-    _lock = threading.Lock()
-
-    def __init__(self, settings: Settings):
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        cache: CacheBackend | None = None,
+    ):
         self._settings = settings
+        self._cache = cache or get_cache_backend()
 
     # ── public API ──────────────────────────────────────────────────
 
@@ -86,11 +61,11 @@ class AdminMonitoringService:
 
     def refresh(self, module: str | None = None) -> dict[str, Any]:
         """Force-refresh one module (or all if *module* is ``None``)."""
-        with self._lock:
-            if module:
-                self._cache.pop(module, None)
-            else:
-                self._cache.clear()
+        if module:
+            self._cache.delete(f"{_CACHE_PREFIX}{module}")
+        else:
+            for key in self._CACHE_TTLS:
+                self._cache.delete(f"{_CACHE_PREFIX}{key}")
         return self.get_overview()
 
     # ── cached call wrapper ─────────────────────────────────────────
@@ -99,34 +74,43 @@ class AdminMonitoringService:
         self, key: str, fetcher: Callable[[], dict[str, Any]]
     ) -> dict[str, Any]:
         ttl = self._CACHE_TTLS.get(key, 300)
+        cache_key = f"{_CACHE_PREFIX}{key}"
 
-        with self._lock:
-            entry = self._cache.get(key)
-            if entry and not entry.expired:
-                return entry.to_dict()
+        # Try cache first
+        cached = self._cache.get_json(cache_key)
+        if cached is not None:
+            return cached
 
-        # Cache miss or expired — call the fetcher outside the lock
-        # to avoid blocking other threads on slow API calls.
+        # Cache miss — call the fetcher
         try:
             data = fetcher()
-            entry = _CacheEntry(
-                data=data, error=None, ttl_seconds=ttl
-            )
+            entry = self._make_entry(data=data, error=None, ttl_seconds=ttl)
         except AliyunMonitorError as exc:
             logger.warning("Monitoring fetch [%s] failed: %s", key, exc)
-            entry = _CacheEntry(
-                data=None, error=str(exc), ttl_seconds=ttl
-            )
+            entry = self._make_entry(data=None, error=str(exc), ttl_seconds=ttl)
         except Exception as exc:
             logger.exception("Monitoring fetch [%s] unexpected error", key)
-            entry = _CacheEntry(
+            entry = self._make_entry(
                 data=None, error=f"未知错误: {exc}", ttl_seconds=ttl
             )
 
-        with self._lock:
-            self._cache[key] = entry
+        self._cache.set_json(cache_key, entry, ttl_seconds=ttl)
+        return entry
 
-        return entry.to_dict()
+    @staticmethod
+    def _make_entry(
+        *,
+        data: dict[str, Any] | None,
+        error: str | None,
+        ttl_seconds: int,
+    ) -> dict[str, Any]:
+        ts = datetime.fromtimestamp(time.time(), tz=timezone.utc).isoformat()
+        return {
+            "data": data,
+            "error": error,
+            "cached_at": ts,
+            "ttl_seconds": ttl_seconds,
+        }
 
     # ── fetchers ────────────────────────────────────────────────────
 

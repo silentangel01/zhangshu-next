@@ -5,7 +5,15 @@ from __future__ import annotations
 from pydantic import BaseModel
 
 
-class DashboardSummaryResponse(BaseModel):
+class CacheMetaMixin(BaseModel):
+    """Cache metadata injected by the snapshot service."""
+
+    cached: bool = False
+    stale: bool = False
+    refreshed_at: str | None = None
+
+
+class DashboardSummaryResponse(CacheMetaMixin):
     total_users: int
     active_24h: int
     active_7d: int
@@ -23,7 +31,7 @@ class DailyCount(BaseModel):
     count: int
 
 
-class ActivitySeriesResponse(BaseModel):
+class ActivitySeriesResponse(CacheMetaMixin):
     days: int
     daily_active: list[DailyCount]
     daily_registrations: list[DailyCount]
@@ -31,6 +39,6 @@ class ActivitySeriesResponse(BaseModel):
     daily_backups: list[DailyCount]
 
 
-class FeedbackStatsResponse(BaseModel):
+class FeedbackStatsResponse(CacheMetaMixin):
     by_status: dict[str, int]
     by_category: dict[str, int]

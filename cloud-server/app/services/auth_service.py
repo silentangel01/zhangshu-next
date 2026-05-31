@@ -123,6 +123,36 @@ class AuthService:
         if stored is None:
             raise AuthError("Refresh token 无效。")
         if stored.revoked_at is not None:
+            # Replay detection: if the token was rotated (replaced_by_id set),
+            # someone is trying to reuse an old refresh token. Revoke all
+            # of this user's sessions as a safety measure.
+            if stored.replaced_by_id:
+                from app.core.audit import audit_event
+                from sqlalchemy import update
+                from app.models.refresh_token import RefreshToken as RT
+                now = utc_now()
+                self._db.execute(
+                    update(RT)
+                    .where(
+                        RT.user_id == stored.user_id,
+                        RT.revoked_at.is_(None),
+                        RT.expires_at > now,
+                    )
+                    .values(revoked_at=now, revoked_reason="replay_detected")
+                )
+                self._db.commit()
+                audit_event(
+                    "refresh_token_reuse_detected",
+                    user_id=stored.user_id,
+                    result="failure",
+                    reason_code="replay",
+                    extra={"tokens_revoked": 0},
+                    db=self._db,
+                )
+                logger.warning(
+                    "Refresh token replay detected for user %s — all sessions revoked",
+                    stored.user_id,
+                )
             raise AuthError("Refresh token 已被撤销。")
         if stored.expires_at < utc_now():
             raise AuthError("Refresh token 已过期。")

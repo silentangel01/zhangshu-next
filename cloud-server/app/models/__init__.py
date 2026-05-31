@@ -12,6 +12,11 @@ from app.models.feedback_attachment import FeedbackAttachment
 from app.models.user_activity_event import UserActivityEvent
 from app.models.feedback_reply import FeedbackReply
 from app.models.audit_log import AuditLog
+from app.models.admin_metric_snapshot import AdminMetricSnapshot
+from app.models.cloud_sync_entity import CloudSyncEntity
+from app.models.cloud_sync_change import CloudSyncChange
+from app.models.cloud_sync_snapshot import CloudSyncSnapshot
+from app.models.cloud_sync_conflict import CloudSyncConflict
 
 __all__ = [
     "User",
@@ -26,4 +31,9 @@ __all__ = [
     "UserActivityEvent",
     "FeedbackReply",
     "AuditLog",
+    "AdminMetricSnapshot",
+    "CloudSyncEntity",
+    "CloudSyncChange",
+    "CloudSyncSnapshot",
+    "CloudSyncConflict",
 ]

@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user_from_admin_cookie, require_admin_user
+from app.core.admin_permissions import effective_admin_role, permissions_for_role
 from app.core.audit import audit_event
 from app.core.config import get_settings
 from app.db.session import get_db
@@ -174,10 +175,15 @@ def admin_login(
     )
     ActivityService(db).record(user_id, "admin_login", request)
 
+    role = effective_admin_role(user, _settings)
+    perms = sorted(permissions_for_role(role))
+
     return AdminMeResponse(
         id=user.id,
         email=user.email,
         display_name=user.display_name,
+        admin_role=role,
+        permissions=perms,
     )
 
 
@@ -203,6 +209,33 @@ def admin_refresh(
     stored = token_repo.get_by_jti_hash(jti_h)
 
     if stored is None or stored.revoked_at is not None:
+        # Replay detection: if the token was rotated, someone is reusing an old token
+        if stored and stored.revoked_at is not None and stored.replaced_by_id:
+            from sqlalchemy import update as sa_update
+            now = utc_now()
+            db.execute(
+                sa_update(RefreshToken)
+                .where(
+                    RefreshToken.user_id == stored.user_id,
+                    RefreshToken.revoked_at.is_(None),
+                    RefreshToken.expires_at > now,
+                )
+                .values(revoked_at=now, revoked_reason="admin_replay_detected")
+            )
+            db.commit()
+            audit_event(
+                "admin_refresh_token_reuse_detected",
+                request_id=_request_id(request),
+                client_ip=_client_ip(request),
+                user_id=stored.user_id,
+                result="failure",
+                reason_code="replay",
+                db=db,
+            )
+            logger.warning(
+                "Admin refresh token replay detected for user %s",
+                stored.user_id,
+            )
         _clear_admin_cookies(response)
         raise HTTPException(status_code=401, detail="Refresh token 无效或已被撤销。")
 
@@ -263,8 +296,12 @@ def admin_logout(
 def admin_me(
     admin_user: User = Depends(get_current_user_from_admin_cookie),
 ):
+    role = effective_admin_role(admin_user, _settings)
+    perms = sorted(permissions_for_role(role))
     return AdminMeResponse(
         id=admin_user.id,
         email=admin_user.email,
         display_name=admin_user.display_name,
+        admin_role=role,
+        permissions=perms,
     )

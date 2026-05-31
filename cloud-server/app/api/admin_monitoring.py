@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 
-from app.api.deps import require_admin_user_cookie_or_bearer
+from app.api.deps import require_admin_permission
+from app.core.admin_permissions import MONITORING_VIEW
 from app.core.config import get_settings
 from app.models.user import User
 from app.schemas.admin_monitoring import MonitoringOverviewResponse
@@ -15,7 +16,7 @@ router = APIRouter(prefix="/api/admin/monitoring", tags=["admin-monitoring"])
 
 @router.get("/overview", response_model=MonitoringOverviewResponse)
 def get_monitoring_overview(
-    _admin: User = Depends(require_admin_user_cookie_or_bearer),
+    _admin: User = Depends(require_admin_permission(MONITORING_VIEW)),
 ):
     """Return cached Aliyun service metrics (billing, OSS, SWAS)."""
     service = AdminMonitoringService(get_settings())
@@ -25,7 +26,7 @@ def get_monitoring_overview(
 @router.post("/refresh", response_model=MonitoringOverviewResponse)
 def refresh_monitoring(
     module: str | None = Query(default=None),
-    _admin: User = Depends(require_admin_user_cookie_or_bearer),
+    _admin: User = Depends(require_admin_permission(MONITORING_VIEW)),
 ):
     """Force-refresh one module (billing/oss/server) or all."""
     service = AdminMonitoringService(get_settings())

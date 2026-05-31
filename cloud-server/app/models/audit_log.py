@@ -53,6 +53,22 @@ class AuditLog(Base):
     extra_json: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="JSON-encoded non-sensitive extra fields",
     )
+    actor_user_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True, index=True,
+        comment="Admin user who performed the action",
+    )
+    target_user_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True, index=True,
+        comment="User affected by the action (if applicable)",
+    )
+    client_ip_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True,
+        comment="SHA-256 prefix of the client IP for correlation",
+    )
+    client_ip_masked: Mapped[str | None] = mapped_column(
+        String(45), nullable=True,
+        comment="Masked IP for display (e.g. 192.168.1.xxx)",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=utc_now,

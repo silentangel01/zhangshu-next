@@ -1,8 +1,10 @@
-"""Database-level rate limiting service.
+"""Rate limiting service with pluggable backends.
 
-Replaces the in-process ``_rate_limit_store`` dict with a shared
-database table so limits work across multiple Uvicorn workers and
-Docker containers.
+Default backend is the database (``RateLimitRepository``), which is
+cross-worker and cross-instance. When ``settings.rate_limit_backend``
+is ``"redis"``, the service uses the Redis backend for lower latency
+and less database pressure. On Redis failure it falls back to the
+database backend so limits still apply.
 
 Keys are hashed or sanitised — raw email addresses are never stored.
 """
@@ -30,7 +32,13 @@ class RateLimitError(Exception):
 
 
 class RateLimitService:
-    """Cross-worker rate limiter backed by the ``rate_limit_events`` table."""
+    """Cross-worker rate limiter with pluggable backends.
+
+    Backend selection is based on ``settings.rate_limit_backend``:
+
+    - ``"database"`` — always available, uses ``rate_limit_events`` table.
+    - ``"redis"`` — uses Redis; falls back to database on failure.
+    """
 
     # Predefined scopes
     AUTH_LOGIN = "auth_login"
@@ -45,6 +53,29 @@ class RateLimitService:
     def __init__(self, db: Session):
         self._db = db
         self._repo = RateLimitRepository(db)
+        self._db_backend = None  # lazy: only needed when DB backend active
+        self._redis_backend = None  # lazy: only when redis backend active
+        self._use_redis = False
+
+        from app.core.config import get_settings
+
+        settings = get_settings()
+        if settings.rate_limit_backend == "redis":
+            try:
+                from app.core.redis_client import get_redis_client
+                from app.services.rate_limit_backends import (
+                    RedisRateLimitBackend,
+                )
+
+                client = get_redis_client()
+                self._redis_backend = RedisRateLimitBackend(client)
+                self._use_redis = True
+            except Exception as exc:
+                logger.warning(
+                    "Redis rate limit backend unavailable, "
+                    "falling back to database: %s",
+                    exc,
+                )
 
     # ------------------------------------------------------------------
     # Public API
@@ -64,6 +95,30 @@ class RateLimitService:
 
         Raises :class:`RateLimitError` if the limit is exceeded.
         """
+        if self._use_redis and self._redis_backend is not None:
+            try:
+                count = self._redis_backend.count_active(
+                    scope, key, window_seconds
+                )
+                if count >= limit:
+                    raise RateLimitError()
+                self._redis_backend.record(
+                    scope, key, window_seconds,
+                    user_id=user_id, client_ip=client_ip,
+                )
+                return
+            except RateLimitError:
+                # Limit exceeded — propagate without fallback
+                raise
+            except Exception as exc:
+                # Redis issue — fall through to DB backend
+                logger.warning(
+                    "Redis rate limit failed for scope=%s, "
+                    "falling back to DB: %s",
+                    scope, exc,
+                )
+
+        # Database backend (either primary or fallback)
         now = utc_now()
         window_start = now - timedelta(seconds=window_seconds)
 
@@ -171,7 +226,11 @@ class RateLimitService:
     # ------------------------------------------------------------------
 
     def purge_expired(self) -> int:
-        """Remove expired rate limit events. Call periodically or via cron."""
+        """Remove expired rate limit events from the DB.
+
+        Only meaningful when using the database backend (or as cleanup
+        of leftover events when Redis is the primary).
+        """
         return self._repo.purge_expired()
 
     # ------------------------------------------------------------------

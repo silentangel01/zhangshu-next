@@ -13,6 +13,7 @@ class AdminUserListItem(BaseModel):
     display_name: str
     is_active: bool
     is_admin: bool
+    admin_role: str | None = None
     created_at: datetime
     last_login_at: datetime | None = None
     last_seen_at: datetime | None = None
@@ -46,6 +47,7 @@ class AdminUserDetail(BaseModel):
     signature: str | None = None
     is_active: bool
     is_admin: bool
+    admin_role: str | None = None
     created_at: datetime
     last_login_at: datetime | None = None
     last_seen_at: datetime | None = None

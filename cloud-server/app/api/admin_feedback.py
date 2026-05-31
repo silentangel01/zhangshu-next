@@ -1,11 +1,17 @@
-"""Admin feedback management API."""
+"""Admin feedback management API — permission-graded endpoints."""
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_admin_user_cookie_or_bearer
+from app.api.deps import require_admin_permission
+from app.core.admin_permissions import (
+    FEEDBACK_ATTACHMENT_DOWNLOAD,
+    FEEDBACK_MANAGE,
+    FEEDBACK_REPLY,
+    FEEDBACK_VIEW,
+)
 from app.core.audit import audit_event
 from app.db.session import get_db
 from app.models.user import User
@@ -40,7 +46,7 @@ def list_feedback(
     category: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-    admin: User = Depends(require_admin_user_cookie_or_bearer),
+    _admin: User = Depends(require_admin_permission(FEEDBACK_VIEW)),
     db: Session = Depends(get_db),
 ) -> AdminFeedbackListResponse:
     svc = FeedbackService(db)
@@ -50,21 +56,33 @@ def list_feedback(
 @router.get("/{feedback_id}", response_model=AdminFeedbackResponse)
 def get_feedback(
     feedback_id: str,
-    admin: User = Depends(require_admin_user_cookie_or_bearer),
+    admin: User = Depends(require_admin_permission(FEEDBACK_VIEW)),
     db: Session = Depends(get_db),
+    request: Request = None,
 ) -> AdminFeedbackResponse:
     svc = FeedbackService(db)
     try:
-        return svc.get_admin(feedback_id)
+        result = svc.get_admin(feedback_id)
     except FeedbackError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+    audit_event(
+        "admin_feedback_viewed",
+        request_id=_request_id(request),
+        client_ip=_client_ip(request),
+        user_id=admin.id,
+        result="success",
+        extra={"feedback_id": feedback_id},
+        db=db,
+    )
+    return result
 
 
 @router.patch("/{feedback_id}", response_model=AdminFeedbackResponse)
 def update_feedback(
     feedback_id: str,
     req: AdminFeedbackUpdateRequest,
-    admin: User = Depends(require_admin_user_cookie_or_bearer),
+    admin: User = Depends(require_admin_permission(FEEDBACK_MANAGE)),
     db: Session = Depends(get_db),
     request: Request = None,
 ) -> AdminFeedbackResponse:
@@ -80,6 +98,7 @@ def update_feedback(
         client_ip=_client_ip(request),
         user_id=admin.id,
         result="success",
+        extra={"feedback_id": feedback_id, "permission": FEEDBACK_MANAGE},
         db=db,
     )
     return result
@@ -92,11 +111,18 @@ def update_feedback(
 def get_attachment_download_url(
     feedback_id: str,
     attachment_id: str,
-    admin: User = Depends(require_admin_user_cookie_or_bearer),
+    reason: str = Query(
+        ..., min_length=1, max_length=500,
+        description="Reason for downloading this attachment.",
+    ),
+    admin: User = Depends(require_admin_permission(FEEDBACK_ATTACHMENT_DOWNLOAD)),
     db: Session = Depends(get_db),
     request: Request = None,
 ) -> AdminDownloadUrlResponse:
-    """Generate a short-lived presigned download URL for a feedback attachment."""
+    """Generate a short-lived presigned download URL for a feedback attachment.
+
+    Requires ``feedback:attachment_download`` permission and a mandatory reason.
+    """
     svc = FeedbackService(db)
     try:
         result = svc.get_download_url(feedback_id, attachment_id)
@@ -109,6 +135,13 @@ def get_attachment_download_url(
         client_ip=_client_ip(request),
         user_id=admin.id,
         result="success",
+        extra={
+            "feedback_id": feedback_id,
+            "attachment_id": attachment_id,
+            "action_reason": reason,
+            "risk_level": "medium",
+            "permission": FEEDBACK_ATTACHMENT_DOWNLOAD,
+        },
         db=db,
     )
     return result
@@ -117,7 +150,7 @@ def get_attachment_download_url(
 @router.get("/{feedback_id}/replies", response_model=AdminFeedbackReplyListResponse)
 def list_feedback_replies(
     feedback_id: str,
-    admin: User = Depends(require_admin_user_cookie_or_bearer),
+    _admin: User = Depends(require_admin_permission(FEEDBACK_VIEW)),
     db: Session = Depends(get_db),
 ) -> AdminFeedbackReplyListResponse:
     svc = FeedbackService(db)
@@ -135,7 +168,7 @@ def list_feedback_replies(
 def create_feedback_reply(
     feedback_id: str,
     req: AdminFeedbackReplyCreateRequest,
-    admin: User = Depends(require_admin_user_cookie_or_bearer),
+    admin: User = Depends(require_admin_permission(FEEDBACK_REPLY)),
     db: Session = Depends(get_db),
     request: Request = None,
 ) -> FeedbackReplyResponse:
@@ -151,6 +184,7 @@ def create_feedback_reply(
         client_ip=_client_ip(request),
         user_id=admin.id,
         result="success",
+        extra={"feedback_id": feedback_id, "permission": FEEDBACK_REPLY},
         db=db,
     )
     return result
@@ -160,7 +194,7 @@ def create_feedback_reply(
 def delete_feedback_reply(
     feedback_id: str,
     reply_id: str,
-    admin: User = Depends(require_admin_user_cookie_or_bearer),
+    admin: User = Depends(require_admin_permission(FEEDBACK_MANAGE)),
     db: Session = Depends(get_db),
     request: Request = None,
 ) -> None:
@@ -176,6 +210,7 @@ def delete_feedback_reply(
         client_ip=_client_ip(request),
         user_id=admin.id,
         result="success",
+        extra={"feedback_id": feedback_id, "permission": FEEDBACK_MANAGE},
         db=db,
     )
 
@@ -183,11 +218,15 @@ def delete_feedback_reply(
 @router.delete("/{feedback_id}", status_code=204)
 def delete_feedback(
     feedback_id: str,
-    admin: User = Depends(require_admin_user_cookie_or_bearer),
+    reason: str = Query(
+        ..., min_length=1, max_length=500,
+        description="Reason for deleting this feedback.",
+    ),
+    admin: User = Depends(require_admin_permission(FEEDBACK_MANAGE)),
     db: Session = Depends(get_db),
     request: Request = None,
 ) -> None:
-    """Soft-delete a feedback ticket and its attachments."""
+    """Soft-delete a feedback ticket and its attachments. Requires reason."""
     svc = FeedbackService(db)
     try:
         svc.delete_admin(feedback_id)
@@ -200,5 +239,11 @@ def delete_feedback(
         client_ip=_client_ip(request),
         user_id=admin.id,
         result="success",
+        extra={
+            "feedback_id": feedback_id,
+            "action_reason": reason,
+            "risk_level": "high",
+            "permission": FEEDBACK_MANAGE,
+        },
         db=db,
     )

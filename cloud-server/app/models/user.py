@@ -35,6 +35,10 @@ class User(Base):
     is_admin: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false", index=True
     )
+    admin_role: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, index=True,
+        comment="owner | admin | support | ops | readonly — null for non-admin users",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, nullable=False
     )

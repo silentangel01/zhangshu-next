@@ -1,11 +1,17 @@
-"""Admin announcement management API."""
+"""Admin announcement management API — permission-graded endpoints."""
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_admin_user_cookie_or_bearer
+from app.api.deps import require_admin_permission
+from app.core.admin_permissions import (
+    ANNOUNCEMENTS_DELETE,
+    ANNOUNCEMENTS_PUBLISH,
+    ANNOUNCEMENTS_VIEW,
+    ANNOUNCEMENTS_WRITE,
+)
 from app.core.audit import audit_event
 from app.db.session import get_db
 from app.models.user import User
@@ -34,7 +40,7 @@ def _client_ip(request: Request) -> str:
 @router.post("", response_model=AdminAnnouncementResponse, status_code=201)
 def create_announcement(
     req: AnnouncementCreateRequest,
-    admin: User = Depends(require_admin_user_cookie_or_bearer),
+    admin: User = Depends(require_admin_permission(ANNOUNCEMENTS_WRITE)),
     db: Session = Depends(get_db),
     request: Request = None,
 ) -> AdminAnnouncementResponse:
@@ -50,6 +56,7 @@ def create_announcement(
         client_ip=_client_ip(request),
         user_id=admin.id,
         result="success",
+        extra={"announcement_id": result.id, "permission": ANNOUNCEMENTS_WRITE},
         db=db,
     )
     return result
@@ -60,7 +67,7 @@ def list_announcements(
     status: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-    admin: User = Depends(require_admin_user_cookie_or_bearer),
+    _admin: User = Depends(require_admin_permission(ANNOUNCEMENTS_VIEW)),
     db: Session = Depends(get_db),
 ) -> AdminAnnouncementListResponse:
     svc = AnnouncementService(db)
@@ -70,7 +77,7 @@ def list_announcements(
 @router.get("/{announcement_id}", response_model=AdminAnnouncementResponse)
 def get_announcement(
     announcement_id: str,
-    admin: User = Depends(require_admin_user_cookie_or_bearer),
+    _admin: User = Depends(require_admin_permission(ANNOUNCEMENTS_VIEW)),
     db: Session = Depends(get_db),
 ) -> AdminAnnouncementResponse:
     svc = AnnouncementService(db)
@@ -84,7 +91,7 @@ def get_announcement(
 def update_announcement(
     announcement_id: str,
     req: AnnouncementUpdateRequest,
-    admin: User = Depends(require_admin_user_cookie_or_bearer),
+    _admin: User = Depends(require_admin_permission(ANNOUNCEMENTS_WRITE)),
     db: Session = Depends(get_db),
 ) -> AdminAnnouncementResponse:
     svc = AnnouncementService(db)
@@ -97,7 +104,7 @@ def update_announcement(
 @router.post("/{announcement_id}/publish", response_model=AdminAnnouncementResponse)
 def publish_announcement(
     announcement_id: str,
-    admin: User = Depends(require_admin_user_cookie_or_bearer),
+    admin: User = Depends(require_admin_permission(ANNOUNCEMENTS_PUBLISH)),
     db: Session = Depends(get_db),
     request: Request = None,
 ) -> AdminAnnouncementResponse:
@@ -113,6 +120,10 @@ def publish_announcement(
         client_ip=_client_ip(request),
         user_id=admin.id,
         result="success",
+        extra={
+            "announcement_id": announcement_id,
+            "permission": ANNOUNCEMENTS_PUBLISH,
+        },
         db=db,
     )
     return result
@@ -121,7 +132,7 @@ def publish_announcement(
 @router.post("/{announcement_id}/archive", response_model=AdminAnnouncementResponse)
 def archive_announcement(
     announcement_id: str,
-    admin: User = Depends(require_admin_user_cookie_or_bearer),
+    admin: User = Depends(require_admin_permission(ANNOUNCEMENTS_WRITE)),
     db: Session = Depends(get_db),
     request: Request = None,
 ) -> AdminAnnouncementResponse:
@@ -137,6 +148,7 @@ def archive_announcement(
         client_ip=_client_ip(request),
         user_id=admin.id,
         result="success",
+        extra={"announcement_id": announcement_id},
         db=db,
     )
     return result
@@ -145,7 +157,7 @@ def archive_announcement(
 @router.delete("/{announcement_id}", status_code=204)
 def delete_announcement(
     announcement_id: str,
-    admin: User = Depends(require_admin_user_cookie_or_bearer),
+    admin: User = Depends(require_admin_permission(ANNOUNCEMENTS_DELETE)),
     db: Session = Depends(get_db),
     request: Request = None,
 ) -> None:
@@ -161,5 +173,10 @@ def delete_announcement(
         client_ip=_client_ip(request),
         user_id=admin.id,
         result="success",
+        extra={
+            "announcement_id": announcement_id,
+            "risk_level": "medium",
+            "permission": ANNOUNCEMENTS_DELETE,
+        },
         db=db,
     )

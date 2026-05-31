@@ -1,17 +1,32 @@
-"""Admin audit log query API."""
+"""Admin audit log query API — permission-graded with IP masking."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy import desc, func
+from fastapi import APIRouter, Depends, Query, Request
+from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_admin_user_cookie_or_bearer
+from app.api.deps import require_admin_permission
+from app.core.admin_permissions import AUDIT_VIEW
 from app.db.session import get_db
 from app.models.audit_log import AuditLog
 from app.models.user import User
 
 router = APIRouter(prefix="/api/admin/audit", tags=["admin-audit"])
+
+
+def _mask_ip(ip: str) -> str:
+    """Mask an IP address for display: 192.168.1.xxx."""
+    if not ip:
+        return ""
+    parts = ip.split(".")
+    if len(parts) == 4:
+        return f"{parts[0]}.{parts[1]}.{parts[2]}.xxx"
+    # IPv6 or other formats — just show first segment
+    if ":" in ip:
+        first = ip.split(":")[0]
+        return f"{first}:xxxx"
+    return "***"
 
 
 @router.get("")
@@ -20,10 +35,14 @@ def list_audit_logs(
     user_id: str | None = Query(default=None, description="Filter by user ID"),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-    admin: User = Depends(require_admin_user_cookie_or_bearer),
+    _admin: User = Depends(require_admin_permission(AUDIT_VIEW)),
     db: Session = Depends(get_db),
+    request: Request = None,
 ):
-    """Paginated audit log query. Admin-only."""
+    """Paginated audit log query. Requires ``audit:view`` permission.
+
+    IPs are masked for privacy. Full IP is never exposed via this endpoint.
+    """
     query = db.query(AuditLog)
 
     if event:
@@ -45,7 +64,7 @@ def list_audit_logs(
                 "id": row.id,
                 "event": row.event,
                 "request_id": row.request_id,
-                "client_ip": row.client_ip,
+                "client_ip": _mask_ip(row.client_ip),
                 "user_id": row.user_id,
                 "project_id": row.project_id,
                 "backup_id": row.backup_id,

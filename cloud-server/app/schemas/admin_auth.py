@@ -14,3 +14,5 @@ class AdminMeResponse(BaseModel):
     id: str
     email: str
     display_name: str
+    admin_role: str | None = None
+    permissions: list[str] = []
