@@ -62,9 +62,7 @@ cloud-server/docs/ai-handoff/
 # Tauri build output
 frontend/src-tauri/target/
 frontend/src-tauri/gen/
-frontend/src-tauri/binaries/*.exe
-frontend/src-tauri/binaries/*.app
-frontend/src-tauri/binaries/zhangshu-backend-*
+frontend/src-tauri/binaries/
 
 # Agents Rules
 # (AGENTS.md already ignored above)
