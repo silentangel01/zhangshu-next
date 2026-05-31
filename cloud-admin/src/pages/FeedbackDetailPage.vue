@@ -15,10 +15,13 @@ import type {
   FeedbackReply,
 } from '@/entities/admin-feedback/types'
 import { useToast } from '@/shared/composables/useToast'
+import { useAdminSession } from '@/shared/composables/useAdminSession'
+import RiskActionDialog from '@/components/RiskActionDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
+const { hasPermission } = useAdminSession()
 const feedback = ref<FeedbackTicket | null>(null)
 const attachments = ref<FeedbackAttachment[]>([])
 const replies = ref<FeedbackReply[]>([])
@@ -29,6 +32,11 @@ const newPriority = ref('')
 const newNote = ref('')
 const replyContent = ref('')
 const replySubmitting = ref(false)
+
+// Download confirmation dialog
+const showDownloadDialog = ref(false)
+const pendingAttachment = ref<FeedbackAttachment | null>(null)
+const dialogRef = ref<InstanceType<typeof RiskActionDialog> | null>(null)
 
 onMounted(async () => {
   try {
@@ -81,13 +89,26 @@ async function submitReply() {
   }
 }
 
-async function downloadAttachment(att: FeedbackAttachment) {
-  if (!feedback.value) return
+function requestDownload(att: FeedbackAttachment) {
+  pendingAttachment.value = att
+  showDownloadDialog.value = true
+}
+
+async function handleDownloadConfirm(payload: { reason: string }) {
+  if (!feedback.value || !pendingAttachment.value) return
+  dialogRef.value?.setLoading(true)
   try {
-    const { download_url } = await getAttachmentDownloadUrl(feedback.value.id, att.id)
+    const { download_url } = await getAttachmentDownloadUrl(
+      feedback.value.id,
+      pendingAttachment.value.id,
+      payload.reason,
+    )
     window.open(download_url, '_blank')
+    showDownloadDialog.value = false
   } catch (e: unknown) {
     toast.error(e instanceof Error ? e.message : '下载失败')
+  } finally {
+    dialogRef.value?.setLoading(false)
   }
 }
 
@@ -129,11 +150,12 @@ function formatDate(d: string): string {
       </div>
       <div v-if="attachments.length" class="card attachments-card">
         <h3>附件 ({{ attachments.length }})</h3>
+        <p class="attachment-warning">附件可能包含用户作品或隐私内容，下载操作将被审计记录。</p>
         <ul class="attachment-list">
           <li v-for="att in attachments" :key="att.id">
             <span class="att-name">{{ att.filename }}</span>
             <span class="att-size">{{ formatBytes(att.size_bytes) }}</span>
-            <button class="btn-sm" @click="downloadAttachment(att)">下载</button>
+            <button v-if="hasPermission('feedback:attachment_download')" class="btn-sm" @click="requestDownload(att)">下载</button>
           </li>
         </ul>
       </div>
@@ -150,7 +172,7 @@ function formatDate(d: string): string {
           </div>
         </div>
         <p v-else class="empty-text">暂无回复</p>
-        <div class="reply-form">
+        <div v-if="hasPermission('feedback:reply')" class="reply-form">
           <textarea
             v-model="replyContent"
             class="input reply-input"
@@ -166,7 +188,7 @@ function formatDate(d: string): string {
           </button>
         </div>
       </div>
-      <div class="card update-card">
+      <div v-if="hasPermission('feedback:manage')" class="card update-card">
         <h3>更新状态</h3>
         <div class="form-row">
           <select v-model="newStatus" class="input">
@@ -189,6 +211,18 @@ function formatDate(d: string): string {
         </button>
       </div>
     </template>
+
+    <RiskActionDialog
+      v-if="showDownloadDialog"
+      ref="dialogRef"
+      title="下载反馈附件"
+      message="附件可能包含用户作品或隐私内容。下载操作将被记录到审计日志。"
+      variant="warning"
+      confirm-label="下载"
+      :require-reason="true"
+      @confirm="handleDownloadConfirm"
+      @cancel="showDownloadDialog = false"
+    />
   </div>
 </template>
 
@@ -208,6 +242,7 @@ function formatDate(d: string): string {
 .attachments-card { margin-bottom: var(--ca-space-4); }
 .attachments-card h3 { font-size: 15px; margin-bottom: var(--ca-space-3); }
 .attachment-list { list-style: none; }
+.attachment-warning { font-size: 12px; color: var(--ca-warning, #f59e0b); margin-bottom: var(--ca-space-2); }
 .attachment-list li { display: flex; align-items: center; gap: var(--ca-space-3); padding: var(--ca-space-2) 0; border-bottom: 1px solid var(--ca-border); font-size: 13px; }
 .att-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .att-size { color: var(--ca-text-muted); min-width: 60px; text-align: right; }

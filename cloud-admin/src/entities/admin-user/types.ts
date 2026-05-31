@@ -4,6 +4,7 @@ export interface AdminUserListItem {
   display_name: string
   is_active: boolean
   is_admin: boolean
+  admin_role: string | null
   created_at: string
   last_login_at: string | null
   last_seen_at: string | null
@@ -37,6 +38,7 @@ export interface AdminUserDetail {
   signature: string | null
   is_active: boolean
   is_admin: boolean
+  admin_role: string | null
   created_at: string
   last_login_at: string | null
   last_seen_at: string | null

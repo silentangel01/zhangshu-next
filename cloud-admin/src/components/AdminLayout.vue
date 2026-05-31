@@ -1,18 +1,38 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { adminLogout, adminMe, adminRefresh } from '@/entities/admin-auth/api'
-import type { AdminMeResponse } from '@/entities/admin-auth/types'
+import { adminLogout, adminRefresh } from '@/entities/admin-auth/api'
 import { apiRequest } from '@/shared/api/client'
 import ToastContainer from '@/shared/ui/ToastContainer.vue'
 import { useToast } from '@/shared/composables/useToast'
+import { useAdminSession } from '@/shared/composables/useAdminSession'
 
 const router = useRouter()
 const toast = useToast()
-const me = ref<AdminMeResponse | null>(null)
+const { me, hasPermission, clearSession } = useAdminSession()
 
 const REFRESH_INTERVAL = 25 * 60 * 1000 // 25 minutes
 let refreshTimer: ReturnType<typeof setInterval> | null = null
+
+// ── Navigation items with permission requirements ────────────────────
+interface NavItem {
+  to: string
+  label: string
+  permission: string
+  exact?: boolean
+}
+
+const navItems: NavItem[] = [
+  { to: '/', label: '概览', permission: 'dashboard:view', exact: true },
+  { to: '/feedback', label: '反馈管理', permission: 'feedback:view' },
+  { to: '/users', label: '用户列表', permission: 'users:view' },
+  { to: '/announcements', label: '公告管理', permission: 'announcements:view' },
+  { to: '/monitoring', label: '运维监控', permission: 'monitoring:view' },
+]
+
+function visibleNavItems(): NavItem[] {
+  return navItems.filter((item) => hasPermission(item.permission))
+}
 
 // ── Global search ──────────────────────────────────────────────────────
 interface SearchResult {
@@ -74,13 +94,7 @@ function closeSearch() {
   }, 200)
 }
 
-onMounted(async () => {
-  try {
-    me.value = await adminMe()
-  } catch {
-    router.push('/login')
-    return
-  }
+onMounted(() => {
   refreshTimer = setInterval(doRefresh, REFRESH_INTERVAL)
 })
 
@@ -108,10 +122,22 @@ async function logout() {
   try {
     await adminLogout()
   } catch {
-    /* best effort */
+    toast.error('退出登录失败')
   }
   sessionStorage.removeItem('zs_admin_logged_in')
+  clearSession()
   router.push('/login')
+}
+
+function roleLabel(role: string | null): string {
+  const labels: Record<string, string> = {
+    owner: '最高管理员',
+    admin: '管理员',
+    support: '客服',
+    ops: '运维',
+    readonly: '只读',
+  }
+  return role ? labels[role] ?? role : '-'
 }
 </script>
 
@@ -121,7 +147,7 @@ async function logout() {
       <div class="sidebar-brand">
         <strong>章枢</strong> 管理后台
       </div>
-      <div class="sidebar-search">
+      <div v-if="hasPermission('search:global')" class="sidebar-search">
         <input
           v-model="searchQuery"
           class="input search-input"
@@ -175,24 +201,20 @@ async function logout() {
         </div>
       </div>
       <nav class="sidebar-nav">
-        <RouterLink to="/" class="nav-link" active-class="active" :exact="true">
-          概览
-        </RouterLink>
-        <RouterLink to="/feedback" class="nav-link" active-class="active">
-          反馈管理
-        </RouterLink>
-        <RouterLink to="/users" class="nav-link" active-class="active">
-          用户列表
-        </RouterLink>
-        <RouterLink to="/announcements" class="nav-link" active-class="active">
-          公告管理
-        </RouterLink>
-        <RouterLink to="/monitoring" class="nav-link" active-class="active">
-          运维监控
+        <RouterLink
+          v-for="item in visibleNavItems()"
+          :key="item.to"
+          :to="item.to"
+          class="nav-link"
+          active-class="active"
+          :exact="item.exact"
+        >
+          {{ item.label }}
         </RouterLink>
       </nav>
       <div class="sidebar-footer">
         <span class="admin-name">{{ me?.display_name ?? me?.email ?? '' }}</span>
+        <span class="admin-role">{{ roleLabel(me?.admin_role ?? null) }}</span>
         <button class="btn-logout" @click="logout">退出</button>
       </div>
     </aside>
@@ -324,6 +346,11 @@ async function logout() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.admin-role {
+  font-size: 11px;
+  color: var(--ca-primary, #3b82f6);
+  font-weight: 500;
 }
 .btn-logout {
   padding: var(--ca-space-1) var(--ca-space-3);

@@ -13,10 +13,18 @@ export class ApiError extends Error {
   }
 }
 
+const ADMIN_WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const headers = new Headers(options.headers)
   if (options.body !== undefined) {
     headers.set('Content-Type', 'application/json')
+  }
+
+  // Add CSRF custom header for admin write requests
+  const method = (options.method ?? 'GET').toUpperCase()
+  if (path.startsWith('/api/admin') && ADMIN_WRITE_METHODS.has(method)) {
+    headers.set('X-Zhangshu-Admin-Request', '1')
   }
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -31,6 +39,18 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     sessionStorage.removeItem('zs_admin_logged_in')
     window.location.href = '/login'
     throw new ApiError('未授权，请重新登录。', 401)
+  }
+
+  if (response.status === 403) {
+    // Permission denied — do NOT redirect to login
+    let message = '权限不足或请求来源未通过安全校验。'
+    try {
+      const payload = (await response.json()) as { detail?: unknown }
+      if (typeof payload.detail === 'string') message = payload.detail
+    } catch {
+      /* keep default */
+    }
+    throw new ApiError(message, 403)
   }
 
   if (!response.ok) {

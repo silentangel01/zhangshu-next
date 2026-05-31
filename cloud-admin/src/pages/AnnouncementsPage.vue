@@ -10,8 +10,10 @@ import {
 } from '@/entities/admin-announcement/api'
 import type { Announcement } from '@/entities/admin-announcement/types'
 import { useToast } from '@/shared/composables/useToast'
+import { useAdminSession } from '@/shared/composables/useAdminSession'
 
 const toast = useToast()
+const { hasPermission } = useAdminSession()
 const items = ref<Announcement[]>([])
 const total = ref(0)
 const loading = ref(true)
@@ -101,11 +103,11 @@ function formatDate(d: string | null): string {
   <div>
     <div class="page-header">
       <h2 class="page-title">公告管理</h2>
-      <button class="btn btn-primary" @click="showForm = !showForm">
+      <button v-if="hasPermission('announcements:write')" class="btn btn-primary" @click="showForm = !showForm">
         {{ showForm ? '取消' : '新建公告' }}
       </button>
     </div>
-    <div v-if="showForm" class="card form-card">
+    <div v-if="showForm && hasPermission('announcements:write')" class="card form-card">
       <label class="field">
         <span>标题</span>
         <input v-model="newTitle" class="input" />
@@ -144,9 +146,9 @@ function formatDate(d: string | null): string {
         {{ formatDate((row as unknown as Announcement).published_at) }}
       </template>
       <template #actions="{ row }">
-        <button v-if="(row as unknown as Announcement).status === 'draft'" class="btn-sm" @click="publish((row as unknown as Announcement).id)">发布</button>
-        <button v-if="(row as unknown as Announcement).status === 'published'" class="btn-sm" @click="archive((row as unknown as Announcement).id)">归档</button>
-        <button class="btn-sm btn-sm-danger" @click="remove((row as unknown as Announcement).id)">删除</button>
+        <button v-if="hasPermission('announcements:publish') && (row as unknown as Announcement).status === 'draft'" class="btn-sm" @click="publish((row as unknown as Announcement).id)">发布</button>
+        <button v-if="hasPermission('announcements:publish') && (row as unknown as Announcement).status === 'published'" class="btn-sm" @click="archive((row as unknown as Announcement).id)">归档</button>
+        <button v-if="hasPermission('announcements:delete')" class="btn-sm btn-sm-danger" @click="remove((row as unknown as Announcement).id)">删除</button>
       </template>
     </DataTable>
   </div>

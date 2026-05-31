@@ -9,6 +9,7 @@ import UsersPage from '@/pages/UsersPage.vue'
 import UserDetailPage from '@/pages/UserDetailPage.vue'
 import AnnouncementsPage from '@/pages/AnnouncementsPage.vue'
 import MonitoringPage from '@/pages/MonitoringPage.vue'
+import { useAdminSession } from '@/shared/composables/useAdminSession'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -18,32 +19,78 @@ export const router = createRouter({
       path: '/',
       component: AdminLayout,
       children: [
-        { path: '', name: 'dashboard', component: DashboardPage },
-        { path: 'feedback', name: 'feedback-list', component: FeedbackListPage },
+        {
+          path: '',
+          name: 'dashboard',
+          component: DashboardPage,
+          meta: { permissions: ['dashboard:view'] },
+        },
+        {
+          path: 'feedback',
+          name: 'feedback-list',
+          component: FeedbackListPage,
+          meta: { permissions: ['feedback:view'] },
+        },
         {
           path: 'feedback/:id',
           name: 'feedback-detail',
           component: FeedbackDetailPage,
+          meta: { permissions: ['feedback:view'] },
         },
-        { path: 'users', name: 'users', component: UsersPage },
+        {
+          path: 'users',
+          name: 'users',
+          component: UsersPage,
+          meta: { permissions: ['users:view'] },
+        },
         {
           path: 'users/:id',
           name: 'user-detail',
           component: UserDetailPage,
+          meta: { permissions: ['users:view'] },
         },
-        { path: 'announcements', name: 'announcements', component: AnnouncementsPage },
-        { path: 'monitoring', name: 'monitoring', component: MonitoringPage },
+        {
+          path: 'announcements',
+          name: 'announcements',
+          component: AnnouncementsPage,
+          meta: { permissions: ['announcements:view'] },
+        },
+        {
+          path: 'monitoring',
+          name: 'monitoring',
+          component: MonitoringPage,
+          meta: { permissions: ['monitoring:view'] },
+        },
       ],
     },
   ],
 })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
+  if (to.name === 'login') {
+    const { me } = useAdminSession()
+    if (me.value) return { name: 'dashboard' }
+    return
+  }
+
   const loggedIn = sessionStorage.getItem('zs_admin_logged_in') === '1'
-  if (to.name !== 'login' && !loggedIn) {
+  if (!loggedIn) return { name: 'login' }
+
+  // Validate real session via API (not just sessionStorage)
+  const { ensureSession, hasPermission, clearSession } = useAdminSession()
+  const session = await ensureSession()
+
+  if (!session) {
+    // Session expired or invalid — clear and redirect
+    sessionStorage.removeItem('zs_admin_logged_in')
+    clearSession()
     return { name: 'login' }
   }
-  if (to.name === 'login' && loggedIn) {
+
+  // Check page-level permission
+  const required = to.meta.permissions as string[] | undefined
+  if (required?.length && !required.some((p) => hasPermission(p))) {
+    // User lacks permission for this page — redirect to dashboard
     return { name: 'dashboard' }
   }
 })

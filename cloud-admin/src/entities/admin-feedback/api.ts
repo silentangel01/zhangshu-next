@@ -45,9 +45,10 @@ export function listAttachments(feedbackId: string) {
   )
 }
 
-export function getAttachmentDownloadUrl(feedbackId: string, attachmentId: string) {
+export function getAttachmentDownloadUrl(feedbackId: string, attachmentId: string, reason: string) {
+  const params = new URLSearchParams({ reason })
   return apiRequest<{ download_url: string }>(
-    `/api/admin/feedback/${feedbackId}/attachments/${attachmentId}/download-url`
+    `/api/admin/feedback/${feedbackId}/attachments/${attachmentId}/download-url?${params}`
   )
 }
 
