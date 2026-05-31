@@ -56,7 +56,8 @@ CLAUDE.md
 *.ps1
 
 # AI handoff docs
-docs\ai-handoff
+docs/ai-handoff/
+cloud-server/docs/ai-handoff/
 
 # Tauri build output
 frontend/src-tauri/target/
@@ -65,8 +66,8 @@ frontend/src-tauri/binaries/*.exe
 frontend/src-tauri/binaries/*.app
 frontend/src-tauri/binaries/zhangshu-backend-*
 
-# Agents-Rules
-AGENTS.md
+# Agents Rules
+# (AGENTS.md already ignored above)
 
 # build output
 build/
@@ -94,3 +95,6 @@ cloud-server/.env.*
 # Cloud admin
 cloud-admin/node_modules/
 cloud-admin/dist/
+
+# TypeScript build info
+*.tsbuildinfo
