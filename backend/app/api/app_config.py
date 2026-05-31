@@ -5,16 +5,6 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.infrastructure.dashscope_embedding_provider import (
-    DashScopeApiKeyMissingError,
-    DashScopeEmbeddingError,
-    DashScopeEmbeddingProvider,
-)
-from app.infrastructure.dashscope_llm_provider import (
-    DashScopeLLMAuthError,
-    DashScopeLLMError,
-    DashScopeLLMProvider,
-)
 from app.infrastructure.database import get_db
 from app.schemas.app_config import (
     AppConfigResponse,
@@ -121,6 +111,12 @@ def test_dashscope_connection(
     api_key = api_key.strip()
 
     try:
+        from app.infrastructure.dashscope_embedding_provider import (
+            DashScopeApiKeyMissingError,
+            DashScopeEmbeddingError,
+            DashScopeEmbeddingProvider,
+        )
+
         provider = DashScopeEmbeddingProvider(api_key=api_key)
         vector = provider.encode("连接测试")
         if not vector:
@@ -132,11 +128,12 @@ def test_dashscope_connection(
             model_name=provider.model_name,
             vector_dim=len(vector),
         )
-    except DashScopeApiKeyMissingError as exc:
-        return TestDashScopeResponse(success=False, error=str(exc))
-    except DashScopeEmbeddingError as exc:
-        return TestDashScopeResponse(success=False, error=str(exc))
     except Exception as exc:
+        # Catch DashScopeApiKeyMissingError, DashScopeEmbeddingError, etc.
+        if type(exc).__name__ == "DashScopeApiKeyMissingError":
+            return TestDashScopeResponse(success=False, error=str(exc))
+        if type(exc).__name__ == "DashScopeEmbeddingError":
+            return TestDashScopeResponse(success=False, error=str(exc))
         logger.warning("DashScope test error: %s", exc)
         return TestDashScopeResponse(
             success=False, error=f"测试失败：{type(exc).__name__}"
@@ -166,6 +163,12 @@ def test_llm_connection(
     base_url = service.get_value(KEY_LLM_BASE_URL) or ""
 
     try:
+        from app.infrastructure.dashscope_llm_provider import (
+            DashScopeLLMAuthError,
+            DashScopeLLMError,
+            DashScopeLLMProvider,
+        )
+
         provider = DashScopeLLMProvider(
             api_key=api_key.strip(),
             model=model.strip() if model.strip() else None,
@@ -178,11 +181,12 @@ def test_llm_connection(
             model_name=provider.model_name,
             response_preview=preview,
         )
-    except DashScopeLLMAuthError as exc:
-        return TestLLMResponse(success=False, error=str(exc))
-    except DashScopeLLMError as exc:
-        return TestLLMResponse(success=False, error=str(exc))
     except Exception as exc:
+        # Catch DashScopeLLMAuthError, DashScopeLLMError, etc.
+        if type(exc).__name__ == "DashScopeLLMAuthError":
+            return TestLLMResponse(success=False, error=str(exc))
+        if type(exc).__name__ == "DashScopeLLMError":
+            return TestLLMResponse(success=False, error=str(exc))
         logger.warning("LLM test error: %s", exc)
         return TestLLMResponse(
             success=False, error=f"测试失败：{type(exc).__name__}"
