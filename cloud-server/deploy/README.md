@@ -9,16 +9,29 @@
     │
     │ HTTPS (443)
     ▼
-Nginx (反向代理 + SSL)
+Nginx (反向代理 + SSL + 限流)
     │
     │ HTTP (9000, 仅本机)
     ▼
-FastAPI (cloud-api, 2 workers)
+FastAPI (cloud-api, N workers)
     │
     ├── PostgreSQL 16 (5432, 仅本机)
+    ├── Redis 7 (6379, 仅内部网络)
     │
     └── 阿里云 OSS (备份文件直传)
 ```
+
+## 服务器规格推荐
+
+| 规格 | API_WORKERS | DATABASE_POOL_SIZE | DATABASE_MAX_OVERFLOW | 说明 |
+|------|-------------|-------------------|----------------------|------|
+| 2v2G | 2 | 5 | 5 | 保守配置，总连接数 = 20 |
+| 4v4G | 3-4 | 5 | 5 | 标准配置，总连接数 = 30-40 |
+| 4v8G | 4-6 | 10 | 10 | 增长配置，总连接数 = 80-120 |
+
+**连接池公式**：`API_WORKERS × (DATABASE_POOL_SIZE + DATABASE_MAX_OVERFLOW)` 必须小于 PostgreSQL `max_connections`（默认 100）。
+
+建议预留 20% 给管理连接：`workers × (pool + overflow) ≤ max_connections × 0.8`
 
 ## 前置条件
 
@@ -289,19 +302,57 @@ docker compose restart
 ## 性能优化 (2v2G 服务器)
 
 - ✅ 已配置 2G swap (swappiness=10)
-- ✅ Docker 资源限制 (PostgreSQL 256M, API 512M)
+- ✅ Docker 资源限制 (PostgreSQL 256M, Redis 128M, API 512M)
 - ✅ Uvicorn 2 workers (适合 2 vCPU)
+- ✅ Redis 缓存 + 限流 (跨 worker 共享)
+- ✅ 管理后台统计快照 (避免全表聚合)
+- ✅ 审计日志异步写库 (减少请求延迟)
+- ✅ Nginx 分路径限流 (auth/admin/feedback/general)
+- ✅ PostgreSQL 连接池 + 超时配置
 - ✅ 静态文件缓存 (Nginx)
 - ✅ Gzip 压缩 (Nginx 默认启用)
 
-## 扩展建议
+## Redis 配置
 
-如果用户量增长，考虑：
-1. 升级到 4G 内存
-2. 使用阿里云 RDS PostgreSQL (托管数据库)
-3. 添加 Redis 缓存 (替换进程内限流)
-4. 使用 CDN 加速静态资源
-5. 配置负载均衡 (多台 API 实例)
+Redis 用于限流、缓存、统计快照和审计队列。生产环境必须启用：
+
+```env
+REDIS_ENABLED=true
+REDIS_URL=redis://redis:6379/0
+RATE_LIMIT_BACKEND=redis
+CACHE_BACKEND=redis
+AUDIT_ASYNC_ENABLED=true
+```
+
+如果 Redis 不可用：
+- 限流自动降级到数据库
+- 缓存自动降级到进程内存
+- 审计日志自动降级到同步写库
+- `/ready` 端点返回 `degraded` 状态
+
+## 审计 Worker
+
+审计日志异步写库 worker 在 `docker-compose.yml` 中定义：
+
+```bash
+# 查看审计 worker 日志
+docker compose logs -f audit-worker
+
+# 手动刷新一次
+docker compose exec audit-worker python -m app.workers.audit_worker --once
+```
+
+## 扩展路径
+
+当用户量增长时，按优先级扩展：
+
+1. **升级到 4v8G** — 增加 workers 到 4-6，连接池到 10+10
+2. **使用阿里云 RDS PostgreSQL** — 托管数据库，自动备份和高可用
+3. **使用独立 Redis** — 阿里云 Redis 实例，支持持久化和集群
+4. **使用 CDN 加速静态资源** — 管理面板静态文件
+5. **多实例 + 负载均衡** — 多台 API 服务器 + SLB
+
+注意：备份上传始终走 OSS presigned URL，不经过 API 服务器，不会占用 API 带宽。
 
 ## 运维文档
 

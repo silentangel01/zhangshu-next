@@ -24,6 +24,7 @@ os.environ["OSS_ACCESS_KEY_ID"] = "test-key-id"
 os.environ["OSS_ACCESS_KEY_SECRET"] = "test-key-secret"
 os.environ["OSS_BUCKET_NAME"] = "test-bucket"
 os.environ["OSS_ENDPOINT"] = "oss-cn-hangzhou.aliyuncs.com"
+os.environ["ADMIN_REQUIRE_ORIGIN_CHECK"] = "false"
 
 from app.db.base import Base  # noqa: E402
 from app.db.session import get_db  # noqa: E402
@@ -42,6 +43,11 @@ import app.models.feedback_attachment  # noqa: E402, F401
 import app.models.feedback_reply  # noqa: E402, F401
 import app.models.user_activity_event  # noqa: E402, F401
 import app.models.audit_log  # noqa: E402, F401
+import app.models.admin_metric_snapshot  # noqa: E402, F401
+import app.models.cloud_sync_entity  # noqa: E402, F401
+import app.models.cloud_sync_change  # noqa: E402, F401
+import app.models.cloud_sync_snapshot  # noqa: E402, F401
+import app.models.cloud_sync_conflict  # noqa: E402, F401
 
 from app.main import app  # noqa: E402 — must come AFTER model imports
 

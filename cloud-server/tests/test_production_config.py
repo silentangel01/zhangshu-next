@@ -25,6 +25,12 @@ class TestValidateProductionConfig:
             jwt_secret_key="a" * 64,
             cors_origins="https://example.com",
             oss_endpoint="oss-cn-hangzhou.aliyuncs.com",
+            admin_allow_bearer_fallback=False,
+            admin_allowed_origins="https://admin.example.com",
+            database_url="postgresql://user:pass@host/db",
+            redis_enabled=True,
+            rate_limit_backend="redis",
+            cache_backend="redis",
         )
         issues = validate_production_config(s)
         assert issues == []
@@ -54,6 +60,12 @@ class TestValidateProductionConfig:
             jwt_secret_key="a" * 64,
             cors_origins="https://example.com",
             oss_public_endpoint="oss-cn-hangzhou.aliyuncs.com",
+            admin_allow_bearer_fallback=False,
+            admin_allowed_origins="https://admin.example.com",
+            database_url="postgresql://user:pass@host/db",
+            redis_enabled=True,
+            rate_limit_backend="redis",
+            cache_backend="redis",
         )
         issues = validate_production_config(s)
         assert issues == []

@@ -10,7 +10,19 @@ This document describes how to deploy the Zhangshu Cloud Admin dashboard.
 
 ## Setting Up Admin Access
 
-### Option 1: Environment Variable
+### Role-Based Access Control (RBAC)
+
+Admin users are assigned one of five roles that determine their permissions:
+
+| Role | Description |
+|------|-------------|
+| `owner` | Full access including role management |
+| `admin` | Day-to-day management (all except role changes) |
+| `support` | Customer support: view feedback, reply, view users |
+| `ops` | Operations: monitoring, audit logs, announcements |
+| `readonly` | Read-only access to dashboards and lists |
+
+### Option 1: Environment Variable (Bootstrap)
 
 Set the `ADMIN_EMAILS` environment variable before starting `cloud-server`:
 
@@ -18,15 +30,18 @@ Set the `ADMIN_EMAILS` environment variable before starting `cloud-server`:
 export ADMIN_EMAILS="admin@example.com,admin2@example.com"
 ```
 
-Users with these email addresses will have admin access even if `is_admin` is not set in the database.
+Users with these email addresses will automatically have `owner` role access even if `admin_role` is not set in the database.
 
 ### Option 2: Database
 
-Update the `is_admin` flag in the `users` table:
+Update the `admin_role` field in the `users` table:
 
 ```sql
-UPDATE users SET is_admin = true WHERE email = 'admin@example.com';
+UPDATE users SET admin_role = 'owner' WHERE email = 'admin@example.com';
+UPDATE users SET admin_role = 'support' WHERE email = 'support@example.com';
 ```
+
+Legacy `is_admin` flag is also supported and maps to the `owner` role.
 
 ## Building the Admin Frontend
 
@@ -75,6 +90,28 @@ server {
 
 The admin dashboard **requires HTTPS** in production. The admin authentication uses HttpOnly Secure cookies which will not be transmitted over plain HTTP.
 
+### CSRF Protection
+
+In production (`ADMIN_REQUIRE_ORIGIN_CHECK=true`), all admin write requests (POST, PUT, PATCH, DELETE) require the custom header `X-Zhangshu-Admin-Request: 1`. The cloud-admin frontend automatically includes this header via the `apiRequest()` function.
+
+If you access the admin API from tools like `curl` or Postman, include the header:
+
+```bash
+curl -X POST https://cloud.example.com/api/admin/auth/logout \
+  -H "X-Zhangshu-Admin-Request: 1" \
+  -b "zs_admin_token=..."
+```
+
+### Bearer Token Fallback
+
+In production (`ENVIRONMENT=production`), Bearer token authentication is disabled for admin endpoints. All admin requests must use HttpOnly cookies obtained via the `/api/admin/auth/login` endpoint.
+
+For local development or API testing, enable fallback:
+
+```bash
+export ADMIN_ALLOW_BEARER_FALLBACK=true
+```
+
 ### Cookie Settings
 
 The following settings are configured in `cloud-server`:
@@ -98,8 +135,11 @@ export ADMIN_CORS_ORIGINS="https://admin.example.com"
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `ADMIN_EMAILS` | No | Comma-separated list of admin emails |
+| `ADMIN_EMAILS` | No | Comma-separated list of owner-level admin emails |
 | `JWT_SECRET_KEY` | Yes | Secret for signing admin tokens |
+| `ENVIRONMENT` | No | `production` enables strict security (no Bearer fallback) |
+| `ADMIN_REQUIRE_ORIGIN_CHECK` | No | `true` enables CSRF Origin validation + custom header |
+| `ADMIN_ALLOW_BEARER_FALLBACK` | No | `true` allows Bearer token auth in production |
 | `admin_cookie_secure` | No | Set to `false` only for local development |
 
 ## Running Locally for Development
@@ -130,10 +170,16 @@ After deployment, verify:
 - [ ] Admin login page loads at `/admin/`
 - [ ] Login with admin credentials succeeds
 - [ ] Dashboard shows user counts and activity
+- [ ] Sidebar menu only shows items the current role has permission for
+- [ ] Admin role label displays correctly in sidebar footer
 - [ ] Feedback list loads and detail page works
 - [ ] User list loads and detail page shows expected data (no password_hash, tokens)
+- [ ] User detail: management operations only visible with proper permissions
+- [ ] Announcement: create/publish/delete buttons only visible with proper permissions
 - [ ] Logout clears cookies and redirects to login
 - [ ] Non-admin users cannot access admin API endpoints
+- [ ] Page refresh after session expiry redirects to login (not just sessionStorage check)
+- [ ] Audit logs show masked IPs (e.g., `192.168.1.xxx`), not raw IPs
 
 ## Troubleshooting
 

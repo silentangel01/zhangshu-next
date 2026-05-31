@@ -121,7 +121,8 @@ class TestAdminFeedback:
         ticket = _create_feedback_ticket(db_session)
 
         response = client.delete(
-            f"/api/admin/feedback/{ticket.id}", headers=headers
+            f"/api/admin/feedback/{ticket.id}?reason=Spam+content",
+            headers=headers,
         )
         assert response.status_code == 204
 

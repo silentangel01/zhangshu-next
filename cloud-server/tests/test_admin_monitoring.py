@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.core.cache import MemoryCacheBackend
 from app.core.security import hash_password
 from app.models.user import User, utc_now
 from app.services.admin_monitoring_service import AdminMonitoringService
@@ -74,11 +75,14 @@ def _make_admin(db_session: Session, email: str = "mon-admin@example.com") -> st
 
 
 @pytest.fixture(autouse=True)
-def _clear_monitoring_cache():
-    """Clear the class-level cache before and after each test."""
-    AdminMonitoringService._cache.clear()
-    yield
-    AdminMonitoringService._cache.clear()
+def _patch_monitoring_cache():
+    """Inject a fresh MemoryCacheBackend for each test."""
+    cache = MemoryCacheBackend()
+    with patch(
+        "app.services.admin_monitoring_service.get_cache_backend",
+        return_value=cache,
+    ):
+        yield cache
 
 
 class TestAdminMonitoring:
@@ -135,3 +139,21 @@ class TestAdminMonitoring:
         assert response.status_code == 200
         data = response.json()
         assert data["billing"]["data"] is not None
+
+    @patch.object(AdminMonitoringService, "_fetch_billing", return_value=MOCK_BILLING)
+    def test_second_call_hits_cache(
+        self, mock_billing, client: TestClient, db_session: Session,
+    ):
+        """Second overview call should hit cache, not re-fetch."""
+        token = _make_admin(db_session)
+        headers = auth_headers(token)
+
+        # First call — populates cache
+        resp1 = client.get("/api/admin/monitoring/overview", headers=headers)
+        assert resp1.status_code == 200
+        assert mock_billing.call_count == 1
+
+        # Second call — billing should be served from cache
+        resp2 = client.get("/api/admin/monitoring/overview", headers=headers)
+        assert resp2.status_code == 200
+        assert mock_billing.call_count == 1  # not called again
