@@ -148,7 +148,13 @@ async function handleSelectCloudProject(project: CloudRemoteProject) {
     const pushed = syncResult.pushed ?? 0
     const pulled = syncResult.pulled ?? 0
 
-    if (pushed > 0 && pulled > 0) {
+    // Check for partial failure — do not show full success if errors exist
+    if (syncResult.errors.length > 0) {
+      successMessage.value = '已关联云端项目。'
+      const shortErr = getShortSyncError(syncResult.errors)
+      const base = '首次同步未完全完成，本机内容已保留，可稍后点击"立即同步"重试。'
+      errorMessage.value = shortErr ? `${base}原因：${shortErr}` : base
+    } else if (pushed > 0 && pulled > 0) {
       successMessage.value = `已关联并同步完成，上传 ${pushed} 条、拉取 ${pulled} 条更新。`
     } else if (pushed > 0) {
       successMessage.value = `已关联并上传本机数据。`
@@ -167,8 +173,8 @@ async function handleSelectCloudProject(project: CloudRemoteProject) {
     } catch {
       // ignore refresh failure
     }
-  } catch (error) {
-    // Linking succeeded but sync failed — show partial success
+  } catch {
+    // Linking succeeded but sync threw — show partial success
     successMessage.value = '已关联云端项目。'
     errorMessage.value = '首次同步失败，本机内容已保留，可稍后点击"立即同步"重试。'
   } finally {
@@ -265,6 +271,16 @@ function getErrorMessage(error: unknown, fallback: string): string {
   return fallback
 }
 
+function getShortSyncError(errors: string[]): string {
+  if (errors.length === 0) return ''
+  const first = errors[0] ?? ''
+  // Strip entity path prefix like "characters/xxx: " or "chapters/xxx: "
+  const colonIdx = first.lastIndexOf(': ')
+  const cleaned = colonIdx > 0 && first.slice(0, colonIdx).includes('/') ? first.slice(colonIdx + 2) : first
+  if (cleaned.length <= 80) return cleaned
+  return cleaned.slice(0, 77) + '…'
+}
+
 function formatManualSyncResult(result: {
   pushed: number
   pulled: number
@@ -280,9 +296,11 @@ function formatManualSyncResult(result: {
       pushed > 0 || pulled > 0
         ? `已上传 ${pushed} 条、拉取 ${pulled} 条，但部分同步未完成。`
         : '同步未完全完成。'
+    const shortErr = getShortSyncError(result.errors)
+    const base = '本机内容已保留，可稍后重试。'
     return {
       syncMsg: summary,
-      errorMsg: '本机内容已保留，可稍后重试。',
+      errorMsg: shortErr ? `${base}原因：${shortErr}` : base,
     }
   }
 

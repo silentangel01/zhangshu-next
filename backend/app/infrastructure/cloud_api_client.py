@@ -126,6 +126,75 @@ def _classify_error(exc: Exception) -> tuple[str, str]:
     return ("cloud_unavailable", "云服务暂时不可达，请稍后重试。")
 
 
+def _safe_str(value: object) -> str:
+    """Return the string only when *value* is already a non-empty string.
+
+    Returns ``""`` for ``None``, dicts, lists, ints, etc. so that no Python
+    repr (``"None"``, ``"{...}"``) leaks into user-visible error messages.
+    """
+    if isinstance(value, str) and value.strip():
+        return value
+    return ""
+
+
+def _parse_remote_error(response: httpx.Response) -> tuple[str, str, str]:
+    """Extract a user-readable message from a remote cloud API error body.
+
+    Supports multiple error body formats used by the remote cloud server:
+    - ``{"detail": "string error"}``
+    - ``{"detail": {"message": "...", "error_kind": "...", "suggestion": "..."}}``
+    - ``{"message": "..."}``
+    - ``{"error": "..."}``
+
+    Returns ``(message, error_kind, suggestion)`` — empty strings for missing
+    fields.  Never includes full URLs, tokens, or passwords.
+    """
+    message = ""
+    error_kind = ""
+    suggestion = ""
+
+    try:
+        payload = response.json()
+    except Exception:
+        return (
+            f"云服务返回错误 ({response.status_code})",
+            "http_status_error",
+            "",
+        )
+
+    if not isinstance(payload, dict):
+        return (
+            f"云服务返回错误 ({response.status_code})",
+            "http_status_error",
+            "",
+        )
+
+    detail = payload.get("detail")
+
+    if isinstance(detail, str) and detail.strip():
+        message = detail
+    elif isinstance(detail, dict):
+        message = _safe_str(detail.get("message"))
+        error_kind = _safe_str(detail.get("error_kind"))
+        suggestion = _safe_str(detail.get("suggestion"))
+
+    # Fallback to top-level keys if detail didn't yield a message
+    if not message:
+        message = _safe_str(payload.get("message"))
+    if not message:
+        message = _safe_str(payload.get("error"))
+    if not message:
+        message = f"云服务返回错误 ({response.status_code})"
+
+    # Top-level suggestion/error_kind as fallback
+    if not error_kind and isinstance(payload.get("error_kind"), str):
+        error_kind = payload["error_kind"]
+    if not suggestion and isinstance(payload.get("suggestion"), str):
+        suggestion = payload["suggestion"]
+
+    return (message, error_kind, suggestion)
+
+
 # ── URL security ─────────────────────────────────────────────────────
 
 
@@ -278,18 +347,12 @@ class CloudApiClient:
             ) from exc
 
         if response.status_code >= 400:
-            detail = ""
-            try:
-                payload = response.json()
-                if isinstance(payload, dict) and "detail" in payload:
-                    detail = str(payload["detail"])
-            except Exception:
-                pass
-            message = detail or f"云服务返回错误 ({response.status_code})"
+            message, err_kind, suggestion = _parse_remote_error(response)
             raise CloudApiError(
                 message,
                 status_code=response.status_code,
-                error_kind="http_status_error",
+                error_kind=err_kind or "http_status_error",
+                suggestion=suggestion,
             )
 
         if response.status_code == 204 or not response.content:

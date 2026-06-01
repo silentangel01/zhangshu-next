@@ -337,6 +337,54 @@ describe('CloudBackupPanel — link existing cloud project', () => {
     expect(wrapper.text()).toContain('首次同步失败，本机内容已保留')
   })
 
+  it('shows partial failure when first sync resolves with errors', async () => {
+    mockListRemote.mockResolvedValue([
+      makeProject({ id: 'cloud-partial', title: '部分失败项目' }),
+    ])
+    mockEnableCloud.mockResolvedValue({
+      cloud_enabled: true,
+      cloud_project_id: 'cloud-partial',
+      provider: 'zhangshu',
+      last_backup_at: null,
+      last_restore_at: null,
+      status: 'active',
+      last_error: null,
+    })
+    mockRunCloudSync.mockResolvedValue({
+      pushed: 1,
+      pulled: 0,
+      new_cursor: 1,
+      conflicts: 0,
+      errors: ['网络超时'],
+      duration_ms: 200,
+    })
+
+    const wrapper = mount(CloudBackupPanel, {
+      props: { projectId: 'proj-1' },
+    })
+    await flushPromises()
+
+    const linkBtn = wrapper.findAll('button').find((b) => b.text().includes('关联已有云端项目'))!
+    await linkBtn.trigger('click')
+    await flushPromises()
+
+    const selectBtn = wrapper.findAll('button').find((b) => b.text().includes('关联此项目'))!
+    await selectBtn.trigger('click')
+    await flushPromises()
+
+    expect(mockEnableCloud).toHaveBeenCalledWith('proj-1', 'cloud-partial')
+    expect(mockRunCloudSync).toHaveBeenCalledWith('proj-1')
+    // Linking succeeded
+    expect(wrapper.text()).toContain('已关联云端项目')
+    // Partial failure — not full success
+    expect(wrapper.text()).toContain('首次同步未完全完成')
+    expect(wrapper.text()).toContain('本机内容已保留')
+    expect(wrapper.text()).toContain('立即同步')
+    // Must NOT show full success semantics
+    expect(wrapper.text()).not.toContain('已关联并同步完成')
+    expect(wrapper.text()).not.toContain('本机数据已是最新')
+  })
+
   it('does not show "关联已有云端项目" when cloud already enabled', async () => {
     mockGetCloudStatus.mockResolvedValue({
       cloud_enabled: true,
@@ -710,5 +758,78 @@ describe('CloudBackupPanel — sync and backup buttons', () => {
 
     expect(mockTriggerCloudBackup).toHaveBeenCalledWith('proj-1')
     expect(mockRunCloudSync).not.toHaveBeenCalled()
+  })
+
+  it('"立即同步" partial failure shows short error summary', async () => {
+    mockGetCloudStatus.mockResolvedValue({
+      cloud_enabled: true,
+      cloud_project_id: 'cloud-enabled',
+      provider: 'zhangshu',
+      last_backup_at: null,
+      last_restore_at: null,
+      status: 'active',
+      last_error: null,
+    })
+    mockRunCloudSync.mockResolvedValue({
+      pushed: 1,
+      pulled: 0,
+      new_cursor: 1,
+      conflicts: 0,
+      errors: ['网络超时'],
+      duration_ms: 200,
+    })
+
+    const wrapper = mount(CloudBackupPanel, {
+      props: { projectId: 'proj-1' },
+    })
+    await flushPromises()
+
+    const syncBtn = wrapper.findAll('button').find((b) => b.text() === '立即同步')!
+    await syncBtn.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('部分同步未完成')
+    expect(wrapper.text()).toContain('本机内容已保留')
+    expect(wrapper.text()).toContain('原因：网络超时')
+    expect(wrapper.text()).not.toContain('数据已是最新')
+    expect(wrapper.text()).not.toContain('同步完成')
+  })
+
+  it('"立即同步" truncates long error summary', async () => {
+    mockGetCloudStatus.mockResolvedValue({
+      cloud_enabled: true,
+      cloud_project_id: 'cloud-enabled',
+      provider: 'zhangshu',
+      last_backup_at: null,
+      last_restore_at: null,
+      status: 'active',
+      last_error: null,
+    })
+    const longError =
+      'characters/char-12345: 这是一个非常非常长的错误信息用于测试截断功能是否正常工作，确保超长错误不会原样显示在用户界面上，避免破坏布局或暴露内部实体路径。' +
+      '更多填充文本'.repeat(20)
+    mockRunCloudSync.mockResolvedValue({
+      pushed: 0,
+      pulled: 0,
+      new_cursor: 0,
+      conflicts: 0,
+      errors: [longError],
+      duration_ms: 200,
+    })
+
+    const wrapper = mount(CloudBackupPanel, {
+      props: { projectId: 'proj-1' },
+    })
+    await flushPromises()
+
+    const syncBtn = wrapper.findAll('button').find((b) => b.text() === '立即同步')!
+    await syncBtn.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('同步未完全完成')
+    expect(wrapper.text()).toContain('本机内容已保留')
+    // Full long error must NOT appear verbatim
+    expect(wrapper.text()).not.toContain('characters/char-12345')
+    expect(wrapper.text()).not.toContain('更多填充文本'.repeat(5))
   })
 })

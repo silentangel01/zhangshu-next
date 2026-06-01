@@ -165,6 +165,10 @@ fn launch_backend(
 ) -> std::io::Result<Child> {
     let port_str = port.to_string();
 
+    // Cloud API base URL: respect existing env var, otherwise use default
+    let cloud_api_base_url = std::env::var("ZHANGSHU_CLOUD_API_BASE_URL")
+        .unwrap_or_else(|_| "https://api.emailbs.xin".to_string());
+
     let mut cmd = Command::new(exe_path);
     cmd.env("ZHANGSHU_BACKEND_HOST", "127.0.0.1")
         .env("ZHANGSHU_BACKEND_PORT", &port_str)
@@ -172,6 +176,7 @@ fn launch_backend(
         .env("ZHANGSHU_LOG_DIR", logs_dir)
         .env("ZHANGSHU_DB_FILENAME", "zhangshu.sqlite3")
         .env("ZHANGSHU_FRONTEND_DIST", frontend_dist)
+        .env("ZHANGSHU_CLOUD_API_BASE_URL", &cloud_api_base_url)
         .env("PYTHONUNBUFFERED", "1")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());

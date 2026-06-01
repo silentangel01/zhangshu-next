@@ -66,6 +66,7 @@ _DEFERRED_ROUTERS: dict[str, list[tuple[str, str]]] = {
 }
 
 _registered_deferred: set[str] = set()
+_failed_deferred: dict[str, str] = {}  # prefix -> error message
 _deferred_lock = threading.Lock()
 
 app = FastAPI(title="Zhangshu Local API", version="0.1.0")
@@ -101,9 +102,12 @@ def _register_deferred_router(prefix: str) -> bool:
                 mod = importlib.import_module(module_path)
                 app.include_router(getattr(mod, attr_name))
             _registered_deferred.add(prefix)
+            _failed_deferred.pop(prefix, None)  # clear any previous failure
             logger.info("Deferred router registered: %s", prefix)
             return True
         except Exception as exc:
+            error_msg = f"{type(exc).__name__}: {exc}"
+            _failed_deferred[prefix] = error_msg
             logger.warning("Failed to load deferred router %s: %s", prefix, exc)
             return False
 
@@ -119,12 +123,39 @@ def _load_all_deferred_routers() -> None:
 @app.middleware("http")
 async def lazy_router_middleware(request: Request, call_next):
     """Fallback: if a request hits a deferred prefix before background loading
-    completes, synchronously register the router on-demand."""
+    completes, synchronously register the router on-demand.
+    If the router failed to load, return a JSON error for API requests."""
     path = request.url.path
+
+    # Check if this path matches a deferred router prefix
+    matched_prefix = None
     for prefix in _DEFERRED_ROUTERS:
-        if prefix not in _registered_deferred and path.startswith(prefix):
-            _register_deferred_router(prefix)
+        if path.startswith(prefix):
+            matched_prefix = prefix
             break
+
+    # Also trigger cloud deferred group for project-level cloud API:
+    # /api/projects/{project_id}/cloud/... — prefix is /api/projects, not /api/cloud
+    if matched_prefix is None and path.startswith("/api/projects/") and "/cloud/" in path:
+        matched_prefix = "/api/cloud"
+
+    if matched_prefix:
+        if matched_prefix not in _registered_deferred:
+            _register_deferred_router(matched_prefix)
+
+        # If still not registered (load failed), return JSON error for API requests
+        if matched_prefix not in _registered_deferred and path.startswith("/api/"):
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "detail": {
+                        "message": "本地云功能模块加载失败，请重新安装应用或联系支持。",
+                        "error_kind": "local_cloud_module_unavailable",
+                        "module_prefix": matched_prefix,
+                    }
+                },
+            )
+
     return await call_next(request)
 
 

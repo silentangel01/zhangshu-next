@@ -58,7 +58,7 @@ class CloudNetworkService:
 
         # Determine overall status and recommended mode
         all_ok = all(s["ok"] for s in steps)
-        recommended_mode = self._recommend_mode(steps)
+        recommended_mode = _recommend_mode(steps)
 
         # Build summary
         if all_ok:
