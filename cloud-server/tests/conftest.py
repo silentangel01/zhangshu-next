@@ -24,6 +24,7 @@ os.environ["OSS_ACCESS_KEY_ID"] = "test-key-id"
 os.environ["OSS_ACCESS_KEY_SECRET"] = "test-key-secret"
 os.environ["OSS_BUCKET_NAME"] = "test-bucket"
 os.environ["OSS_ENDPOINT"] = "oss-cn-hangzhou.aliyuncs.com"
+os.environ["ADMIN_REQUIRE_ORIGIN_CHECK"] = "false"
 
 from app.db.base import Base  # noqa: E402
 from app.db.session import get_db  # noqa: E402
@@ -34,17 +35,29 @@ import app.models.user  # noqa: E402, F401
 import app.models.refresh_token  # noqa: E402, F401
 import app.models.cloud_project  # noqa: E402, F401
 import app.models.cloud_backup  # noqa: E402, F401
+import app.models.rate_limit_event  # noqa: E402, F401
+import app.models.account_deletion_request  # noqa: E402, F401
+import app.models.announcement  # noqa: E402, F401
+import app.models.feedback_ticket  # noqa: E402, F401
+import app.models.feedback_attachment  # noqa: E402, F401
+import app.models.feedback_reply  # noqa: E402, F401
+import app.models.user_activity_event  # noqa: E402, F401
+import app.models.audit_log  # noqa: E402, F401
+import app.models.admin_metric_snapshot  # noqa: E402, F401
+import app.models.cloud_sync_entity  # noqa: E402, F401
+import app.models.cloud_sync_change  # noqa: E402, F401
+import app.models.cloud_sync_snapshot  # noqa: E402, F401
+import app.models.cloud_sync_conflict  # noqa: E402, F401
 
 from app.main import app  # noqa: E402 — must come AFTER model imports
 
 
 @pytest.fixture(autouse=True)
 def _clear_rate_limit():
-    """Clear the in-process rate limiter before each test."""
-    from app.api.auth import _rate_limit_store
-    _rate_limit_store.clear()
+    """Clean up DB rate limit events after each test."""
     yield
-    _rate_limit_store.clear()
+    # DB rate limit table is recreated each test via create_all,
+    # so no explicit cleanup needed.
 
 
 @pytest.fixture

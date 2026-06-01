@@ -1,4 +1,5 @@
 # Node / frontend
+node_modules/
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
@@ -56,17 +57,16 @@ CLAUDE.md
 *.ps1
 
 # AI handoff docs
-docs\ai-handoff
+docs/ai-handoff/
+cloud-server/docs/ai-handoff/
 
 # Tauri build output
 frontend/src-tauri/target/
 frontend/src-tauri/gen/
-frontend/src-tauri/binaries/*.exe
-frontend/src-tauri/binaries/*.app
-frontend/src-tauri/binaries/zhangshu-backend-*
+frontend/src-tauri/binaries/
 
-# Agents-Rules
-AGENTS.md
+# Agents Rules
+# (AGENTS.md already ignored above)
 
 # build output
 build/
@@ -74,9 +74,14 @@ build/
 # release artifacts
 releases/
 release/
+!docs/release/
 
-# scripts
+# scripts (keep build scripts tracked, ignore temp .ps1)
 scripts/
+!scripts/
+scripts/*.ps1
+!scripts/build_installer.ps1
+!scripts/smoke_packaged_backend.ps1
 
 # Vite temporary cache
 frontend/.vite-cache-*/
@@ -89,3 +94,10 @@ cloud-server/cloud_server.db
 cloud-server/.env
 cloud-server/.env.*
 !cloud-server/.env.example
+
+# Cloud admin
+cloud-admin/node_modules/
+cloud-admin/dist/
+
+# TypeScript build info
+*.tsbuildinfo

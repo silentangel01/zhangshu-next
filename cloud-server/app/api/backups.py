@@ -20,6 +20,7 @@ from app.schemas.backup import (
 )
 from app.services.backup_service import BackupError, BackupService
 from app.services.project_service import ProjectError
+from app.services.activity_service import ActivityService
 
 router = APIRouter(prefix="/api/projects", tags=["backups"])
 
@@ -58,6 +59,7 @@ def init_backup(
             result="failure",
             reason_code=str(exc.status_code),
             extra={"size_bytes": body.size_bytes},
+            db=db,
         )
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
@@ -68,6 +70,11 @@ def init_backup(
         user_id=current_user.id,
         project_id=project_id,
         extra={"file_name": body.filename, "size_bytes": body.size_bytes},
+        db=db,
+    )
+    ActivityService(db).record(
+        current_user.id, "backup_init", request,
+        metadata={"cloud_project_id": project_id, "size_bytes": body.size_bytes},
     )
     return result
 
@@ -100,6 +107,7 @@ def complete_backup(
             project_id=project_id,
             result="failure",
             reason_code=str(exc.status_code),
+            db=db,
         )
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
@@ -110,6 +118,11 @@ def complete_backup(
         user_id=current_user.id,
         project_id=project_id,
         backup_id=result.get("id", ""),
+        db=db,
+    )
+    ActivityService(db).record(
+        current_user.id, "backup_complete", request,
+        metadata={"cloud_project_id": project_id, "backup_id": result.get("id", "")},
     )
     return result
 
@@ -188,6 +201,7 @@ def delete_backup(
             backup_id=backup_id,
             result="failure",
             reason_code=str(exc.status_code),
+            db=db,
         )
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
@@ -198,5 +212,10 @@ def delete_backup(
         user_id=current_user.id,
         project_id=project_id,
         backup_id=backup_id,
+        db=db,
+    )
+    ActivityService(db).record(
+        current_user.id, "backup_deleted", request,
+        metadata={"cloud_project_id": project_id, "backup_id": backup_id},
     )
     return Response(status_code=204)

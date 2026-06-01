@@ -14,7 +14,9 @@ import type {
 } from '@/entities/app-config/types'
 import { getCloudAccountStatus, cloudLogout } from '@/entities/cloud/api'
 import type { CloudAccountStatus } from '@/entities/cloud/types'
+import CloudAccountPrivacyPanel from '@/features/cloud/CloudAccountPrivacyPanel.vue'
 import CloudNetworkDiagnosticsPanel from '@/features/cloud/CloudNetworkDiagnosticsPanel.vue'
+import CloudUsagePanel from '@/features/cloud/CloudUsagePanel.vue'
 
 const emit = defineEmits<{
   close: []
@@ -90,6 +92,12 @@ async function handleCloudLogout() {
   } finally {
     isCloudLoading.value = false
   }
+}
+
+function handlePrivacyLogout() {
+  // After destructive operations (password change, revoke all, account deletion),
+  // refresh the cloud status to reflect the logged-out state.
+  void loadCloudStatus()
 }
 
 // --- Computed ---
@@ -363,6 +371,18 @@ function handleClose() {
                 尚未登录，请在项目列表页面点击"云账户"登录或注册。
               </p>
             </div>
+          </fieldset>
+
+          <!-- Cloud usage (only when logged in) -->
+          <fieldset v-if="cloudStatus?.logged_in" class="option-group">
+            <legend class="option-label">使用量与配额</legend>
+            <CloudUsagePanel />
+          </fieldset>
+
+          <!-- Cloud account privacy (only when logged in) -->
+          <fieldset v-if="cloudStatus?.logged_in" class="option-group">
+            <legend class="option-label">账户与隐私</legend>
+            <CloudAccountPrivacyPanel @logged-out="handlePrivacyLogout" />
           </fieldset>
 
           <!-- Network diagnostics section -->

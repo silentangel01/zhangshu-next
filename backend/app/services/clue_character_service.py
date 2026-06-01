@@ -27,6 +27,7 @@ class ClueCharacterProjectMismatchError(Exception):
 
 class ClueCharacterService:
     def __init__(self, db: Session):
+        self.db = db
         self.link_repo = ClueCharacterRepository(db)
         self.clue_repo = ClueRepository(db)
         self.character_repo = CharacterRepository(db)
@@ -54,13 +55,16 @@ class ClueCharacterService:
             relation_type=data.relation_type,
             note=data.note,
         )
-        return self._to_read_payload(self.link_repo.create(link), character)
+        created = self.link_repo.create(link)
+        self._mark_dirty(clue.project_id, created.id, "upsert")
+        return self._to_read_payload(created, character)
 
     def update_clue_character(self, link_id: str, data: ClueCharacterUpdate) -> dict[str, object]:
         link = self.link_repo.get(link_id)
         if link is None:
             raise ClueCharacterLinkNotFoundError
         updated = self.link_repo.update(link, data.model_dump(exclude_unset=True))
+        self._mark_dirty(link.project_id, link.id, "upsert")
         character = self.character_repo.get_active(updated.character_id)
         if character is None:
             raise ClueCharacterCharacterNotFoundError
@@ -70,7 +74,17 @@ class ClueCharacterService:
         link = self.link_repo.get(link_id)
         if link is None:
             raise ClueCharacterLinkNotFoundError
-        self.link_repo.delete(link)
+        deleted = self.link_repo.delete(link)
+        self._mark_dirty(link.project_id, deleted.id, "delete")
+
+    def _mark_dirty(self, project_id: str, entity_id: str, action: str) -> None:
+        """Mark a clue_character as dirty for cloud sync (best-effort, never raises)."""
+        try:
+            from app.services.sync_dirty_service import SyncDirtyService
+
+            SyncDirtyService(self.db).mark_dirty(project_id, "clue_characters", entity_id, action)
+        except Exception:
+            pass
 
     def _to_read_payload(self, link: ClueCharacter, character) -> dict[str, object]:
         return {

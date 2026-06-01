@@ -544,6 +544,13 @@ button:disabled {
   color: var(--zs-color-primary);
 }
 
+/* Reserve space for fixed top-right bar (notification + theme) */
+@media (min-width: 721px) and (max-width: 1500px) {
+  .page-header {
+    padding-right: var(--top-bar-width, 220px);
+  }
+}
+
 @media (max-width: 720px) {
   .search-page {
     padding: var(--zs-space-6) var(--zs-space-4);

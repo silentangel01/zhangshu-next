@@ -27,6 +27,7 @@ class ChapterCharacterProjectMismatchError(Exception):
 
 class ChapterCharacterService:
     def __init__(self, db: Session):
+        self.db = db
         self.link_repo = ChapterCharacterRepository(db)
         self.chapter_repo = ChapterRepository(db)
         self.character_repo = CharacterRepository(db)
@@ -65,6 +66,7 @@ class ChapterCharacterService:
             note=data.note,
         )
         created = self.link_repo.create(link)
+        self._mark_dirty(chapter.project_id, created.id, "upsert")
         return self._to_read_payload(created, character)
 
     def update_chapter_character(
@@ -78,6 +80,7 @@ class ChapterCharacterService:
 
         values = data.model_dump(exclude_unset=True)
         updated = self.link_repo.update(link, values)
+        self._mark_dirty(link.project_id, link.id, "upsert")
         character = self.character_repo.get_active(updated.character_id)
         if character is None:
             raise ChapterCharacterCharacterNotFoundError
@@ -87,7 +90,17 @@ class ChapterCharacterService:
         link = self.link_repo.get(link_id)
         if link is None:
             raise ChapterCharacterLinkNotFoundError
-        self.link_repo.delete(link)
+        deleted = self.link_repo.delete(link)
+        self._mark_dirty(link.project_id, deleted.id, "delete")
+
+    def _mark_dirty(self, project_id: str, entity_id: str, action: str) -> None:
+        """Mark a chapter_character as dirty for cloud sync (best-effort, never raises)."""
+        try:
+            from app.services.sync_dirty_service import SyncDirtyService
+
+            SyncDirtyService(self.db).mark_dirty(project_id, "chapter_characters", entity_id, action)
+        except Exception:
+            pass
 
     def _to_read_payload(
         self,

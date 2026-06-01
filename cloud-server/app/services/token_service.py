@@ -86,3 +86,38 @@ def decode_token(token: str, expected_type: str) -> dict:
 def hash_jti(jti: str) -> str:
     """Hash a JTI for storage in the database."""
     return sha256_text(jti)
+
+
+# ------------------------------------------------------------------
+# Admin tokens (shorter-lived, used in HttpOnly cookies)
+# ------------------------------------------------------------------
+
+
+def create_admin_access_token(user_id: str) -> str:
+    s = _settings()
+    now = _now_aware()
+    payload = {
+        "sub": user_id,
+        "type": "admin_access",
+        "iat": now,
+        "exp": now + timedelta(minutes=s.admin_access_token_expire_minutes),
+        "jti": str(uuid4()),
+    }
+    return jwt.encode(payload, s.jwt_secret_key, algorithm=s.jwt_algorithm)
+
+
+def create_admin_refresh_token(user_id: str) -> tuple[str, str, datetime]:
+    """Return ``(token, jti, expires_at)`` for admin refresh cookie."""
+    s = _settings()
+    now = _now_aware()
+    expires_at = _now_naive() + timedelta(hours=s.admin_refresh_token_expire_hours)
+    jti = str(uuid4())
+    payload = {
+        "sub": user_id,
+        "type": "admin_refresh",
+        "iat": now,
+        "exp": now + timedelta(hours=s.admin_refresh_token_expire_hours),
+        "jti": jti,
+    }
+    token = jwt.encode(payload, s.jwt_secret_key, algorithm=s.jwt_algorithm)
+    return token, jti, expires_at

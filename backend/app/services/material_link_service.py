@@ -50,6 +50,17 @@ class MaterialLinkProjectNotFoundError(Exception):
 
 
 class MaterialLinkService:
+    # Map model classes to sync entity type strings
+    _ENTITY_TYPE_MAP: dict[type, str] = {
+        TimelineEventCharacter: "timeline_event_characters",
+        TimelineEventSetting: "timeline_event_settings",
+        TimelineEventClue: "timeline_event_clues",
+        OutlineItemCharacter: "outline_item_characters",
+        OutlineItemSetting: "outline_item_settings",
+        OutlineItemClue: "outline_item_clues",
+        OutlineItemTimelineEvent: "outline_item_timeline_events",
+    }
+
     def __init__(self, db: Session):
         self.db = db
         self.repo = MaterialLinkRepository(db)
@@ -288,9 +299,25 @@ class MaterialLinkService:
         relation_type: str,
         note: str,
     ) -> Any:
+        # Check for active link first
         existing = self.repo.get_existing(model, source_field, source_id, target_field, target_id)
         if existing is not None:
-            return self.repo.update(existing, {"relation_type": relation_type, "note": note})
+            result = self.repo.update(existing, {"relation_type": relation_type, "note": note})
+            self._mark_dirty(model, project_id, result.id, "upsert")
+            return result
+
+        # Check for soft-deleted link with same natural key
+        deleted = self.repo.get_existing(
+            model, source_field, source_id, target_field, target_id,
+            include_deleted=True,
+        )
+        if deleted is not None and deleted.deleted_at is not None:
+            result = self.repo.revive(
+                deleted,
+                {"relation_type": relation_type, "note": note},
+            )
+            self._mark_dirty(model, project_id, result.id, "upsert")
+            return result
 
         link = model(
             id=str(uuid4()),
@@ -302,7 +329,9 @@ class MaterialLinkService:
                 "note": note,
             },
         )
-        return self.repo.create(link)
+        created = self.repo.create(link)
+        self._mark_dirty(model, project_id, created.id, "upsert")
+        return created
 
     def _delete_link(
         self,
@@ -315,7 +344,20 @@ class MaterialLinkService:
         link = self.repo.get_existing(model, source_field, source_id, target_field, target_id)
         if link is None:
             raise MaterialLinkNotFoundError
-        self.repo.delete(link)
+        deleted = self.repo.delete(link)
+        self._mark_dirty(model, link.project_id, deleted.id, "delete")
+
+    def _mark_dirty(self, model: type, project_id: str, entity_id: str, action: str) -> None:
+        """Mark a material link as dirty for cloud sync (best-effort, never raises)."""
+        entity_type = self._ENTITY_TYPE_MAP.get(model)
+        if entity_type is None:
+            return
+        try:
+            from app.services.sync_dirty_service import SyncDirtyService
+
+            SyncDirtyService(self.db).mark_dirty(project_id, entity_type, entity_id, action)
+        except Exception:
+            pass
 
     def _get_timeline_event(self, event_id: str) -> TimelineEvent:
         event = self.db.scalar(

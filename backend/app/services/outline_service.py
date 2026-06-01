@@ -90,7 +90,9 @@ class OutlineService:
             order_index=data.order_index,
             importance=data.importance,
         )
-        return self.outline_repo.create(outline)
+        created = self.outline_repo.create(outline)
+        self._mark_dirty(project_id, created.id, "upsert")
+        return created
 
     def get_outline(self, outline_id: str) -> OutlineItem:
         outline = self.outline_repo.get_active(outline_id)
@@ -112,11 +114,15 @@ class OutlineService:
             chapter_id=values.get("chapter_id") if "chapter_id" in values else outline.chapter_id,
         )
 
-        return self.outline_repo.update(outline, values)
+        updated = self.outline_repo.update(outline, values)
+        self._mark_dirty(outline.project_id, outline_id, "upsert")
+        return updated
 
     def delete_outline(self, outline_id: str) -> OutlineItem:
         outline = self.get_outline(outline_id)
-        return self.outline_repo.soft_delete(outline)
+        deleted = self.outline_repo.soft_delete(outline)
+        self._mark_dirty(outline.project_id, outline_id, "delete")
+        return deleted
 
     def list_chapter_outlines(self, chapter_id: str) -> list[OutlineItem]:
         chapter = self.chapter_repo.get_active(chapter_id)
@@ -193,12 +199,27 @@ class OutlineService:
                 )
 
         # Apply updates in a single transaction.
-        return self.outline_repo.batch_reorder(items)
+        count = self.outline_repo.batch_reorder(items)
+
+        # Mark each reordered outline item as dirty
+        for item in items:
+            self._mark_dirty(project_id, item.outline_id, "upsert")
+
+        return count
 
     def _ensure_project_exists(self, project_id: str) -> None:
         project = self.project_repo.get_active(project_id)
         if project is None:
             raise OutlineProjectNotFoundError
+
+    def _mark_dirty(self, project_id: str, entity_id: str, action: str) -> None:
+        """Mark the outline item as dirty for cloud sync (best-effort, never raises)."""
+        try:
+            from app.services.sync_dirty_service import SyncDirtyService
+
+            SyncDirtyService(self.db).mark_dirty(project_id, "outline_items", entity_id, action)
+        except Exception:
+            pass
 
     def _validate_links(
         self,

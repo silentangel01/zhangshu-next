@@ -12,6 +12,7 @@ import {
   reorderOutlines,
   updateOutline,
 } from '@/entities/outline/api'
+import { cloudSyncManager } from '@/features/cloud/cloudSyncManager'
 import type {
   OutlineItem,
   OutlineItemCreatePayload,
@@ -134,6 +135,7 @@ async function handleReorder(
     if (selectedOutline.value?.id === draggedId) {
       selectedOutline.value = await getOutline(draggedId)
     }
+    cloudSyncManager.notifyDirty(projectId.value)
   } catch (error) {
     errorMessage.value = getErrorMessage(error, '排序失败，请重试')
   }
@@ -154,6 +156,7 @@ async function handleCreateOutline(payload: OutlineItemCreatePayload) {
     selectedOutline.value = created
     await refreshOutlines()
     successMessage.value = '大纲已创建。'
+    cloudSyncManager.notifyDirty(projectId.value)
   } catch (error) {
     errorMessage.value = getErrorMessage(error, '新建大纲失败。')
   } finally {
@@ -174,6 +177,7 @@ async function handleSaveOutline(payload: OutlineItemUpdatePayload) {
     selectedOutline.value = await updateOutline(selectedOutline.value.id, payload)
     await refreshOutlines()
     successMessage.value = '大纲已保存'
+    cloudSyncManager.notifyDirty(projectId.value)
   } catch (error) {
     errorMessage.value = getErrorMessage(error, '保存大纲失败。')
   } finally {
@@ -200,6 +204,7 @@ async function handleDeleteOutline() {
     selectedOutline.value = null
     await refreshOutlines()
     successMessage.value = '大纲已删除。'
+    cloudSyncManager.notifyDirty(projectId.value)
   } catch (error) {
     errorMessage.value = getErrorMessage(error, '删除大纲失败。')
   } finally {

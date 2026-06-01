@@ -21,6 +21,18 @@ class CloudProjectLinkRepository:
             )
         )
 
+    def get_by_cloud_project(
+        self, cloud_project_id: str, cloud_user_id: str
+    ) -> CloudProjectLink | None:
+        """Find an active local link by remote cloud project ID and user."""
+        return self.db.scalar(
+            select(CloudProjectLink).where(
+                CloudProjectLink.cloud_project_id == cloud_project_id,
+                CloudProjectLink.cloud_user_id == cloud_user_id,
+                CloudProjectLink.deleted_at.is_(None),
+            )
+        )
+
     def get(self, link_id: str) -> CloudProjectLink | None:
         return self.db.scalar(
             select(CloudProjectLink).where(

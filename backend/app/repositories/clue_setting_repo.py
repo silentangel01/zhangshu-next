@@ -19,7 +19,11 @@ class ClueSettingRepository:
         statement = (
             select(ClueSetting, SettingItem)
             .join(SettingItem, ClueSetting.setting_item_id == SettingItem.id)
-            .where(ClueSetting.clue_id == clue_id, SettingItem.deleted_at.is_(None))
+            .where(
+                ClueSetting.clue_id == clue_id,
+                ClueSetting.deleted_at.is_(None),
+                SettingItem.deleted_at.is_(None),
+            )
             .order_by(ClueSetting.created_at.asc())
         )
         return list(self.db.execute(statement).all())
@@ -37,10 +41,15 @@ class ClueSettingRepository:
         for field, value in values.items():
             setattr(link, field, value)
         link.updated_at = utc_now()
+        link.version = (link.version or 0) + 1
         self.db.commit()
         self.db.refresh(link)
         return link
 
-    def delete(self, link: ClueSetting) -> None:
-        self.db.delete(link)
+    def delete(self, link: ClueSetting) -> ClueSetting:
+        link.deleted_at = utc_now()
+        link.updated_at = utc_now()
+        link.version = (link.version or 0) + 1
         self.db.commit()
+        self.db.refresh(link)
+        return link

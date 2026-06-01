@@ -65,7 +65,9 @@ class ChapterService:
             status=data.status,
             word_count=calculate_word_count(data.content),
         )
-        return self.chapter_repo.create(chapter)
+        created = self.chapter_repo.create(chapter)
+        self._mark_dirty(project_id, created.id, "upsert")
+        return created
 
     def get_chapter(self, chapter_id: str) -> Chapter:
         chapter = self.chapter_repo.get_active(chapter_id)
@@ -110,6 +112,7 @@ class ChapterService:
 
             self.db.commit()
             self.db.refresh(updated_chapter)
+            self._mark_dirty(updated_chapter.project_id, chapter_id, "upsert")
             return updated_chapter
         except Exception:
             self.db.rollback()
@@ -117,7 +120,9 @@ class ChapterService:
 
     def delete_chapter(self, chapter_id: str) -> Chapter:
         chapter = self.get_chapter(chapter_id)
-        return self.chapter_repo.soft_delete(chapter)
+        deleted = self.chapter_repo.soft_delete(chapter)
+        self._mark_dirty(chapter.project_id, chapter_id, "delete")
+        return deleted
 
     def reorder_chapters(
         self,
@@ -176,6 +181,10 @@ class ChapterService:
                 warnings.append("章节已移动到新分卷，但部分大纲条目仍绑定旧分卷，请检查大纲。")
 
             self.db.commit()
+
+            # Mark all moved chapters as dirty
+            for item in data.items:
+                self._mark_dirty(project_id, item.chapter_id, "upsert")
         except Exception:
             self.db.rollback()
             raise
@@ -198,6 +207,15 @@ class ChapterService:
         volume = self.volume_repo.get_active(str(volume_id))
         if volume is None or volume.project_id != project_id:
             raise ChapterVolumeNotFoundError
+
+    def _mark_dirty(self, project_id: str, entity_id: str, action: str) -> None:
+        """Mark the chapter as dirty for cloud sync (best-effort, never raises)."""
+        try:
+            from app.services.sync_dirty_service import SyncDirtyService
+
+            SyncDirtyService(self.db).mark_dirty(project_id, "chapters", entity_id, action)
+        except Exception:
+            pass
 
     def _create_content_version_if_needed(self, chapter: Chapter, source: str) -> None:
         latest = self.version_repo.get_latest_by_chapter(chapter.id)

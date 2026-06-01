@@ -34,6 +34,7 @@ TimelineProjectNotFoundError = TimelineEdgeProjectNotFoundError
 
 class TimelineEdgeService:
     def __init__(self, db: Session):
+        self.db = db
         self.project_repo = ProjectRepository(db)
         self.timeline_repo = TimelineRepository(db)
         self.edge_repo = TimelineEdgeRepository(db)
@@ -68,7 +69,9 @@ class TimelineEdgeService:
             note=data.note,
             visibility=data.visibility,
         )
-        return self.edge_repo.create(edge)
+        created = self.edge_repo.create(edge)
+        self._mark_dirty(project_id, created.id, "upsert")
+        return created
 
     def get_timeline_edge(self, edge_id: str) -> TimelineEdge:
         edge = self.edge_repo.get_active(edge_id)
@@ -84,16 +87,29 @@ class TimelineEdgeService:
         to_event_id = values.get("to_event_id", edge.to_event_id)
         self._validate_event_pair(edge.project_id, from_event_id, to_event_id)
 
-        return self.edge_repo.update(edge, values)
+        updated = self.edge_repo.update(edge, values)
+        self._mark_dirty(edge.project_id, edge_id, "upsert")
+        return updated
 
     def delete_timeline_edge(self, edge_id: str) -> TimelineEdge:
         edge = self.get_timeline_edge(edge_id)
-        return self.edge_repo.soft_delete(edge)
+        deleted = self.edge_repo.soft_delete(edge)
+        self._mark_dirty(edge.project_id, edge_id, "delete")
+        return deleted
 
     def _ensure_project_exists(self, project_id: str) -> None:
         project = self.project_repo.get_active(project_id)
         if project is None:
             raise TimelineEdgeProjectNotFoundError
+
+    def _mark_dirty(self, project_id: str, entity_id: str, action: str) -> None:
+        """Mark the timeline edge as dirty for cloud sync (best-effort, never raises)."""
+        try:
+            from app.services.sync_dirty_service import SyncDirtyService
+
+            SyncDirtyService(self.db).mark_dirty(project_id, "timeline_edges", entity_id, action)
+        except Exception:
+            pass
 
     def _validate_event_pair(self, project_id: str, from_event_id: str, to_event_id: str) -> None:
         if from_event_id == to_event_id:

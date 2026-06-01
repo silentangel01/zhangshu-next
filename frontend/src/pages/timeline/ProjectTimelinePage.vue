@@ -51,6 +51,7 @@ import {
   timelineEventTypeLabels,
   timelineTrackTypeLabels,
 } from '@/entities/timeline/types'
+import { cloudSyncManager } from '@/features/cloud/cloudSyncManager'
 import ContextMenu, { type ContextMenuItem } from '@/shared/ui/ContextMenu.vue'
 
 const route = useRoute()
@@ -809,6 +810,7 @@ async function handleSaveTrack() {
     await loadWorkspace()
     selectedTrackId.value = saved.id
     successMessage.value = '时间轴已保存。'
+    cloudSyncManager.notifyDirty(projectId.value)
   }, '保存时间轴失败。')
 }
 
@@ -825,6 +827,7 @@ async function handleDeleteTrack(track: TimelineTrack) {
     }
     await loadWorkspace()
     successMessage.value = '时间轴已删除。'
+    cloudSyncManager.notifyDirty(projectId.value)
   }, '删除时间轴失败。')
 }
 
@@ -863,6 +866,7 @@ async function handleSaveEvent() {
     selectedEventId.value = saved.id
     selectedTrackId.value = saved.track_id
     successMessage.value = '时间轴节点已保存。'
+    cloudSyncManager.notifyDirty(projectId.value)
   }, '保存时间轴节点失败。')
 }
 
@@ -888,6 +892,7 @@ async function handleDeleteEvent() {
     }
     await loadWorkspace()
     successMessage.value = '时间轴节点已删除。'
+    cloudSyncManager.notifyDirty(projectId.value)
   }, '删除时间轴节点失败。')
 }
 
@@ -919,6 +924,7 @@ async function handleSaveEdge() {
     await loadWorkspace()
     selectedEdgeId.value = saved.id
     successMessage.value = '时间轴连接已保存。'
+    cloudSyncManager.notifyDirty(projectId.value)
   }, '保存时间轴连接失败。')
 }
 
@@ -939,6 +945,7 @@ async function handleDeleteEdge() {
     panelMode.value = 'view'
     await loadWorkspace()
     successMessage.value = '时间轴连接已删除。'
+    cloudSyncManager.notifyDirty(projectId.value)
   }, '删除时间轴连接失败。')
 }
 
@@ -1405,6 +1412,7 @@ async function handleNodePointerUp(_track: TimelineTrack, event: TimelineEvent, 
       })
       events.value = events.value.map((item) => (item.id === saved.id ? saved : item))
       successMessage.value = '节点位置已更新'
+      cloudSyncManager.notifyDirty(projectId.value)
     }, '节点位置更新失败，请重试')
     await scheduleMeasureEdges()
   } finally {

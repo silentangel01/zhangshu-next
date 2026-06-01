@@ -72,19 +72,36 @@ class CloudBackupService:
         if existing is not None:
             return existing
 
-        client = self._auth_svc.get_api_client()
-
         if not cloud_project_id:
             try:
                 from app.models.project import Project
 
                 project = self._db.get(Project, project_id)
                 title = project.title if project else "未命名项目"
-                result = client.create_cloud_project(title)
+                result = self._auth_svc.call_with_refresh(
+                    lambda c: c.create_cloud_project(title)
+                )
                 cloud_project_id = str(result.get("id", ""))
             except CloudApiError as exc:
                 raise CloudBackupError(
                     f"创建云端项目失败：{exc}",
+                    error_kind=exc.error_kind,
+                    suggestion=exc.suggestion,
+                ) from exc
+            except Exception as exc:
+                raise CloudBackupError(f"创建云端项目失败：{exc}") from exc
+        else:
+            # Phase 3: Validate project identity before linking
+            from app.services.cloud_sync_service import CloudSyncError, CloudSyncService
+
+            try:
+                sync_svc = CloudSyncService(self._db)
+                sync_svc.validate_link_existing_project(
+                    project_id, cloud_project_id, cloud_user_id
+                )
+            except CloudSyncError as exc:
+                raise CloudBackupError(
+                    str(exc),
                     error_kind=exc.error_kind,
                     suggestion=exc.suggestion,
                 ) from exc
@@ -170,18 +187,26 @@ class CloudBackupService:
                 commit=False,
             )
 
-            client = self._auth_svc.get_api_client()
-
-            init_result = client.init_backup_upload(
-                link.cloud_project_id, filename, len(content)
+            # Use call_with_refresh for the initial cloud call to handle token expiry
+            _cpid = link.cloud_project_id
+            _fname = filename
+            _size = len(content)
+            init_result = self._auth_svc.call_with_refresh(
+                lambda c: c.init_backup_upload(_cpid, _fname, _size)
             )
             upload_url = str(init_result.get("upload_url", ""))
             upload_id = str(init_result.get("upload_id", ""))
 
+            # Upload to OSS via presigned URL (no bearer token needed)
+            client = self._auth_svc.get_api_client()
             client.upload_backup(upload_url, content)
 
-            complete_result = client.complete_backup(
-                link.cloud_project_id, upload_id, checksum
+            # Complete backup goes to cloud API (needs token refresh)
+            _cpid2 = link.cloud_project_id
+            _uid = upload_id
+            _cs = checksum
+            complete_result = self._auth_svc.call_with_refresh(
+                lambda c: c.complete_backup(_cpid2, _uid, _cs)
             )
             cloud_backup_id = str(complete_result.get("id", ""))
             object_key = str(complete_result.get("object_key", ""))
@@ -262,10 +287,11 @@ class CloudBackupService:
         if link is None:
             raise CloudBackupError("请先为该项目启用云端保存。")
 
-        client = self._auth_svc.get_api_client()
         try:
-            download_info = client.get_backup_download_url(
-                link.cloud_project_id, record.cloud_backup_id
+            _cpid = link.cloud_project_id
+            _bid = record.cloud_backup_id
+            download_info = self._auth_svc.call_with_refresh(
+                lambda c: c.get_backup_download_url(_cpid, _bid)
             )
             download_url = str(download_info.get("download_url", ""))
 

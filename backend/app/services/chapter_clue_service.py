@@ -27,6 +27,7 @@ class ChapterClueProjectMismatchError(Exception):
 
 class ChapterClueService:
     def __init__(self, db: Session):
+        self.db = db
         self.link_repo = ChapterClueRepository(db)
         self.chapter_repo = ChapterRepository(db)
         self.clue_repo = ClueRepository(db)
@@ -56,6 +57,7 @@ class ChapterClueService:
             note=data.note,
         )
         created = self.link_repo.create(link)
+        self._mark_dirty(chapter.project_id, created.id, "chapter_clues", "upsert")
         self._apply_convenience_updates(clue, chapter.id, data.relation_type)
         clue = self.clue_repo.get_active(clue.id) or clue
         return self._to_read_payload(created, clue)
@@ -66,6 +68,7 @@ class ChapterClueService:
             raise ChapterClueLinkNotFoundError
         values = data.model_dump(exclude_unset=True)
         updated = self.link_repo.update(link, values)
+        self._mark_dirty(link.project_id, link.id, "chapter_clues", "upsert")
         clue = self.clue_repo.get_active(updated.clue_id)
         if clue is None:
             raise ChapterClueClueNotFoundError
@@ -78,7 +81,17 @@ class ChapterClueService:
         link = self.link_repo.get(link_id)
         if link is None:
             raise ChapterClueLinkNotFoundError
-        self.link_repo.delete(link)
+        deleted = self.link_repo.delete(link)
+        self._mark_dirty(link.project_id, deleted.id, "chapter_clues", "delete")
+
+    def _mark_dirty(self, project_id: str, entity_id: str, entity_type: str, action: str) -> None:
+        """Mark an entity as dirty for cloud sync (best-effort, never raises)."""
+        try:
+            from app.services.sync_dirty_service import SyncDirtyService
+
+            SyncDirtyService(self.db).mark_dirty(project_id, entity_type, entity_id, action)
+        except Exception:
+            pass
 
     def _apply_convenience_updates(self, clue, chapter_id: str, relation_type: str) -> None:
         values: dict[str, object] = {}
@@ -94,6 +107,7 @@ class ChapterClueService:
                 values["status"] = "resolved"
         if values:
             self.clue_repo.update(clue, values)
+            self._mark_dirty(clue.project_id, clue.id, "clues", "upsert")
 
     def _to_read_payload(self, link: ChapterClue, clue) -> dict[str, object]:
         return {

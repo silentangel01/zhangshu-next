@@ -81,20 +81,83 @@ FTS_TABLE = "search_documents_fts"
 
 
 def ensure_search_fts_schema(engine: Engine) -> SearchFtsCapabilities:
-    """Create (or recreate) the FTS5 virtual table, triggers and backfill.
+    """Create or verify the FTS5 virtual table, triggers and backfill.
 
-    This function is idempotent and safe to call on every application start.
+    On first run (table does not exist) the full schema is created and
+    backfilled.  On subsequent runs the existing table and triggers are
+    reused — no DDL is executed at all.  This avoids the expensive full
+    rebuild on every application start.
     """
     with engine.begin() as conn:
+        # Ultra-fast path: triggers already exist → schema is fully set up.
+        # Skip FTS5 detection, table creation, trigger recreation, and backfill.
+        if _fts_triggers_ready(conn):
+            tokenizer = _detect_tokenizer_fast(conn)
+            return SearchFtsCapabilities(
+                supports_fts5=True,
+                supports_trigram=tokenizer == "trigram",
+                sqlite_version=str(
+                    conn.execute(text("SELECT sqlite_version()")).scalar()
+                ),
+                tokenizer=tokenizer,
+            )
+
         caps = detect_fts5_support(conn)
         if not caps.supports_fts5:
             return caps
 
-        _create_fts_table(conn, caps.tokenizer)
-        _create_fts_triggers(conn, caps.tokenizer)
-        _backfill_fts_index(conn, caps.tokenizer)
+        table_exists = _fts_table_exists(conn)
+
+        if table_exists:
+            # Fast path: table already exists, just ensure triggers are
+            # present (idempotent CREATE TRIGGER IF NOT EXISTS is not
+            # supported by SQLite, so we drop+create which is cheap).
+            _create_fts_triggers(conn, caps.tokenizer)
+        else:
+            # Slow path: first-time setup — create table, triggers and
+            # backfill the index from source tables.
+            _create_fts_table(conn, caps.tokenizer)
+            _create_fts_triggers(conn, caps.tokenizer)
+            _backfill_fts_index(conn, caps.tokenizer)
 
     return caps
+
+
+def _fts_triggers_ready(conn: Connection) -> bool:
+    """Check whether FTS triggers are already installed (skip all DDL if so)."""
+    result = conn.execute(
+        text(
+            "SELECT COUNT(*) FROM sqlite_master "
+            "WHERE type='trigger' AND name LIKE '%_fts_a%'"
+        )
+    ).scalar()
+    return result is not None and result > 0
+
+
+def _detect_tokenizer_fast(conn: Connection) -> str:
+    """Detect tokenizer from existing FTS table SQL without probe tables."""
+    sql = conn.execute(
+        text(
+            "SELECT sql FROM sqlite_master "
+            "WHERE type='table' AND name=:tbl"
+        ),
+        {"tbl": FTS_TABLE},
+    ).scalar()
+    if sql and "trigram" in sql:
+        return "trigram"
+    return "unicode61"
+
+
+def _fts_table_exists(conn: Connection) -> bool:
+    """Check whether the FTS5 virtual table already exists."""
+    result = conn.execute(
+        text(
+            "SELECT name FROM sqlite_master "
+            "WHERE type='table' AND name=:tbl"
+        ),
+        {"tbl": FTS_TABLE},
+    ).fetchone()
+    return result is not None
 
 
 def _create_fts_table(conn: Connection, tokenizer: str) -> None:
@@ -234,7 +297,8 @@ def _create_fts_triggers(conn: Connection, tokenizer: str) -> None:  # noqa: ARG
         "|| COALESCE(NEW.motivation, '') || ' '"
         "|| COALESCE(NEW.secret, '') || ' '"
         "|| COALESCE(NEW.arc, '') || ' '"
-        "|| COALESCE(NEW.notes, '')"
+        "|| COALESCE(NEW.notes, '') || ' '"
+        "|| COALESCE(NEW.profile_sections, '')"
     )
     _char_body_old = _char_body.replace("NEW.", "OLD.")
     conn.execute(
@@ -562,7 +626,8 @@ def _backfill_fts_index(conn: Connection, tokenizer: str) -> None:  # noqa: ARG0
             "  || ' ' || COALESCE(appearance, '') || ' ' || COALESCE(personality, '')"
             "  || ' ' || COALESCE(background, '') || ' ' || COALESCE(ability, '')"
             "  || ' ' || COALESCE(motivation, '') || ' ' || COALESCE(secret, '')"
-            "  || ' ' || COALESCE(arc, '') || ' ' || COALESCE(notes, ''),"
+            "  || ' ' || COALESCE(arc, '') || ' ' || COALESCE(notes, '')"
+            "  || ' ' || COALESCE(profile_sections, ''),"
             "  '', '{}',"
             "  COALESCE(strftime('%s', updated_at), '0')"
             " FROM characters WHERE deleted_at IS NULL"

@@ -13,6 +13,16 @@ import app.models.user  # noqa: F401
 import app.models.refresh_token  # noqa: F401
 import app.models.cloud_project  # noqa: F401
 import app.models.cloud_backup  # noqa: F401
+import app.models.rate_limit_event  # noqa: F401
+import app.models.account_deletion_request  # noqa: F401
+import app.models.announcement  # noqa: F401
+import app.models.feedback_ticket  # noqa: F401
+import app.models.feedback_attachment  # noqa: F401
+import app.models.feedback_reply  # noqa: F401
+import app.models.cloud_sync_entity  # noqa: F401
+import app.models.cloud_sync_change  # noqa: F401
+import app.models.cloud_sync_snapshot  # noqa: F401
+import app.models.cloud_sync_conflict  # noqa: F401
 
 settings = get_settings()
 

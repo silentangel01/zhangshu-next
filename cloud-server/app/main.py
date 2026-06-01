@@ -3,18 +3,53 @@
 from __future__ import annotations
 
 import logging
+from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
+from app.api.account import router as account_router
+from app.api.admin_announcements import router as admin_announcements_router
+from app.api.admin_audit import router as admin_audit_router
+from app.api.admin_auth import router as admin_auth_router
+from app.api.admin_dashboard import router as admin_dashboard_router
+from app.api.admin_feedback import router as admin_feedback_router
+from app.api.admin_monitoring import router as admin_monitoring_router
+from app.api.admin_roles import router as admin_roles_router
+from app.api.admin_search import router as admin_search_router
+from app.api.admin_users import router as admin_users_router
+from app.api.announcements import router as announcements_router
 from app.api.auth import router as auth_router
 from app.api.backups import router as backups_router
+from app.api.feedback import router as feedback_router
 from app.api.projects import router as projects_router
+from app.api.sync import router as sync_router
 from app.core.config import get_settings, validate_production_config
 from app.core.logging import RequestIDMiddleware, configure_logging
 from app.core.security import configure_bcrypt
 from app.core.security_headers import SecurityHeadersMiddleware
 
+
+# ---------------------------------------------------------------------------
+# Admin CSRF middleware
+# ---------------------------------------------------------------------------
+class AdminCSRFMiddleware(BaseHTTPMiddleware):
+    """Validate Origin/Referer + custom header for admin write requests."""
+
+    async def dispatch(self, request: Request, call_next):
+        from app.core.admin_csrf import validate_admin_write_request
+        from fastapi import HTTPException
+
+        try:
+            validate_admin_write_request(request, settings)
+        except HTTPException as exc:
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={"detail": exc.detail},
+            )
+        return await call_next(request)
 settings = get_settings()
 
 # Configure logging first — all subsequent log messages use the new format
@@ -25,28 +60,13 @@ logger = logging.getLogger(__name__)
 # Configure bcrypt rounds from settings
 configure_bcrypt(settings.bcrypt_rounds)
 
-app = FastAPI(title="Zhangshu Cloud API", version="0.1.0")
-
 
 # ---------------------------------------------------------------------------
-# Middleware (order matters — outermost first)
+# Lifespan (replaces deprecated on_event("startup") / on_event("shutdown"))
 # ---------------------------------------------------------------------------
-app.add_middleware(RequestIDMiddleware)
-app.add_middleware(SecurityHeadersMiddleware)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origin_list,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-# ---------------------------------------------------------------------------
-# Startup
-# ---------------------------------------------------------------------------
-@app.on_event("startup")
-def _startup_checks():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # ── Startup ──────────────────────────────────────────────────────────
     # Log OSS configuration status (without secrets)
     has_key = bool(settings.oss_access_key_id)
     has_secret = bool(settings.oss_access_key_secret)
@@ -84,13 +104,49 @@ def _startup_checks():
         settings.log_level,
     )
 
+    yield
+
+    # ── Shutdown ─────────────────────────────────────────────────────────
+    logger.info("Cloud API shutting down.")
+
+
+app = FastAPI(title="Zhangshu Cloud API", version="0.1.0", lifespan=lifespan)
+
+
+# ---------------------------------------------------------------------------
+# Middleware (order matters — outermost first)
+# ---------------------------------------------------------------------------
+app.add_middleware(AdminCSRFMiddleware)
+app.add_middleware(RequestIDMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origin_list,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 # ---------------------------------------------------------------------------
 # Routers
 # ---------------------------------------------------------------------------
 app.include_router(auth_router)
 app.include_router(projects_router)
+app.include_router(sync_router)
 app.include_router(backups_router)
+app.include_router(account_router)
+app.include_router(announcements_router)
+app.include_router(feedback_router)
+app.include_router(admin_announcements_router)
+app.include_router(admin_audit_router)
+app.include_router(admin_auth_router)
+app.include_router(admin_dashboard_router)
+app.include_router(admin_feedback_router)
+app.include_router(admin_monitoring_router)
+app.include_router(admin_roles_router)
+app.include_router(admin_search_router)
+app.include_router(admin_users_router)
 
 
 # ---------------------------------------------------------------------------
@@ -104,7 +160,7 @@ def health_check():
 
 @app.get("/ready")
 def readiness_check():
-    """Readiness probe — verifies DB connectivity and config status."""
+    """Readiness probe — verifies DB, Redis, and config status."""
     from app.db.session import engine
 
     checks: dict[str, str] = {}
@@ -118,6 +174,15 @@ def readiness_check():
         checks["database"] = "ok"
     except Exception as exc:
         checks["database"] = f"error: {exc}"
+
+    # Redis connectivity (via shared helper — never raises)
+    try:
+        from app.core.redis_client import check_redis_health
+
+        redis_status = check_redis_health()
+        checks["redis"] = redis_status.get("status", "unknown")
+    except Exception as exc:  # pragma: no cover - defensive
+        checks["redis"] = f"error: {exc}"
 
     # OSS configuration (presence only — no actual network call)
     has_key = bool(settings.oss_access_key_id)
@@ -139,8 +204,22 @@ def readiness_check():
     except Exception:
         checks["alembic_head"] = "unknown"
 
-    all_ok = checks.get("database") == "ok"
+    # Determine overall status:
+    # - DB must be ok
+    # - In production with redis_enabled=true, Redis must also be ok
+    db_ok = checks.get("database") == "ok"
+    redis_ok = checks.get("redis") in ("ok", "disabled")
+    if not db_ok:
+        overall = "degraded"
+    elif settings.environment == "production" and settings.redis_enabled and not redis_ok:
+        logger.warning("Redis is required in production but not healthy: %s", checks.get("redis"))
+        overall = "degraded"
+    elif not redis_ok:
+        overall = "degraded"
+    else:
+        overall = "ok"
+
     return {
-        "status": "ok" if all_ok else "degraded",
+        "status": overall,
         "checks": checks,
     }

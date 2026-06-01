@@ -27,6 +27,7 @@ class ClueChapterProjectMismatchError(Exception):
 
 class ClueService:
     def __init__(self, db: Session):
+        self.db = db
         self.clue_repo = ClueRepository(db)
         self.project_repo = ProjectRepository(db)
         self.chapter_repo = ChapterRepository(db)
@@ -58,7 +59,9 @@ class ClueService:
         self._validate_chapter(project_id, data.payoff_chapter_id)
 
         clue = Clue(id=str(uuid4()), project_id=project_id, **data.model_dump())
-        return self.clue_repo.create(clue)
+        created = self.clue_repo.create(clue)
+        self._mark_dirty(project_id, created.id, "upsert")
+        return created
 
     def get_clue(self, clue_id: str) -> Clue:
         clue = self.clue_repo.get_active(clue_id)
@@ -73,11 +76,15 @@ class ClueService:
             self._validate_chapter(clue.project_id, values["setup_chapter_id"])
         if "payoff_chapter_id" in values:
             self._validate_chapter(clue.project_id, values["payoff_chapter_id"])
-        return self.clue_repo.update(clue, values)
+        updated = self.clue_repo.update(clue, values)
+        self._mark_dirty(clue.project_id, clue_id, "upsert")
+        return updated
 
     def delete_clue(self, clue_id: str) -> Clue:
         clue = self.get_clue(clue_id)
-        return self.clue_repo.soft_delete(clue)
+        deleted = self.clue_repo.soft_delete(clue)
+        self._mark_dirty(clue.project_id, clue_id, "delete")
+        return deleted
 
     def _validate_chapter(self, project_id: str, chapter_id: object) -> None:
         if chapter_id is None:
@@ -87,3 +94,12 @@ class ClueService:
             raise ClueChapterNotFoundError
         if chapter.project_id != project_id:
             raise ClueChapterProjectMismatchError
+
+    def _mark_dirty(self, project_id: str, entity_id: str, action: str) -> None:
+        """Mark the clue as dirty for cloud sync (best-effort, never raises)."""
+        try:
+            from app.services.sync_dirty_service import SyncDirtyService
+
+            SyncDirtyService(self.db).mark_dirty(project_id, "clues", entity_id, action)
+        except Exception:
+            pass

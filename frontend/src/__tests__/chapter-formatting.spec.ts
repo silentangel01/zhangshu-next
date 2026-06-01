@@ -273,4 +273,131 @@ describe('formatChapterContent', () => {
     expect(result.content).toBe('  第一段。\n\n  第二段。\n\n  第三段。')
     expect(result.changed).toBe(true)
   })
+
+  // --- Scene separators (起点/番茄 convention) ---
+
+  it('does not indent asterisk scene separators', () => {
+    const result = formatChapterContent('第一段。\n***\n第二段。', {
+      firstLineIndentSpaces: 2,
+      paragraphSpacingLines: 0,
+    })
+    expect(result.content).toBe('  第一段。\n***\n  第二段。')
+  })
+
+  it('does not indent spaced asterisk separators', () => {
+    const result = formatChapterContent('第一段。\n* * *\n第二段。', {
+      firstLineIndentSpaces: 2,
+      paragraphSpacingLines: 1,
+    })
+    expect(result.content).toBe('  第一段。\n\n* * *\n\n  第二段。')
+  })
+
+  it('does not indent em-dash scene separators', () => {
+    const result = formatChapterContent('第一段。\n————————\n第二段。', {
+      firstLineIndentSpaces: 2,
+      paragraphSpacingLines: 0,
+    })
+    expect(result.content).toBe('  第一段。\n————————\n  第二段。')
+  })
+
+  it('does not indent ellipsis separators', () => {
+    const result = formatChapterContent('第一段。\n……\n第二段。', {
+      firstLineIndentSpaces: 2,
+      paragraphSpacingLines: 0,
+    })
+    expect(result.content).toBe('  第一段。\n……\n  第二段。')
+  })
+
+  it('strips existing leading whitespace from scene separators', () => {
+    const result = formatChapterContent('第一段。\n    ***\n第二段。', {
+      firstLineIndentSpaces: 2,
+      paragraphSpacingLines: 0,
+    })
+    expect(result.content).toBe('  第一段。\n***\n  第二段。')
+  })
+
+  it('reports separator handling in changes', () => {
+    const result = formatChapterContent('第一段。\n***\n第二段。', {
+      firstLineIndentSpaces: 2,
+      paragraphSpacingLines: 0,
+    })
+    expect(result.changes).toContain('场景分隔符不缩进')
+  })
+
+  it('treats single asterisk as regular paragraph (not separator)', () => {
+    const result = formatChapterContent('第一段。\n*\n第二段。', {
+      firstLineIndentSpaces: 2,
+      paragraphSpacingLines: 0,
+    })
+    expect(result.content).toBe('  第一段。\n  *\n  第二段。')
+  })
+
+  it('handles hyphenated separator with spaces', () => {
+    const result = formatChapterContent('第一段。\n- - -\n第二段。', {
+      firstLineIndentSpaces: 2,
+      paragraphSpacingLines: 0,
+    })
+    expect(result.content).toBe('  第一段。\n- - -\n  第二段。')
+  })
+
+  // --- Punctuation normalisation (起点/番茄 convention) ---
+
+  it('converts half-width punctuation between CJK chars to full-width', () => {
+    const result = formatChapterContent('你好,世界!', {
+      firstLineIndentSpaces: 0,
+      paragraphSpacingLines: 0,
+    })
+    expect(result.content).toBe('你好，世界！')
+  })
+
+  it('converts half-width question mark between CJK chars', () => {
+    const result = formatChapterContent('你好?世界', {
+      firstLineIndentSpaces: 0,
+      paragraphSpacingLines: 0,
+    })
+    expect(result.content).toBe('你好？世界')
+  })
+
+  it('converts half-width colon between CJK chars', () => {
+    const result = formatChapterContent('他说:你好', {
+      firstLineIndentSpaces: 0,
+      paragraphSpacingLines: 0,
+    })
+    expect(result.content).toBe('他说：你好')
+  })
+
+  it('does not convert punctuation in pure English text', () => {
+    const result = formatChapterContent('Hello, world!', {
+      firstLineIndentSpaces: 0,
+      paragraphSpacingLines: 0,
+    })
+    expect(result.content).toBe('Hello, world!')
+    expect(result.changed).toBe(false)
+  })
+
+  it('does not convert punctuation when only left neighbour is ASCII', () => {
+    const result = formatChapterContent('OK,好的', {
+      firstLineIndentSpaces: 0,
+      paragraphSpacingLines: 0,
+    })
+    expect(result.content).toBe('OK,好的')
+  })
+
+  it('reports punctuation normalisation in changes', () => {
+    const result = formatChapterContent('你好,世界', {
+      firstLineIndentSpaces: 0,
+      paragraphSpacingLines: 0,
+    })
+    expect(result.changes).toContain('标点符号规范化')
+  })
+
+  // --- Combined: separators + punctuation + indent ---
+
+  it('handles separators, punctuation, indent and spacing together', () => {
+    const result = formatChapterContent('他说:你好!\n\n***\n\n她走了.', {
+      firstLineIndentSpaces: 2,
+      paragraphSpacingLines: 1,
+    })
+    expect(result.content).toBe('  他说：你好！\n\n***\n\n  她走了。')
+  })
 })

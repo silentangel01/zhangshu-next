@@ -55,7 +55,9 @@ class TimelineTrackService:
             color=data.color,
             is_main=data.is_main,
         )
-        return self.track_repo.create(track)
+        created = self.track_repo.create(track)
+        self._mark_dirty(project_id, created.id, "upsert")
+        return created
 
     def get_timeline_track(self, track_id: str) -> TimelineTrack:
         track = self.track_repo.get_active(track_id)
@@ -71,7 +73,9 @@ class TimelineTrackService:
             if self.track_repo.count_active_main_by_project(track.project_id) <= 1:
                 raise TimelineTrackMainRequiredError
 
-        return self.track_repo.update(track, values)
+        updated = self.track_repo.update(track, values)
+        self._mark_dirty(track.project_id, track_id, "upsert")
+        return updated
 
     def delete_timeline_track(self, track_id: str) -> TimelineTrack:
         track = self.get_timeline_track(track_id)
@@ -81,7 +85,9 @@ class TimelineTrackService:
         if track.is_main and self.track_repo.count_active_main_by_project(track.project_id) <= 1:
             raise TimelineTrackMainRequiredError
 
-        return self.track_repo.soft_delete(track)
+        deleted = self.track_repo.soft_delete(track)
+        self._mark_dirty(track.project_id, track_id, "delete")
+        return deleted
 
     def ensure_main_track(self, project_id: str) -> TimelineTrack:
         self._ensure_project_exists(project_id)
@@ -124,6 +130,15 @@ class TimelineTrackService:
         project = self.project_repo.get_active(project_id)
         if project is None:
             raise TimelineProjectNotFoundError
+
+    def _mark_dirty(self, project_id: str, entity_id: str, action: str) -> None:
+        """Mark the timeline track as dirty for cloud sync (best-effort, never raises)."""
+        try:
+            from app.services.sync_dirty_service import SyncDirtyService
+
+            SyncDirtyService(self.db).mark_dirty(project_id, "timeline_tracks", entity_id, action)
+        except Exception:
+            pass
 
     def _distribute_track_position_ratios(self, track_id: str) -> None:
         events = self.timeline_repo.list_active_by_track(track_id)

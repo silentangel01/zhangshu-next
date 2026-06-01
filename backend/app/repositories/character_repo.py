@@ -42,6 +42,7 @@ class CharacterRepository:
                     Character.summary.ilike(pattern),
                     Character.biography.ilike(pattern),
                     Character.faction.ilike(pattern),
+                    Character.profile_sections.ilike(pattern),
                 )
             )
 

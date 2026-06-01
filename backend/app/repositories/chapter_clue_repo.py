@@ -19,7 +19,11 @@ class ChapterClueRepository:
         statement = (
             select(ChapterClue, Clue)
             .join(Clue, ChapterClue.clue_id == Clue.id)
-            .where(ChapterClue.chapter_id == chapter_id, Clue.deleted_at.is_(None))
+            .where(
+                ChapterClue.chapter_id == chapter_id,
+                ChapterClue.deleted_at.is_(None),
+                Clue.deleted_at.is_(None),
+            )
             .order_by(ChapterClue.created_at.asc())
         )
         return list(self.db.execute(statement).all())
@@ -37,10 +41,15 @@ class ChapterClueRepository:
         for field, value in values.items():
             setattr(link, field, value)
         link.updated_at = utc_now()
+        link.version = (link.version or 0) + 1
         self.db.commit()
         self.db.refresh(link)
         return link
 
-    def delete(self, link: ChapterClue) -> None:
-        self.db.delete(link)
+    def delete(self, link: ChapterClue) -> ChapterClue:
+        link.deleted_at = utc_now()
+        link.updated_at = utc_now()
+        link.version = (link.version or 0) + 1
         self.db.commit()
+        self.db.refresh(link)
+        return link

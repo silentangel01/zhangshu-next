@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { RouterLink } from 'vue-router'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 import defaultBookCover from '@/assets/default-book-cover.svg'
 import { getCloudAccountStatus } from '@/entities/cloud/api'
 import type { CloudAccountStatus } from '@/entities/cloud/types'
 import CloudAccountDialog from '@/features/cloud/CloudAccountDialog.vue'
+import CloudProjectImportDialog from '@/features/cloud/CloudProjectImportDialog.vue'
 import {
   createProject,
   deleteProject,
@@ -41,6 +42,9 @@ const BUILTIN_TAGS = [
   '短篇',
 ]
 
+const router = useRouter()
+const route = useRoute()
+
 const STATUS_LABELS: Record<string, string> = {
   planning: '筹备中',
   writing: '连载中',
@@ -73,6 +77,8 @@ const showCreateDialog = ref(false)
 const editingProject = ref<Project | null>(null)
 const isFilterPanelOpen = ref(false)
 const showCloudDialog = ref(false)
+const showImportDialog = ref(false)
+const showImportMenu = ref(false)
 const cloudAccountStatus = ref<CloudAccountStatus | null>(null)
 
 const searchKeyword = ref('')
@@ -93,7 +99,41 @@ const displayedProjects = computed(() => {
 onMounted(() => {
   void refreshProjects()
   void loadCloudStatus()
+  document.addEventListener('click', handleOutsideClick)
+
+  // Auto-open cloud dialog if navigated with ?openCloudDialog=1
+  if (route.query.openCloudDialog === '1') {
+    showCloudDialog.value = true
+    // Clean up the query param to avoid re-opening on refresh
+    router.replace({ path: '/projects', query: {} })
+  }
 })
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleOutsideClick)
+})
+
+function handleOutsideClick(event: MouseEvent) {
+  const target = event.target as HTMLElement
+  if (!target.closest('.import-dropdown')) {
+    showImportMenu.value = false
+  }
+}
+
+function toggleImportMenu(event: MouseEvent) {
+  event.stopPropagation()
+  showImportMenu.value = !showImportMenu.value
+}
+
+function handleFileImport() {
+  showImportMenu.value = false
+  router.push('/imports')
+}
+
+function handleCloudImport() {
+  showImportMenu.value = false
+  showImportDialog.value = true
+}
 
 async function loadCloudStatus() {
   try {
@@ -246,27 +286,51 @@ function getErrorMessage(error: unknown, fallback: string): string {
   }
   return fallback
 }
+
+function handleCloudAccountClick() {
+  if (cloudAccountStatus.value?.logged_in) {
+    router.push('/account')
+  } else {
+    showCloudDialog.value = true
+  }
+}
 </script>
 
 <template>
   <main class="projects-page">
     <header class="page-header">
       <div>
-        <p class="eyebrow">章枢 Next</p>
-        <h1>书籍</h1>
+        <h1>我的作品</h1>
       </div>
       <div class="header-actions">
         <button
           class="secondary-link cloud-account-button"
           type="button"
-          @click="showCloudDialog = true"
+          @click="handleCloudAccountClick"
         >
           {{ cloudAccountStatus?.logged_in ? cloudAccountStatus.email ?? '云账户' : '云账户' }}
         </button>
-        <RouterLink class="secondary-link" to="/imports">导入作品</RouterLink>
+        <div class="import-dropdown">
+          <button
+            class="secondary-link import-trigger"
+            type="button"
+            @click="toggleImportMenu"
+          >
+            导入
+            <span class="caret" aria-hidden="true">▾</span>
+          </button>
+          <ul v-show="showImportMenu" class="import-menu">
+            <li>
+              <button type="button" @click="handleFileImport">从文件导入</button>
+            </li>
+            <li v-if="cloudAccountStatus?.logged_in">
+              <button type="button" @click="handleCloudImport">从云端恢复</button>
+            </li>
+          </ul>
+        </div>
         <RouterLink class="secondary-link" to="/backup">备份恢复</RouterLink>
         <button class="primary-button" type="button" :disabled="isSaving" @click="showCreateDialog = true">
-          新建书籍
+          新建作品
         </button>
       </div>
     </header>
@@ -331,12 +395,12 @@ function getErrorMessage(error: unknown, fallback: string): string {
       <div v-if="isLoading" class="state-message">正在加载……</div>
 
       <div v-else-if="!hasProjects" class="empty-state">
-        <h2>暂无书籍</h2>
-        <p>新建一个小说项目，开始整理你的创作资料。</p>
+        <h2>暂无作品</h2>
+        <p>还没有作品。新建作品后开始写第一章。</p>
       </div>
 
       <div v-else-if="displayedProjects.length === 0" class="empty-state compact">
-        <p>没有匹配的书籍，试试调整搜索或筛选条件。</p>
+        <p>没有匹配的作品，调整搜索或筛选条件。</p>
       </div>
 
       <div v-else class="book-grid">
@@ -420,6 +484,12 @@ function getErrorMessage(error: unknown, fallback: string): string {
       v-if="showCloudDialog"
       @close="showCloudDialog = false; loadCloudStatus()"
     />
+
+    <CloudProjectImportDialog
+      v-if="showImportDialog"
+      @close="showImportDialog = false"
+      @imported="refreshProjects()"
+    />
   </main>
 </template>
 
@@ -427,18 +497,18 @@ function getErrorMessage(error: unknown, fallback: string): string {
 .projects-page {
   min-height: 100vh;
   box-sizing: border-box;
-  padding: 40px;
+  padding: 24px 32px;
   background: var(--zs-color-bg);
   color: var(--zs-color-text);
 }
 
 .page-header {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
-  gap: 24px;
+  gap: 16px;
   max-width: 1120px;
-  margin: 0 auto 24px;
+  margin: 0 auto 16px;
 }
 
 .header-actions {
@@ -447,19 +517,11 @@ function getErrorMessage(error: unknown, fallback: string): string {
   gap: 10px;
 }
 
-.eyebrow {
-  margin: 0 0 6px;
-  color: var(--zs-color-text-muted);
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0;
-  text-transform: uppercase;
-}
-
 h1 {
   margin: 0;
-  font-size: 2rem;
-  line-height: 1.1;
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.3;
 }
 
 .content-panel,
@@ -474,22 +536,23 @@ h1 {
 
 .error-banner {
   box-sizing: border-box;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
   border: 1px solid var(--zs-color-danger);
-  border-radius: 8px;
-  padding: 12px 14px;
+  border-radius: var(--zs-radius-md);
+  padding: 10px 12px;
   background: var(--zs-color-danger-soft);
   color: var(--zs-color-danger);
-  font-weight: 700;
+  font-weight: 600;
+  font-size: 0.88rem;
 }
 
 .state-message,
 .empty-state {
   display: grid;
   place-items: center;
-  min-height: 320px;
+  min-height: 240px;
   border: 1px dashed var(--zs-color-border);
-  border-radius: 8px;
+  border-radius: var(--zs-radius-md);
   background: var(--zs-color-surface);
   color: var(--zs-color-text-muted);
 }
@@ -507,7 +570,8 @@ h1 {
 
 .empty-state h2 {
   color: var(--zs-color-text);
-  font-size: 1.25rem;
+  font-size: 1.05rem;
+  font-weight: 700;
 }
 
 .book-grid {
@@ -517,19 +581,18 @@ h1 {
 
 .book-card {
   display: grid;
-  grid-template-columns: 100px 1fr;
-  gap: 20px;
+  grid-template-columns: 88px 1fr;
+  gap: 16px;
   border: 1px solid var(--zs-color-border);
-  border-radius: 8px;
-  padding: 20px;
+  border-radius: var(--zs-radius-md);
+  padding: 16px;
   background: var(--zs-color-surface);
-  box-shadow: var(--zs-shadow-sm);
 }
 
 .book-cover {
-  width: 100px;
+  width: 88px;
   aspect-ratio: 3 / 4.2;
-  border-radius: 4px;
+  border-radius: var(--zs-radius-sm);
   overflow: hidden;
   border: 1px solid var(--zs-color-border-soft);
   background: var(--zs-color-surface-soft);
@@ -560,16 +623,17 @@ h1 {
 .book-header h2 {
   margin: 0;
   color: var(--zs-color-text);
-  font-size: 1.15rem;
-  line-height: 1.25;
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.3;
 }
 
 .status-badge {
   flex: 0 0 auto;
-  border-radius: 999px;
-  padding: 3px 10px;
+  border-radius: var(--zs-radius-sm);
+  padding: 2px 8px;
   font-size: 0.72rem;
-  font-weight: 800;
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -600,8 +664,8 @@ h1 {
 
 .book-author {
   margin: 0;
-  color: var(--zs-color-text);
-  font-size: 0.88rem;
+  color: var(--zs-color-text-muted);
+  font-size: 0.84rem;
   font-weight: 600;
 }
 
@@ -619,17 +683,18 @@ h1 {
 }
 
 .book-tag {
-  border-radius: 999px;
-  padding: 2px 8px;
-  background: var(--zs-color-info-soft);
-  color: var(--zs-color-info);
+  border-radius: var(--zs-radius-sm);
+  padding: 2px 6px;
+  background: var(--zs-color-surface-soft);
+  color: var(--zs-color-text-muted);
   font-size: 0.72rem;
-  font-weight: 700;
+  font-weight: 600;
+  border: 1px solid var(--zs-color-border-soft);
 }
 
 .book-tag.more {
   background: var(--zs-color-surface-muted);
-  color: var(--zs-color-text-muted);
+  color: var(--zs-color-text-faint);
 }
 
 .book-summary {
@@ -663,28 +728,29 @@ h1 {
 .open-link {
   display: inline-flex;
   align-items: center;
-  min-height: 34px;
+  min-height: 30px;
   box-sizing: border-box;
-  border-radius: 6px;
-  padding: 0 12px;
+  border-radius: var(--zs-radius-sm);
+  padding: 0 10px;
   background: var(--zs-color-primary);
   color: var(--zs-color-on-primary);
-  font-weight: 800;
-  font-size: 0.86rem;
+  font-weight: 600;
+  font-size: 0.82rem;
   text-decoration: none;
 }
 
 .secondary-link {
   display: inline-flex;
   align-items: center;
-  min-height: 38px;
+  min-height: 32px;
   box-sizing: border-box;
   border: 1px solid var(--zs-color-border);
-  border-radius: 6px;
-  padding: 0 14px;
+  border-radius: var(--zs-radius-sm);
+  padding: 0 10px;
   background: var(--zs-color-surface);
-  color: var(--zs-color-text);
-  font-weight: 800;
+  color: var(--zs-color-text-muted);
+  font-weight: 600;
+  font-size: 0.84rem;
   text-decoration: none;
 }
 
@@ -693,14 +759,64 @@ h1 {
   font: inherit;
 }
 
-button {
-  min-height: 34px;
-  border-radius: 6px;
-  border: 1px solid transparent;
-  padding: 0 12px;
+.import-dropdown {
+  position: relative;
+}
+
+.import-trigger {
+  cursor: pointer;
   font: inherit;
-  font-weight: 800;
-  font-size: 0.86rem;
+  gap: 4px;
+}
+
+.import-trigger .caret {
+  font-size: 0.7em;
+  opacity: 0.6;
+}
+
+.import-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 100;
+  min-width: 140px;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  border: 1px solid var(--zs-color-border);
+  border-radius: 6px;
+  background: var(--zs-color-surface);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+.import-menu li button {
+  display: block;
+  width: 100%;
+  min-height: 32px;
+  border: none;
+  border-radius: 0;
+  padding: 0 12px;
+  background: none;
+  color: var(--zs-color-text);
+  font: inherit;
+  font-weight: 400;
+  font-size: 0.84rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.import-menu li button:hover {
+  background: var(--zs-color-surface-soft, #f5f5f5);
+}
+
+button {
+  min-height: 30px;
+  border-radius: var(--zs-radius-sm);
+  border: 1px solid transparent;
+  padding: 0 10px;
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.84rem;
   cursor: pointer;
 }
 
@@ -743,13 +859,14 @@ button:disabled {
 .search-input {
   width: 100%;
   box-sizing: border-box;
-  min-height: 38px;
+  min-height: 32px;
   border: 1px solid var(--zs-color-border);
   border-radius: var(--zs-radius-sm);
-  padding: 0 14px;
+  padding: 0 10px;
   background: var(--zs-color-surface);
   color: var(--zs-color-text);
   font: inherit;
+  font-size: 0.88rem;
 }
 
 .search-input:focus {
@@ -769,14 +886,15 @@ button:disabled {
 }
 
 .filter-button {
-  min-height: 38px;
+  min-height: 32px;
   border: 1px solid var(--zs-color-border);
   border-radius: var(--zs-radius-sm);
-  padding: 0 14px;
+  padding: 0 10px;
   background: var(--zs-color-surface);
   color: var(--zs-color-text);
   font: inherit;
-  font-weight: 700;
+  font-weight: 600;
+  font-size: 0.84rem;
   cursor: pointer;
 }
 
@@ -802,21 +920,22 @@ button:disabled {
 
 .filter-field {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   color: var(--zs-color-text-muted);
-  font-size: 0.86rem;
-  font-weight: 700;
+  font-size: 0.82rem;
+  font-weight: 600;
 }
 
 .filter-field select {
   width: 100%;
-  min-height: 34px;
+  min-height: 30px;
   border: 1px solid var(--zs-color-border);
   border-radius: var(--zs-radius-sm);
-  padding: 0 10px;
+  padding: 0 8px;
   background: var(--zs-color-surface);
   color: var(--zs-color-text);
   font: inherit;
+  font-size: 0.84rem;
 }
 
 .filter-actions {
@@ -831,27 +950,38 @@ button:disabled {
   align-items: center;
   gap: 6px;
   color: var(--zs-color-text-muted);
-  font-size: 0.86rem;
-  font-weight: 700;
+  font-size: 0.84rem;
+  font-weight: 600;
 }
 
 .sort-control select {
-  min-height: 38px;
+  min-height: 32px;
   border: 1px solid var(--zs-color-border);
   border-radius: var(--zs-radius-sm);
-  padding: 0 10px;
+  padding: 0 8px;
   background: var(--zs-color-surface);
   color: var(--zs-color-text);
   font: inherit;
+  font-size: 0.84rem;
 }
 
 .empty-state.compact {
   min-height: 140px;
 }
 
+/* Reserve space for the fixed top-right bar (notification bell + theme switcher)
+ * at viewports where overlap can occur. The top bar is ~220px wide and fixed at
+ * the viewport right edge. At wide viewports (>1600px) the centered content
+ * clears it naturally; at narrow viewports (<=720px) the bar moves to bottom. */
+@media (min-width: 721px) and (max-width: 1600px) {
+  .page-header {
+    padding-right: var(--top-bar-width, 220px);
+  }
+}
+
 @media (max-width: 720px) {
   .projects-page {
-    padding: 24px 16px;
+    padding: 16px 12px;
   }
 
   .page-header,
@@ -862,13 +992,13 @@ button:disabled {
   }
 
   .book-card {
-    grid-template-columns: 80px 1fr;
-    gap: 14px;
-    padding: 16px;
+    grid-template-columns: 72px 1fr;
+    gap: 12px;
+    padding: 12px;
   }
 
   .book-cover {
-    width: 80px;
+    width: 72px;
   }
 
   .primary-button,

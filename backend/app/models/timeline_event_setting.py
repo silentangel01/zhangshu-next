@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Index, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.database import Base
@@ -40,3 +40,8 @@ class TimelineEventSetting(Base):
         onupdate=utc_now,
         nullable=False,
     )
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)

@@ -41,6 +41,7 @@ import GraphCanvas, { type GraphViewportState } from '@/features/graph/GraphCanv
 import GraphInspector, { type EdgeDraft, type NodeDraft } from '@/features/graph/GraphInspector.vue'
 import GraphToolbar, { type GraphToolMode } from '@/features/graph/GraphToolbar.vue'
 import { safeReadJson, safeWriteJson } from '@/shared/storage/localWorkspaceState'
+import { cloudSyncManager } from '@/features/cloud/cloudSyncManager'
 
 type Point = { x: number; y: number }
 type BindingKey = 'character' | 'setting' | 'clue' | 'timeline_event'
@@ -128,6 +129,33 @@ const modeLabels: Record<GraphToolMode, string> = {
 const projectId = computed(() => {
   const value = route.params.projectId
   return (Array.isArray(value) ? value[0] : value) ?? ''
+})
+
+type ReturnTarget = 'characters' | 'settings' | 'clues' | 'timeline' | 'outlines'
+
+const RETURN_ROUTE_MAP: Record<ReturnTarget, { path: string; queryKey: string; label: string }> = {
+  characters: { path: 'characters', queryKey: 'characterId', label: '返回人物库' },
+  settings: { path: 'settings', queryKey: 'settingId', label: '返回设定库' },
+  clues: { path: 'clues', queryKey: 'clueId', label: '返回伏笔库' },
+  timeline: { path: 'timeline', queryKey: 'eventId', label: '返回时间轴' },
+  outlines: { path: 'outlines', queryKey: 'outlineId', label: '返回大纲' },
+}
+
+const VALID_RETURN_TARGETS = new Set<string>(['characters', 'settings', 'clues', 'timeline', 'outlines'])
+
+const returnContext = computed(() => {
+  const returnTo = route.query.returnTo
+  if (typeof returnTo !== 'string' || !VALID_RETURN_TARGETS.has(returnTo)) return null
+  const returnId = typeof route.query.returnId === 'string' ? route.query.returnId : ''
+  const returnLabel = typeof route.query.returnLabel === 'string' ? route.query.returnLabel : ''
+  const mapping = RETURN_ROUTE_MAP[returnTo as ReturnTarget]
+  if (!mapping) return null
+  const query: Record<string, string> = {}
+  if (returnId) query[mapping.queryKey] = returnId
+  return {
+    to: { path: `/projects/${projectId.value}/${mapping.path}`, query },
+    text: returnLabel ? `${mapping.label}（${returnLabel}）` : mapping.label,
+  }
 })
 
 const graphViewStorageKey = computed(() => `zhangshu:graph:view:${projectId.value}`)
@@ -419,6 +447,7 @@ async function createNodeAt(point: Point, overrides: Partial<GraphNodeCreatePayl
     mode.value = 'select'
     successMessage.value = '节点已创建'
     errorMessage.value = ''
+    cloudSyncManager.notifyDirty(projectId.value)
   } catch (error) {
     void error
     errorMessage.value = '节点保存失败，请重试。'
@@ -450,6 +479,7 @@ async function createEdgeBetween(fromNodeId: string, toNodeId: string) {
     mode.value = 'select'
     successMessage.value = '关系已创建'
     errorMessage.value = ''
+    cloudSyncManager.notifyDirty(projectId.value)
   } catch (error) {
     void error
     errorMessage.value = '关系保存失败，请重试。'
@@ -474,6 +504,7 @@ async function saveNodePosition(node: GraphNode, x: number, y: number, previous:
     upsertNode(saved)
     successMessage.value = '节点位置已保存'
     errorMessage.value = ''
+    cloudSyncManager.notifyDirty(projectId.value)
   } catch (error) {
     void error
     nodes.value.splice(index, 1, { ...node, x: previous.x, y: previous.y })
@@ -497,6 +528,7 @@ async function saveNodeSize(node: GraphNode, width: number, height: number, prev
     upsertNode(saved)
     successMessage.value = '节点大小已保存'
     errorMessage.value = ''
+    cloudSyncManager.notifyDirty(projectId.value)
   } catch (error) {
     void error
     nodes.value.splice(index, 1, { ...node, width: previous.width, height: previous.height })
@@ -544,6 +576,7 @@ async function saveSelectedNode() {
     selectNode(saved)
     successMessage.value = '已保存'
     errorMessage.value = ''
+    cloudSyncManager.notifyDirty(projectId.value)
   } catch (error) {
     void error
     errorMessage.value = '节点保存失败，请重试。'
@@ -577,6 +610,7 @@ async function saveSelectedEdge() {
     selectEdge(saved)
     successMessage.value = '已保存'
     errorMessage.value = ''
+    cloudSyncManager.notifyDirty(projectId.value)
   } catch (error) {
     void error
     errorMessage.value = '关系保存失败，请重试。'
@@ -604,6 +638,7 @@ async function deleteSelectedNode(node = selectedNode.value) {
     await refreshGraphData()
     successMessage.value = '节点已删除'
     errorMessage.value = ''
+    cloudSyncManager.notifyDirty(projectId.value)
   } catch (error) {
     errorMessage.value = `节点删除失败，请重试${getErrorSuffix(error)}`
   } finally {
@@ -629,6 +664,7 @@ async function deleteSelectedEdge(edge = selectedEdge.value) {
     await refreshGraphData()
     successMessage.value = '关系已删除'
     errorMessage.value = ''
+    cloudSyncManager.notifyDirty(projectId.value)
   } catch (error) {
     errorMessage.value = `关系删除失败，请重试${getErrorSuffix(error)}`
   } finally {
@@ -729,6 +765,7 @@ async function createMaterialFromSelectedNode() {
     await loadBindingData()
     successMessage.value = '已创建并绑定资料'
     errorMessage.value = ''
+    cloudSyncManager.notifyDirty(projectId.value)
   } catch (error) {
     errorMessage.value = `资料创建失败，请重试${getErrorSuffix(error)}`
   } finally {
@@ -801,6 +838,7 @@ async function bindNodeToMaterial(
   selectNode(saved)
   successMessage.value = message
   errorMessage.value = ''
+  cloudSyncManager.notifyDirty(projectId.value)
 }
 
 function handleBoundTypeChanged() {
@@ -964,6 +1002,7 @@ function clamp(value: number, min: number, max: number) {
   <main class="graph-page">
     <header class="page-header">
       <div>
+        <RouterLink v-if="returnContext" class="back-link context-back" :to="returnContext.to">{{ returnContext.text }}</RouterLink>
         <RouterLink class="back-link" :to="`/projects/${projectId}`">返回写作页</RouterLink>
         <h1>关系图</h1>
         <p>用画布管理人物、设定、伏笔、时间轴事件之间的关系。</p>
@@ -1091,12 +1130,17 @@ function clamp(value: number, min: number, max: number) {
 }
 
 .back-link {
-  display: inline-flex;
-  margin-bottom: var(--zs-space-2);
+  display: block;
+  margin-bottom: var(--zs-space-1);
   color: var(--zs-color-primary);
   font-size: 0.86rem;
   font-weight: 800;
   text-decoration: none;
+}
+
+.context-back {
+  font-size: 0.92rem;
+  color: var(--zs-color-primary);
 }
 
 h1,

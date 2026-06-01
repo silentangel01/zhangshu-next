@@ -77,6 +77,7 @@ function isAidTab(value: unknown): value is AidTab {
 
 <template>
   <aside class="writing-aid-panel">
+    <h3 class="panel-title">写作资料</h3>
     <nav class="tab-list" aria-label="写作资料分类">
       <button
         v-for="tab in tabs"
@@ -125,13 +126,16 @@ function isAidTab(value: unknown): value is AidTab {
 <style scoped>
 .writing-aid-panel {
   display: grid;
-  gap: var(--zs-space-3);
+  gap: var(--zs-space-2);
   min-height: 0;
-  border: 1px solid var(--zs-color-border);
-  border-radius: var(--zs-radius-md);
-  padding: var(--zs-space-3);
-  background: var(--zs-color-surface);
-  box-shadow: var(--zs-shadow-sm);
+}
+
+.panel-title {
+  margin: 0;
+  color: var(--zs-color-text-faint);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .state-message,
@@ -142,24 +146,32 @@ function isAidTab(value: unknown): value is AidTab {
 .tab-list {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--zs-space-2);
+  gap: 1px;
+  border: 1px solid var(--zs-color-border-soft);
+  border-radius: var(--zs-radius-sm);
+  overflow: hidden;
+  background: var(--zs-color-border-soft);
 }
 
 .tab-list button {
-  min-height: 32px;
-  border: 1px solid var(--zs-color-border);
-  border-radius: var(--zs-radius-pill);
+  min-height: 28px;
+  border: none;
+  border-radius: 0;
   padding: 0 var(--zs-space-2);
   background: var(--zs-color-surface);
-  color: var(--zs-color-text);
+  color: var(--zs-color-text-muted);
   font: inherit;
-  font-size: 0.85rem;
-  font-weight: 800;
+  font-size: 0.78rem;
+  font-weight: 600;
   cursor: pointer;
 }
 
+.tab-list button:hover {
+  color: var(--zs-color-text);
+  background: var(--zs-color-surface-soft);
+}
+
 .tab-list button.active {
-  border-color: var(--zs-color-primary);
   background: var(--zs-color-primary-soft);
   color: var(--zs-color-primary);
 }
@@ -170,10 +182,11 @@ function isAidTab(value: unknown): value is AidTab {
 }
 
 .state-message {
-  border: 1px dashed var(--zs-color-border);
-  border-radius: var(--zs-radius-md);
+  border: 1px dashed var(--zs-color-border-soft);
+  border-radius: var(--zs-radius-sm);
   padding: var(--zs-space-3);
   color: var(--zs-color-text-muted);
+  font-size: 0.86rem;
   line-height: 1.6;
   text-align: center;
 }

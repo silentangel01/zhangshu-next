@@ -1,5 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
+import CloudProfilePage from '@/pages/account/CloudProfilePage.vue'
+import AccountSecurityPage from '@/pages/account/AccountSecurityPage.vue'
+import FeedbackHistoryPage from '@/pages/account/FeedbackHistoryPage.vue'
 import ProjectCharactersPage from '@/pages/characters/ProjectCharactersPage.vue'
 import ProjectCluesPage from '@/pages/clues/ProjectCluesPage.vue'
 import ImportPage from '@/pages/imports/ImportPage.vue'
@@ -102,6 +105,21 @@ const router = createRouter({
       path: '/imports',
       name: 'imports',
       component: ImportPage,
+    },
+    {
+      path: '/account',
+      name: 'cloud-account-profile',
+      component: CloudProfilePage,
+    },
+    {
+      path: '/account/feedback',
+      name: 'cloud-feedback-history',
+      component: FeedbackHistoryPage,
+    },
+    {
+      path: '/account/security',
+      name: 'cloud-account-security',
+      component: AccountSecurityPage,
     },
   ],
 })

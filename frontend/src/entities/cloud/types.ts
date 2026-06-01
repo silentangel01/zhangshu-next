@@ -3,6 +3,7 @@ export interface CloudAccountStatus {
   cloud_available: boolean
   email: string | null
   display_name: string | null
+  token_expired?: boolean
 }
 
 export interface CloudAuthToken {
@@ -76,4 +77,165 @@ export interface CloudNetworkDiagnosticReport {
   recommended_mode: CloudNetworkMode
   summary: string
   steps: CloudNetworkDiagnosticStep[]
+}
+
+// ── Account & privacy ────────────────────────────────────────────────
+
+export interface CloudAccountProfile {
+  id: string
+  email: string
+  display_name: string
+  signature: string | null
+  avatar_url: string | null
+  avatar_updated_at: string | null
+  password_changed_at: string | null
+  created_at: string
+}
+
+export interface CloudSession {
+  id: string
+  user_agent: string | null
+  client_ip: string | null
+  last_used_at: string | null
+  created_at: string
+  revoked: boolean
+}
+
+export interface CloudSessionList {
+  sessions: CloudSession[]
+  total: number
+}
+
+export interface CloudChangePasswordRequest {
+  old_password: string
+  new_password: string
+}
+
+export interface CloudUpdateProfileRequest {
+  display_name?: string
+  signature?: string
+}
+
+export interface CloudAvatarResponse {
+  avatar_url: string
+  avatar_updated_at: string
+}
+
+// ── Usage ────────────────────────────────────────────────────────────
+
+export interface CloudUsage {
+  storage_used_bytes: number
+  storage_quota_bytes: number
+  backup_count: number
+  backup_count_quota: number
+  backup_init_used_last_hour: number
+  backup_init_limit_per_hour: number
+  max_backup_size_bytes: number
+}
+
+// ── Export & deletion ────────────────────────────────────────────────
+
+export interface CloudAccountExport {
+  account: {
+    id: string
+    email: string
+    display_name: string
+    created_at: string
+  }
+  projects: Array<{
+    id: string
+    title: string
+    created_at: string
+  }>
+  backups: Array<{
+    id: string
+    project_id: string
+    filename: string
+    size_bytes: number | null
+    checksum_sha256: string | null
+    status: string
+    created_at: string
+    uploaded_at: string | null
+  }>
+  usage: CloudUsage
+  exported_at: string
+}
+
+export interface CloudDeletionRequest {
+  request_id: string
+  expires_at: string
+  project_count: number
+  backup_count: number
+  total_size_bytes: number
+  confirmation_text: string
+}
+
+export interface CloudDeletionConfirmRequest {
+  request_id: string
+  confirmation_text: string
+}
+
+// ── Incremental sync ──────────────────────────────────────────────
+
+export interface CloudSyncStatus {
+  cloud_logged_in: boolean
+  cloud_enabled: boolean
+  pending_count: number
+  last_cursor: number
+  last_sync_at: string | null
+  last_error: string | null
+  status: string
+  auto_sync_enabled: boolean
+  cloud_project_id: string | null
+  device_id: string
+}
+
+export interface CloudSyncRunResult {
+  pushed: number
+  pulled: number
+  new_cursor: number
+  conflicts: number
+  errors: string[]
+  duration_ms: number
+}
+
+export interface CloudSyncConflict {
+  entity_type: string
+  entity_id: string
+  winner_payload_json: string
+  loser_payload_json: string
+  winner_source: string
+  loser_source: string
+  winner_device_id: string
+  loser_device_id: string
+  resolved: boolean
+  created_at: string
+}
+
+export interface CloudSyncSnapshot {
+  entity_type: string
+  entity_id: string
+  cloud_version: number
+  payload_json: string
+  source: string
+  device_id: string
+  created_at: string
+}
+
+export interface CloudRemoteProject {
+  id: string
+  title: string
+  created_at: string | null
+  updated_at: string | null
+  linked_locally?: boolean
+  local_project_id?: string | null
+}
+
+export interface CloudProjectImportResult {
+  local_project_id: string
+  title: string
+  volumes_count: number
+  chapters_count: number
+  mode: string
+  message?: string | null
 }

@@ -7,6 +7,8 @@ import type { Chapter } from '@/entities/chapter/types'
 import { createClue, deleteClue, getClue, listProjectClues, updateClue } from '@/entities/clue/api'
 import type { Clue, ClueImportance, ClueStatus, ClueVisibility } from '@/entities/clue/types'
 import { clueImportanceLabels, clueStatusLabels, clueVisibilityLabels } from '@/entities/clue/types'
+import { cloudSyncManager } from '@/features/cloud/cloudSyncManager'
+import { useDebouncedAutosave } from '@/shared/composables/useDebouncedAutosave'
 import { getProject } from '@/entities/project/api'
 import type { Project } from '@/entities/project/types'
 import { listVolumes } from '@/entities/volume/api'
@@ -71,6 +73,64 @@ const form = reactive({
   actual_payoff: '',
   note: '',
 })
+
+let isApplyingForm = false
+let lastSavedPayload = ''
+
+function buildCluePayload() {
+  return {
+    title: form.title,
+    description: form.description,
+    setup_chapter_id: form.setup_chapter_id || null,
+    payoff_chapter_id: form.payoff_chapter_id || null,
+    status: form.status,
+    visibility: form.visibility,
+    importance: form.importance,
+    payoff_plan: form.payoff_plan,
+    actual_payoff: form.actual_payoff,
+    note: form.note,
+  }
+}
+
+const autosave = useDebouncedAutosave({
+  delayMs: 3000,
+  canSave: () =>
+    !isCreating.value &&
+    selectedClue.value !== null &&
+    !!projectId.value &&
+    form.title.trim() !== '' &&
+    !isSaving.value,
+  hasChanges: () => JSON.stringify(buildCluePayload()) !== lastSavedPayload,
+  save: async () => {
+    const saved = await updateClue(selectedClue.value!.id, buildCluePayload())
+    selectedClue.value = saved
+    isApplyingForm = true
+    applyClueToForm(saved)
+    isApplyingForm = false
+    await refreshClues()
+    cloudSyncManager.notifyDirty(projectId.value)
+    lastSavedPayload = JSON.stringify(buildCluePayload())
+  },
+})
+
+const autosaveStatusText = computed(() => {
+  switch (autosave.status.value) {
+    case 'dirty': return '有未保存修改'
+    case 'saving': return '正在自动保存…'
+    case 'saved': return '已自动保存'
+    case 'error': return '自动保存失败，请手动保存'
+    default: return ''
+  }
+})
+
+watch(
+  () => ({ ...form }),
+  () => {
+    if (isApplyingForm) return
+    autosave.schedule()
+  },
+  { deep: true },
+)
 
 const statuses: ClueStatus[] = ['planned', 'planted', 'developing', 'resolved', 'abandoned']
 const visibilities: ClueVisibility[] = ['hidden', 'hinted', 'revealed']
@@ -335,7 +395,9 @@ onMounted(() => {
 })
 
 watch(projectId, () => {
+  autosave.cancel()
   selectedClue.value = null
+  lastSavedPayload = ''
   resetForm()
   void loadWorkspace()
 })
@@ -406,24 +468,36 @@ function handleClearStructuredFilters() {
 }
 
 async function handleSelectClue(clue: Clue) {
+  if (selectedClue.value && !isCreating.value) {
+    const flushed = await autosave.flush()
+    if (!flushed) return
+  }
+
+  autosave.cancel()
   errorMessage.value = ''
   successMessage.value = ''
 
   try {
     selectedClue.value = await getClue(clue.id)
     isCreating.value = false
+    isApplyingForm = true
     applyClueToForm(selectedClue.value)
+    isApplyingForm = false
+    lastSavedPayload = JSON.stringify(buildCluePayload())
+    autosave.markSaved()
   } catch (error) {
     errorMessage.value = getErrorMessage(error, '加载伏笔详情失败。')
   }
 }
 
 function handleNewClue() {
+  autosave.cancel()
   selectedClue.value = null
   isCreating.value = true
   successMessage.value = ''
   errorMessage.value = ''
   resetForm()
+  lastSavedPayload = ''
 }
 
 async function handleSaveClue() {
@@ -431,19 +505,10 @@ async function handleSaveClue() {
     return
   }
 
+  autosave.cancel()
+
   await saveSafe(async () => {
-    const payload = {
-      title: form.title,
-      description: form.description,
-      setup_chapter_id: form.setup_chapter_id || null,
-      payoff_chapter_id: form.payoff_chapter_id || null,
-      status: form.status,
-      visibility: form.visibility,
-      importance: form.importance,
-      payoff_plan: form.payoff_plan,
-      actual_payoff: form.actual_payoff,
-      note: form.note,
-    }
+    const payload = buildCluePayload()
 
     const saved = isCreating.value
       ? await createClue(projectId.value, payload)
@@ -451,9 +516,14 @@ async function handleSaveClue() {
 
     selectedClue.value = saved
     isCreating.value = false
+    isApplyingForm = true
     applyClueToForm(saved)
+    isApplyingForm = false
     await refreshClues()
     successMessage.value = '伏笔已保存。'
+    cloudSyncManager.notifyDirty(projectId.value)
+    lastSavedPayload = JSON.stringify(buildCluePayload())
+    autosave.markSaved()
   }, '保存伏笔失败。')
 }
 
@@ -462,18 +532,27 @@ async function handleDeleteClue() {
     return
   }
 
-  const confirmed = window.confirm(`确认删除伏笔“${selectedClue.value.title}”吗？`)
+  if (!isCreating.value) {
+    const flushed = await autosave.flush()
+    if (!flushed) return
+  }
+
+  const confirmed = window.confirm(`确认删除伏笔”${selectedClue.value.title}”吗？`)
   if (!confirmed) {
     return
   }
+
+  autosave.cancel()
 
   await saveSafe(async () => {
     await deleteClue(selectedClue.value!.id)
     selectedClue.value = null
     isCreating.value = true
     resetForm()
+    lastSavedPayload = ''
     await refreshClues()
     successMessage.value = '伏笔已删除。'
+    cloudSyncManager.notifyDirty(projectId.value)
   }, '删除伏笔失败。')
 }
 
@@ -490,7 +569,14 @@ async function handleOpenGraphNode() {
       title: selectedClue.value!.title,
       summary: selectedClue.value!.description || selectedClue.value!.payoff_plan,
     })
-    await router.push(graphFocusRoute(projectId.value, node.id))
+    cloudSyncManager.notifyDirty(projectId.value)
+    await router.push(
+      graphFocusRoute(projectId.value, node.id, {
+        returnTo: 'clues',
+        returnId: selectedClue.value!.id,
+        returnLabel: selectedClue.value!.title,
+      }),
+    )
   }, '打开关系图节点失败。')
 }
 
@@ -765,6 +851,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
         </div>
 
         <footer class="editor-actions">
+          <span v-if="!isCreating && autosaveStatusText" class="autosave-status">{{ autosaveStatusText }}</span>
           <button
             class="secondary-button"
             type="button"
@@ -1402,5 +1489,11 @@ button:disabled {
   .material-layout {
     grid-template-columns: 1fr;
   }
+}
+
+.autosave-status {
+  margin-right: auto;
+  color: var(--zs-color-text-muted);
+  font-size: 0.85rem;
 }
 </style>

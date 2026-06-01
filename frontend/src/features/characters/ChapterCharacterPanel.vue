@@ -19,6 +19,7 @@ import {
   characterRoleLabels,
   characterStatusLabels,
 } from '@/entities/character/types'
+import { cloudSyncManager } from '@/features/cloud/cloudSyncManager'
 
 const props = defineProps<{
   projectId: string
@@ -132,6 +133,7 @@ async function handleAddLink() {
     resetForm()
     showBindForm.value = false
     await refreshPanel()
+    cloudSyncManager.notifyDirty(props.projectId)
   } catch (error) {
     void error
     errorMessage.value = '绑定人物失败。'
@@ -155,6 +157,7 @@ async function handleUpdateLink() {
     })
     links.value = links.value.map((link) => (link.id === updated.id ? updated : link))
     selectedLink.value = updated
+    cloudSyncManager.notifyDirty(props.projectId)
   } catch (error) {
     void error
     errorMessage.value = '更新人物关联失败。'
@@ -175,6 +178,7 @@ async function handleRemoveLink(link: ChapterCharacterLink) {
   try {
     await deleteChapterCharacter(link.id)
     await refreshPanel()
+    cloudSyncManager.notifyDirty(props.projectId)
     if (selectedLinkId.value === link.id) {
       backToList()
     }

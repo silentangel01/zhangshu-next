@@ -35,6 +35,21 @@ export async function ensureMaterialGraphNode(input: MaterialGraphNodeInput) {
   })
 }
 
-export function graphFocusRoute(projectId: string, nodeId: string) {
-  return `/projects/${projectId}/graph?focusNodeId=${encodeURIComponent(nodeId)}`
+export type GraphReturnTarget = 'characters' | 'settings' | 'clues' | 'timeline' | 'outlines'
+
+export interface GraphFocusRouteOptions {
+  returnTo?: GraphReturnTarget
+  returnId?: string
+  returnLabel?: string
+}
+
+export function graphFocusRoute(projectId: string, nodeId: string, options?: GraphFocusRouteOptions) {
+  const params = new URLSearchParams()
+  params.set('focusNodeId', nodeId)
+  if (options?.returnTo) {
+    params.set('returnTo', options.returnTo)
+    if (options.returnId) params.set('returnId', options.returnId)
+    if (options.returnLabel) params.set('returnLabel', options.returnLabel)
+  }
+  return `/projects/${projectId}/graph?${params.toString()}`
 }

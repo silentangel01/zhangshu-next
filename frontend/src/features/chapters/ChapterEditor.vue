@@ -19,6 +19,7 @@ import { formatChapterContent } from './chapterFormatting'
 import type { FirstLineIndentSpaces, ParagraphSpacingLines } from './chapterFormatting'
 import { safeReadJson, safeWriteJson } from '@/shared/storage/localWorkspaceState'
 import { formatDateTimeFull } from '@/shared/utils/formatDateTime'
+import { cloudSyncManager } from '@/features/cloud/cloudSyncManager'
 
 const props = defineProps<{
   chapter: Chapter
@@ -99,13 +100,13 @@ const EDITOR_APPEARANCE_STORAGE_KEY = 'zhangshu:editor:appearance'
 const WRITING_IDLE_TIMEOUT_MS = 3 * 60 * 1000
 const SESSION_SPEED_MIN_ACTIVE_MS = 10 * 1000
 const defaultAppearanceSettings: EditorAppearanceSettings = {
-  firstLineIndentSpaces: 0,
+  firstLineIndentSpaces: 2,
   lineHeight: 1.0,
   selectedFontPreset: 'system',
   customFontFamily: '',
   fontSize: 16,
   editorWidth: 'wide',
-  paragraphSpacingLines: 0,
+  paragraphSpacingLines: 1,
   textAlign: 'left',
   theme: 'plain',
 }
@@ -134,7 +135,6 @@ let autosaveTimer: ReturnType<typeof window.setTimeout> | null = null
 let writingIdleTimer: ReturnType<typeof window.setTimeout> | null = null
 let writingClockTimer: ReturnType<typeof window.setInterval> | null = null
 let isApplyingLoadedContent = false
-let skipNextAutosaveForAutoFormat = false
 
 const localWordCount = computed(() => calculateContentWordCount(localContent.value))
 const sessionActiveMilliseconds = computed(() => {
@@ -232,6 +232,25 @@ watch(
   { deep: true },
 )
 
+// Auto-apply formatting when the user changes indent or spacing settings.
+// Skips the initial value — only fires on subsequent user-initiated changes.
+watch(
+  () => appearanceSettings.value.firstLineIndentSpaces,
+  (indent) => {
+    if (localContent.value.trim()) {
+      applyFormatToContent(indent, appearanceSettings.value.paragraphSpacingLines)
+    }
+  },
+)
+watch(
+  () => appearanceSettings.value.paragraphSpacingLines,
+  (spacing) => {
+    if (localContent.value.trim()) {
+      applyFormatToContent(appearanceSettings.value.firstLineIndentSpaces, spacing)
+    }
+  },
+)
+
 window.addEventListener('beforeunload', handleBeforeUnload)
 
 onBeforeUnmount(() => {
@@ -243,8 +262,16 @@ onBeforeUnmount(() => {
   window.removeEventListener('beforeunload', handleBeforeUnload)
 })
 
+async function saveNow() {
+  if (hasUnsavedChanges.value) {
+    cancelPendingAutosave()
+    await saveCurrentContent('manual')
+  }
+}
+
 defineExpose({
   cancelPendingAutosave,
+  saveNow,
 })
 
 async function handleSave() {
@@ -318,6 +345,7 @@ async function saveCurrentContent(source: 'manual' | 'autosave') {
     emit('dirtyChange', false)
     emit('saved', savedChapter)
     saveStatus.value = source === 'autosave' ? 'autosaved' : 'manual-saved'
+    cloudSyncManager.notifyDirty(props.chapter.project_id)
     return
   }
 
@@ -440,11 +468,6 @@ async function ignorePendingDraft() {
 
 function scheduleAutosave() {
   if (isManualSaving.value || !hasUnsavedChanges.value) {
-    return
-  }
-
-  if (skipNextAutosaveForAutoFormat) {
-    skipNextAutosaveForAutoFormat = false
     return
   }
 
@@ -750,10 +773,24 @@ function getEditorMaxWidth(width: EditorWidth) {
 }
 
 function handleAutoFormat() {
+  applyFormatToContent(
+    appearanceSettings.value.firstLineIndentSpaces,
+    appearanceSettings.value.paragraphSpacingLines,
+  )
+}
+
+/**
+ * Core formatting logic — applies indent and spacing to the current content.
+ * Shared by the manual button and the settings-change watcher.
+ */
+function applyFormatToContent(
+  indent: FirstLineIndentSpaces,
+  spacing: ParagraphSpacingLines,
+) {
   const textarea = editorTextareaRef.value
   const result = formatChapterContent(localContent.value, {
-    firstLineIndentSpaces: appearanceSettings.value.firstLineIndentSpaces,
-    paragraphSpacingLines: appearanceSettings.value.paragraphSpacingLines,
+    firstLineIndentSpaces: indent,
+    paragraphSpacingLines: spacing,
   })
 
   if (!result.changed) {
@@ -768,10 +805,6 @@ function handleAutoFormat() {
     selectionEnd: textarea?.selectionEnd ?? 0,
     createdAt: Date.now(),
   }
-
-  // Prevent the upcoming localContent watcher from triggering autosave
-  cancelPendingAutosave()
-  skipNextAutosaveForAutoFormat = true
 
   // Apply formatted content
   localContent.value = result.content
@@ -1056,7 +1089,8 @@ function clearFormattingUndo() {
 .editor-title h2 {
   margin: 0;
   color: var(--zs-color-text);
-  font-size: 1.12rem;
+  font-size: 1rem;
+  font-weight: 700;
   line-height: 1.35;
 }
 
@@ -1073,7 +1107,7 @@ function clearFormattingUndo() {
 
 .writing-status-line .warning {
   color: var(--zs-color-warning);
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .recovery-banner {
@@ -1120,16 +1154,17 @@ function clearFormattingUndo() {
 .save-button,
 .secondary-button,
 .primary-outline-button {
-  min-height: 34px;
+  min-height: 30px;
   border-radius: var(--zs-radius-sm);
-  padding: 0 var(--zs-space-3);
+  padding: 0 var(--zs-space-2);
   font: inherit;
-  font-weight: 800;
+  font-size: 0.82rem;
+  font-weight: 600;
   cursor: pointer;
 }
 
 .save-button {
-  border: 1px solid transparent;
+  border: 1px solid var(--zs-color-primary);
   background: var(--zs-color-primary);
   color: var(--zs-color-on-primary);
 }
@@ -1161,11 +1196,13 @@ function clearFormattingUndo() {
   position: relative;
   display: flex;
   flex-wrap: wrap;
-  gap: var(--zs-space-2);
+  gap: var(--zs-space-1) var(--zs-space-2);
   align-items: center;
   margin-bottom: var(--zs-space-2);
-  color: var(--zs-color-text-muted);
-  font-size: 0.8rem;
+  padding-bottom: var(--zs-space-2);
+  border-bottom: 1px solid var(--zs-color-border-soft);
+  color: var(--zs-color-text-faint);
+  font-size: 0.78rem;
 }
 
 .writing-toolbar label {
@@ -1175,13 +1212,14 @@ function clearFormattingUndo() {
 }
 
 .writing-toolbar select {
-  min-height: 30px;
+  min-height: 26px;
   border: 1px solid var(--zs-color-border);
   border-radius: var(--zs-radius-sm);
-  padding: 0 8px;
+  padding: 0 6px;
   background: var(--zs-color-surface);
   color: var(--zs-color-text);
   font: inherit;
+  font-size: 0.8rem;
 }
 
 .writing-toolbar input {
@@ -1221,7 +1259,7 @@ function clearFormattingUndo() {
 }
 
 .align-group button.active {
-  background: var(--zs-color-primary-soft);
+  background: var(--zs-color-surface-soft);
   color: var(--zs-color-primary);
 }
 
@@ -1237,13 +1275,14 @@ function clearFormattingUndo() {
 .more-settings summary {
   display: inline-flex;
   align-items: center;
-  min-height: 30px;
+  min-height: 26px;
   border: 1px solid var(--zs-color-border);
   border-radius: var(--zs-radius-sm);
-  padding: 0 9px;
+  padding: 0 8px;
   background: var(--zs-color-surface);
-  color: var(--zs-color-text);
-  font-weight: 800;
+  color: var(--zs-color-text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
   list-style: none;
   cursor: pointer;
 }
@@ -1276,21 +1315,20 @@ function clearFormattingUndo() {
   width: 100%;
   min-height: clamp(420px, calc(100vh - 270px), 760px);
   box-sizing: border-box;
-  border: 1px solid var(--zs-color-border);
-  border-radius: var(--zs-radius-md);
-  padding: 20px;
+  border: 1px solid var(--zs-color-border-soft);
+  border-radius: var(--zs-radius-sm);
+  padding: 24px 28px;
   resize: vertical;
   background: var(--zs-color-surface);
   color: var(--zs-color-text);
   font: inherit;
   white-space: pre-wrap;
-  box-shadow: inset 0 1px 2px rgb(15 23 42 / 4%);
+  line-height: 1.8;
 }
 
 .editor-textarea:focus {
-  border-color: var(--zs-color-primary);
+  border-color: var(--zs-color-border-strong);
   outline: none;
-  box-shadow: var(--zs-shadow-focus), inset 0 1px 2px rgb(15 23 42 / 4%);
 }
 
 .editor-messages {
@@ -1300,8 +1338,8 @@ function clearFormattingUndo() {
 .error-message,
 .recovery-message {
   margin: 0;
-  font-size: 0.9rem;
-  font-weight: 800;
+  font-size: 0.86rem;
+  font-weight: 600;
 }
 
 .error-message {
@@ -1341,11 +1379,12 @@ function clearFormattingUndo() {
   }
 
   .writing-status-line {
-    font-size: 0.74rem;
+    font-size: 0.72rem;
   }
 
   .editor-textarea {
     min-height: clamp(380px, calc(100vh - 280px), 680px);
+    padding: 20px 22px;
   }
 }
 

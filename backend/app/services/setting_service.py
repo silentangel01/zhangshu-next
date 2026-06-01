@@ -71,6 +71,7 @@ DEFAULT_FOLDERS = [
 
 class SettingService:
     def __init__(self, db: Session):
+        self.db = db
         self.setting_repo = SettingRepository(db)
         self.project_repo = ProjectRepository(db)
 
@@ -100,9 +101,11 @@ class SettingService:
         node_kind = data.node_kind or "page"
 
         if node_kind == "folder":
-            return self._create_folder(project_id, data)
+            created = self._create_folder(project_id, data)
         else:
-            return self._create_page(project_id, data)
+            created = self._create_page(project_id, data)
+        self._mark_dirty(project_id, created.id, "upsert")
+        return created
 
     def get_setting(self, setting_id: str) -> SettingItem:
         setting = self.setting_repo.get_active(setting_id)
@@ -151,7 +154,9 @@ class SettingService:
                 if new_parent and new_parent.folder_default_item_type:
                     values["item_type"] = new_parent.folder_default_item_type
 
-        return self.setting_repo.update(setting, values)
+        updated = self.setting_repo.update(setting, values)
+        self._mark_dirty(setting.project_id, setting_id, "upsert")
+        return updated
 
     def delete_setting(self, setting_id: str) -> SettingItem:
         setting = self.get_setting(setting_id)
@@ -164,9 +169,20 @@ class SettingService:
             if children:
                 raise SettingFolderNotEmptyError("目录不为空，请先移动或删除子节点")
 
-        return self.setting_repo.soft_delete(setting)
+        deleted = self.setting_repo.soft_delete(setting)
+        self._mark_dirty(setting.project_id, setting_id, "delete")
+        return deleted
 
     # --- Private helpers ---
+
+    def _mark_dirty(self, project_id: str, entity_id: str, action: str) -> None:
+        """Mark the setting item as dirty for cloud sync (best-effort, never raises)."""
+        try:
+            from app.services.sync_dirty_service import SyncDirtyService
+
+            SyncDirtyService(self.db).mark_dirty(project_id, "setting_items", entity_id, action)
+        except Exception:
+            pass
 
     def _create_folder(self, project_id: str, data: SettingCreate) -> SettingItem:
         parent_id = data.parent_id

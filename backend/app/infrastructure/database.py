@@ -523,7 +523,52 @@ def _ensure_chapter_version_management_columns() -> None:
             )
 
 
+def _ensure_join_sync_columns() -> None:
+    """Add deleted_at and version columns to P1 join tables for incremental sync."""
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+
+    join_tables = [
+        "chapter_characters",
+        "chapter_settings",
+        "chapter_clues",
+        "clue_characters",
+        "clue_settings",
+        "timeline_event_characters",
+        "timeline_event_settings",
+        "timeline_event_clues",
+        "outline_item_characters",
+        "outline_item_settings",
+        "outline_item_clues",
+        "outline_item_timeline_events",
+    ]
+
+    with engine.begin() as connection:
+        for table_name in join_tables:
+            if table_name not in existing_tables:
+                continue
+            columns = {c["name"] for c in inspector.get_columns(table_name)}
+            if "deleted_at" not in columns:
+                connection.execute(
+                    text(f"ALTER TABLE {table_name} ADD COLUMN deleted_at DATETIME")
+                )
+            if "version" not in columns:
+                connection.execute(
+                    text(
+                        f"ALTER TABLE {table_name} "
+                        "ADD COLUMN version INTEGER NOT NULL DEFAULT 1"
+                    )
+                )
+
+
 def init_database() -> None:
+    # Fast path: skip expensive model imports + create_all on subsequent runs.
+    # All tables already exist; new tables are only added when code changes,
+    # in which case the user would have a fresh or migrated database.
+    _init_flag = DATABASE_DIR / ".db_schema_ready"
+    if _init_flag.exists():
+        return
+
     from app.models import project  # noqa: F401
     from app.models import volume  # noqa: F401
     from app.models import chapter  # noqa: F401
@@ -562,10 +607,51 @@ def init_database() -> None:
     from app.models import entity_version  # noqa: F401
     from app.models import cloud_project_link  # noqa: F401
     from app.models import cloud_backup_record  # noqa: F401
+    from app.models import cloud_sync_state  # noqa: F401
+    from app.models import sync_dirty_record  # noqa: F401
 
     ensure_database_directory()
-    _ensure_writing_stat_event_columns()
     Base.metadata.create_all(bind=engine)
+    _init_flag.touch()
+
+
+def _ensure_sync_tables_and_columns() -> None:
+    """Create local sync state and dirty record tables if they do not exist."""
+    from app.models import cloud_sync_state  # noqa: F401
+    from app.models import sync_dirty_record  # noqa: F401
+
+    ensure_database_directory()
+    Base.metadata.create_all(bind=engine)
+
+
+def _ensure_character_profile_columns() -> None:
+    inspector = inspect(engine)
+    if "characters" not in inspector.get_table_names():
+        return
+
+    existing_columns = {column["name"] for column in inspector.get_columns("characters")}
+    with engine.begin() as connection:
+        if "profile_sections" not in existing_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE characters ADD COLUMN profile_sections TEXT NOT NULL DEFAULT '[]'"
+                )
+            )
+        if "profile_dimensions" not in existing_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE characters ADD COLUMN profile_dimensions TEXT NOT NULL DEFAULT '[]'"
+                )
+            )
+
+
+def run_migrations() -> None:
+    """Run schema migrations and FTS setup.
+
+    Called in a background thread after init_database() so the
+    /health endpoint can respond immediately.
+    """
+    _ensure_writing_stat_event_columns()
     _ensure_project_book_columns()
     _ensure_setting_tree_columns()
     _ensure_graph_node_size_columns()
@@ -574,6 +660,9 @@ def init_database() -> None:
     _ensure_knowledge_index_profile_columns()
     _ensure_chapter_version_management_columns()
     _ensure_cloud_user_id_columns()
+    _ensure_sync_tables_and_columns()
+    _ensure_join_sync_columns()
+    _ensure_character_profile_columns()
     _backfill_timeline_tracks()
     if added_position_ratio:
         _backfill_timeline_event_position_ratios()

@@ -75,6 +75,7 @@ _ENTITY_FIELDS: dict[str, list[str]] = {
         "name", "role", "summary", "biography", "appearance",
         "personality", "background", "ability", "motivation",
         "secret", "arc", "notes",
+        "profile_sections", "profile_dimensions",
     ],
     "clue": [
         "title", "description", "status", "visibility", "importance",
@@ -139,6 +140,20 @@ def _entity_content_text(entity, entity_type: str) -> str:
             val = getattr(entity, field, "")
             if val:
                 parts.append(f"{field}: {val}")
+        # Include profile sections content for readable diff
+        raw_sections = getattr(entity, "profile_sections", "")
+        if raw_sections and raw_sections != "[]":
+            try:
+                sections = json.loads(raw_sections) if isinstance(raw_sections, str) else raw_sections
+                if isinstance(sections, list):
+                    for sec in sections:
+                        if isinstance(sec, dict):
+                            title = sec.get("title", "")
+                            content = sec.get("content", "")
+                            if title or content:
+                                parts.append(f"[{title}]: {content}")
+            except (json.JSONDecodeError, TypeError):
+                pass
         return "\n\n".join(parts)
     elif entity_type == "clue":
         parts = [

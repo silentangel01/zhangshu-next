@@ -19,7 +19,11 @@ class ClueCharacterRepository:
         statement = (
             select(ClueCharacter, Character)
             .join(Character, ClueCharacter.character_id == Character.id)
-            .where(ClueCharacter.clue_id == clue_id, Character.deleted_at.is_(None))
+            .where(
+                ClueCharacter.clue_id == clue_id,
+                ClueCharacter.deleted_at.is_(None),
+                Character.deleted_at.is_(None),
+            )
             .order_by(ClueCharacter.created_at.asc())
         )
         return list(self.db.execute(statement).all())
@@ -37,10 +41,15 @@ class ClueCharacterRepository:
         for field, value in values.items():
             setattr(link, field, value)
         link.updated_at = utc_now()
+        link.version = (link.version or 0) + 1
         self.db.commit()
         self.db.refresh(link)
         return link
 
-    def delete(self, link: ClueCharacter) -> None:
-        self.db.delete(link)
+    def delete(self, link: ClueCharacter) -> ClueCharacter:
+        link.deleted_at = utc_now()
+        link.updated_at = utc_now()
+        link.version = (link.version or 0) + 1
         self.db.commit()
+        self.db.refresh(link)
+        return link

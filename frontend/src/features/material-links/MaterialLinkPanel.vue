@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 
 import { listProjectCharacters } from '@/entities/character/api'
 import type { Character } from '@/entities/character/types'
@@ -24,6 +24,7 @@ import type { SettingItem } from '@/entities/setting/types'
 import { listProjectTimelineEvents } from '@/entities/timeline/api'
 import type { TimelineEvent } from '@/entities/timeline/types'
 import { ensureMaterialGraphNode, graphFocusRoute } from '@/features/graph/useMaterialGraphNode'
+import { cloudSyncManager } from '@/features/cloud/cloudSyncManager'
 
 type SourceType = Extract<
   MaterialLinkTargetType,
@@ -54,6 +55,17 @@ type AddFormState = {
   targetId: string
   relationType: string
   note: string
+}
+
+const router = useRouter()
+const showAddForms = ref(false)
+
+const SOURCE_RETURN_TO_MAP: Partial<Record<SourceType, 'characters' | 'settings' | 'clues' | 'timeline' | 'outlines'>> = {
+  character: 'characters',
+  setting: 'settings',
+  clue: 'clues',
+  timeline_event: 'timeline',
+  outline: 'outlines',
 }
 
 const DEFAULT_RELATION_TYPE: Record<DisplayTargetType, string> = {
@@ -294,6 +306,7 @@ async function handleAdd(targetType: DisplayTargetType) {
     resetForm(targetType)
     await refreshLinks()
     successMessage.value = '关联已添加。'
+    cloudSyncManager.notifyDirty(props.projectId)
   } catch (error) {
     void error
     errorMessage.value = '添加关联失败，请检查资料是否属于同一项目。'
@@ -361,6 +374,7 @@ async function handleRemove(targetType: DisplayTargetType, item: LinkItem) {
     await persistRemoveLink(targetType, item)
     await refreshLinks()
     successMessage.value = '关联已移除。'
+    cloudSyncManager.notifyDirty(props.projectId)
   } catch (error) {
     void error
     errorMessage.value = '移除关联失败。'
@@ -422,7 +436,14 @@ async function openOrCreateGraphNode() {
     summary: '',
   })
 
-  window.location.href = graphFocusRoute(props.projectId, node.id)
+  cloudSyncManager.notifyDirty(props.projectId)
+  const returnTo = SOURCE_RETURN_TO_MAP[props.sourceType]
+  await router.push(
+    graphFocusRoute(props.projectId, node.id, returnTo
+      ? { returnTo, returnId: props.sourceId, returnLabel: props.sourceTitle }
+      : undefined,
+    ),
+  )
 }
 
 function graphNodeItems(): LinkItem[] {
@@ -536,17 +557,27 @@ function mapById<T extends { id: string }>(items: T[]) {
   <section v-if="sourceId" class="material-link-panel" :class="{ compact }">
     <header class="panel-header">
       <div>
-        <p class="eyebrow">关联资料</p>
+        <p v-if="!compact" class="eyebrow">关联资料</p>
         <h2>关联资料</h2>
       </div>
-      <button
-        v-if="sourceType !== 'outline'"
-        type="button"
-        :disabled="isSaving"
-        @click="openOrCreateGraphNode"
-      >
-        在关系图中查看
-      </button>
+      <div class="header-actions">
+        <button
+          v-if="compact"
+          type="button"
+          class="toggle-add"
+          @click="showAddForms = !showAddForms"
+        >
+          {{ showAddForms ? '收起' : '+ 添加关联' }}
+        </button>
+        <button
+          v-if="sourceType !== 'outline'"
+          type="button"
+          :disabled="isSaving"
+          @click="openOrCreateGraphNode"
+        >
+          在关系图中查看
+        </button>
+      </div>
     </header>
 
     <p v-if="isLoading" class="state-message">正在加载关联资料...</p>
@@ -585,7 +616,7 @@ function mapById<T extends { id: string }>(items: T[]) {
         </ul>
 
         <form
-          v-if="groupItem.key !== 'graph_node'"
+          v-if="groupItem.key !== 'graph_node' && (!compact || showAddForms)"
           class="add-form"
           @submit.prevent="handleAdd(groupItem.key)"
         >
@@ -640,6 +671,16 @@ function mapById<T extends { id: string }>(items: T[]) {
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--zs-space-2);
+}
+
+.header-actions {
+  display: flex;
+  gap: var(--zs-space-1);
+  align-items: center;
+}
+
+.toggle-add {
+  font-size: 0.78rem;
 }
 
 .eyebrow,

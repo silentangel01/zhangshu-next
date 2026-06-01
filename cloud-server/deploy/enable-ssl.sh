@@ -77,22 +77,82 @@ server {
     add_header X-Frame-Options DENY;
     add_header X-Content-Type-Options nosniff;
 
+    # API JSON and small forms only — backup uploads go through OSS presigned URLs.
     client_max_body_size 10M;
 
-    location / {
+    # Auth endpoints — strict rate limit (5r/min per IP)
+    location /api/auth/login {
+        limit_req zone=api_auth burst=3 nodelay;
         proxy_pass http://127.0.0.1:9000;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_connect_timeout 30s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
+        proxy_connect_timeout 5s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+    }
+
+    location /api/auth/register {
+        limit_req zone=api_auth burst=2 nodelay;
+        proxy_pass http://127.0.0.1:9000;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_connect_timeout 5s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+    }
+
+    # Admin endpoints (60r/min per IP)
+    location /api/admin/ {
+        limit_req zone=api_admin burst=20 nodelay;
+        proxy_pass http://127.0.0.1:9000;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_connect_timeout 5s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+    }
+
+    # Feedback endpoints (20r/min per IP)
+    location /api/feedback {
+        limit_req zone=api_feedback burst=5 nodelay;
+        proxy_pass http://127.0.0.1:9000;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_connect_timeout 5s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+    }
+
+    # General API (10r/s per IP)
+    location / {
+        limit_req zone=api_general burst=30 nodelay;
+        proxy_pass http://127.0.0.1:9000;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_connect_timeout 5s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
     }
 
     location /health {
         proxy_pass http://127.0.0.1:9000;
         access_log off;
+    }
+
+    location /ready {
+        proxy_pass http://127.0.0.1:9000;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 10s;
     }
 }
 HTTPS_CONF

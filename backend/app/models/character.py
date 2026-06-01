@@ -35,6 +35,8 @@ class Character(Base):
     secret: Mapped[str] = mapped_column(Text, default="", nullable=False)
     arc: Mapped[str] = mapped_column(Text, default="", nullable=False)
     notes: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    profile_sections: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    profile_dimensions: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=utc_now,
