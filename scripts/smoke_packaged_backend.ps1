@@ -216,7 +216,14 @@ try {
         exit 1
     }
 
-    Write-Host "[OK] account/status returned valid JSON with cloud_available=true" -ForegroundColor Green
+    # Verify token_expired field exists (new in v0.6.0)
+    if (-not (Get-Member -InputObject $Json -Name "token_expired" -MemberType NoteProperty)) {
+        Write-Host "[FAIL] Missing token_expired field (added in v0.6.0)" -ForegroundColor Red
+        Invoke-Cleanup
+        exit 1
+    }
+
+    Write-Host "[OK] account/status returned valid JSON with cloud_available=true and token_expired field" -ForegroundColor Green
 
     # ── Test 2: Unknown /api/* should not return HTML ──
     Write-Host ""
@@ -353,6 +360,76 @@ try {
     }
 
     Write-Host "[OK] Login with invalid creds returned structured JSON (status: $LoginStatus)" -ForegroundColor Green
+
+    # ── Test 5: /api/cloud/auth/refresh returns structured JSON ──
+    Write-Host ""
+    Write-Host "── Test 5: Token refresh endpoint ──" -ForegroundColor Yellow
+    $RefreshUrl = "http://127.0.0.1:$TestPort/api/cloud/auth/refresh"
+
+    try {
+        $Response = Invoke-WebRequest -Uri $RefreshUrl -Method POST -ContentType "application/json" -Body "{}" -TimeoutSec 15 -UseBasicParsing -ErrorAction Stop
+        $RefreshStatus = $Response.StatusCode
+        $RefreshBody = $Response.Content
+    } catch {
+        $Exception = $_.Exception
+        if ($Exception.Response) {
+            $RefreshStatus = [int]$Exception.Response.StatusCode
+            $Reader = New-Object System.IO.StreamReader($Exception.Response.GetResponseStream())
+            $RefreshBody = $Reader.ReadToEnd()
+            $Reader.Close()
+        } else {
+            Write-Host "[FAIL] Refresh request failed unexpectedly: $_" -ForegroundColor Red
+            Invoke-Cleanup
+            exit 1
+        }
+    }
+
+    # Must not be HTML
+    if ($RefreshBody -like "*<html*" -or $RefreshBody -like "*<!DOCTYPE*") {
+        Write-Host "[FAIL] Refresh endpoint returned HTML" -ForegroundColor Red
+        Invoke-Cleanup
+        exit 1
+    }
+
+    # Must not be 404 (router not loaded)
+    if ($RefreshStatus -eq 404) {
+        Write-Host "[FAIL] Refresh endpoint returned 404 (router not loaded?)" -ForegroundColor Red
+        Invoke-Cleanup
+        exit 1
+    }
+
+    # Must not be 500 (internal error)
+    if ($RefreshStatus -eq 500) {
+        Write-Host "[FAIL] Refresh endpoint returned 500 (internal error)" -ForegroundColor Red
+        Write-Host $RefreshBody.Substring(0, [Math]::Min(300, $RefreshBody.Length))
+        Invoke-Cleanup
+        exit 1
+    }
+
+    # Must be valid JSON
+    try {
+        $RefreshJson = $RefreshBody | ConvertFrom-Json
+    } catch {
+        Write-Host "[FAIL] Refresh response is not valid JSON:" -ForegroundColor Red
+        Write-Host $RefreshBody.Substring(0, [Math]::Min(200, $RefreshBody.Length))
+        Invoke-Cleanup
+        exit 1
+    }
+
+    # With no user logged in, expect {"refreshed": false}
+    if ($null -eq $RefreshJson.refreshed) {
+        Write-Host "[FAIL] Refresh response missing 'refreshed' field" -ForegroundColor Red
+        Invoke-Cleanup
+        exit 1
+    }
+
+    if ($RefreshJson.refreshed -ne $false) {
+        Write-Host "[FAIL] Expected refreshed=false (no user logged in), got: $($RefreshJson.refreshed)" -ForegroundColor Red
+        Invoke-Cleanup
+        exit 1
+    }
+
+    Write-Host "[OK] Refresh endpoint returned JSON with refreshed=false (status: $RefreshStatus)" -ForegroundColor Green
 
     Write-Host ""
     Write-Host "============================================" -ForegroundColor Green

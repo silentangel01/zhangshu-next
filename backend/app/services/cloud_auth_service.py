@@ -68,6 +68,7 @@ class CloudAuthService:
                 "cloud_available": cloud_available,
                 "email": None,
                 "display_name": None,
+                "token_expired": False,
             }
 
         return {
@@ -75,6 +76,7 @@ class CloudAuthService:
             "cloud_available": cloud_available,
             "email": email,
             "display_name": email,
+            "token_expired": False,
         }
 
     def get_api_client(self) -> CloudApiClient:
