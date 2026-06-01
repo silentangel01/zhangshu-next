@@ -524,7 +524,13 @@ async function handleOpenGraphNode() {
       summary: selectedSetting.value!.summary || selectedSetting.value!.detail,
     })
     cloudSyncManager.notifyDirty(projectId.value)
-    await router.push(graphFocusRoute(projectId.value, node.id))
+    await router.push(
+      graphFocusRoute(projectId.value, node.id, {
+        returnTo: 'settings',
+        returnId: selectedSetting.value!.id,
+        returnLabel: selectedSetting.value!.title,
+      }),
+    )
   }, '打开关系图节点失败。')
 }
 
@@ -1301,6 +1307,13 @@ button:disabled {
   border-color: var(--zs-color-danger);
   background: var(--zs-color-danger-soft);
   color: var(--zs-color-danger);
+}
+
+/* Reserve space for fixed top-right bar (notification + theme) */
+@media (min-width: 861px) and (max-width: 1600px) {
+  .page-header {
+    padding-right: var(--top-bar-width, 220px);
+  }
 }
 
 @media (max-width: 860px) {

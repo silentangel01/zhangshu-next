@@ -3,6 +3,7 @@ export interface CloudAccountStatus {
   cloud_available: boolean
   email: string | null
   display_name: string | null
+  token_expired?: boolean
 }
 
 export interface CloudAuthToken {

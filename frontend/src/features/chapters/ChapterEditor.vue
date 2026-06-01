@@ -1089,7 +1089,8 @@ function clearFormattingUndo() {
 .editor-title h2 {
   margin: 0;
   color: var(--zs-color-text);
-  font-size: 1.12rem;
+  font-size: 1rem;
+  font-weight: 700;
   line-height: 1.35;
 }
 
@@ -1106,7 +1107,7 @@ function clearFormattingUndo() {
 
 .writing-status-line .warning {
   color: var(--zs-color-warning);
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .recovery-banner {
@@ -1153,16 +1154,17 @@ function clearFormattingUndo() {
 .save-button,
 .secondary-button,
 .primary-outline-button {
-  min-height: 34px;
+  min-height: 30px;
   border-radius: var(--zs-radius-sm);
-  padding: 0 var(--zs-space-3);
+  padding: 0 var(--zs-space-2);
   font: inherit;
-  font-weight: 800;
+  font-size: 0.82rem;
+  font-weight: 600;
   cursor: pointer;
 }
 
 .save-button {
-  border: 1px solid transparent;
+  border: 1px solid var(--zs-color-primary);
   background: var(--zs-color-primary);
   color: var(--zs-color-on-primary);
 }
@@ -1194,11 +1196,13 @@ function clearFormattingUndo() {
   position: relative;
   display: flex;
   flex-wrap: wrap;
-  gap: var(--zs-space-2);
+  gap: var(--zs-space-1) var(--zs-space-2);
   align-items: center;
   margin-bottom: var(--zs-space-2);
-  color: var(--zs-color-text-muted);
-  font-size: 0.8rem;
+  padding-bottom: var(--zs-space-2);
+  border-bottom: 1px solid var(--zs-color-border-soft);
+  color: var(--zs-color-text-faint);
+  font-size: 0.78rem;
 }
 
 .writing-toolbar label {
@@ -1208,13 +1212,14 @@ function clearFormattingUndo() {
 }
 
 .writing-toolbar select {
-  min-height: 30px;
+  min-height: 26px;
   border: 1px solid var(--zs-color-border);
   border-radius: var(--zs-radius-sm);
-  padding: 0 8px;
+  padding: 0 6px;
   background: var(--zs-color-surface);
   color: var(--zs-color-text);
   font: inherit;
+  font-size: 0.8rem;
 }
 
 .writing-toolbar input {
@@ -1254,7 +1259,7 @@ function clearFormattingUndo() {
 }
 
 .align-group button.active {
-  background: var(--zs-color-primary-soft);
+  background: var(--zs-color-surface-soft);
   color: var(--zs-color-primary);
 }
 
@@ -1270,13 +1275,14 @@ function clearFormattingUndo() {
 .more-settings summary {
   display: inline-flex;
   align-items: center;
-  min-height: 30px;
+  min-height: 26px;
   border: 1px solid var(--zs-color-border);
   border-radius: var(--zs-radius-sm);
-  padding: 0 9px;
+  padding: 0 8px;
   background: var(--zs-color-surface);
-  color: var(--zs-color-text);
-  font-weight: 800;
+  color: var(--zs-color-text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
   list-style: none;
   cursor: pointer;
 }
@@ -1309,21 +1315,20 @@ function clearFormattingUndo() {
   width: 100%;
   min-height: clamp(420px, calc(100vh - 270px), 760px);
   box-sizing: border-box;
-  border: 1px solid var(--zs-color-border);
-  border-radius: var(--zs-radius-md);
-  padding: 20px;
+  border: 1px solid var(--zs-color-border-soft);
+  border-radius: var(--zs-radius-sm);
+  padding: 24px 28px;
   resize: vertical;
   background: var(--zs-color-surface);
   color: var(--zs-color-text);
   font: inherit;
   white-space: pre-wrap;
-  box-shadow: inset 0 1px 2px rgb(15 23 42 / 4%);
+  line-height: 1.8;
 }
 
 .editor-textarea:focus {
-  border-color: var(--zs-color-primary);
+  border-color: var(--zs-color-border-strong);
   outline: none;
-  box-shadow: var(--zs-shadow-focus), inset 0 1px 2px rgb(15 23 42 / 4%);
 }
 
 .editor-messages {
@@ -1333,8 +1338,8 @@ function clearFormattingUndo() {
 .error-message,
 .recovery-message {
   margin: 0;
-  font-size: 0.9rem;
-  font-weight: 800;
+  font-size: 0.86rem;
+  font-weight: 600;
 }
 
 .error-message {
@@ -1374,11 +1379,12 @@ function clearFormattingUndo() {
   }
 
   .writing-status-line {
-    font-size: 0.74rem;
+    font-size: 0.72rem;
   }
 
   .editor-textarea {
     min-height: clamp(380px, calc(100vh - 280px), 680px);
+    padding: 20px 22px;
   }
 }
 

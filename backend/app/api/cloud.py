@@ -137,6 +137,17 @@ def cloud_logout(
     return {"ok": True}
 
 
+@router.post("/api/cloud/auth/refresh")
+def cloud_refresh_token(
+    service: CloudAuthService = Depends(get_auth_service),
+):
+    """Proactively refresh the access token using the stored refresh token."""
+    try:
+        return service.refresh_token()
+    except CloudApiNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
 # ── Network diagnostics router ───────────────────────────────────────
 
 

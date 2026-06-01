@@ -5,7 +5,12 @@ from sqlalchemy.orm import Session
 from app.models.character import Character
 from app.repositories.character_repo import CharacterRepository
 from app.repositories.project_repo import ProjectRepository
-from app.schemas.character import CharacterCreate, CharacterUpdate
+from app.schemas.character import (
+    CharacterCreate,
+    CharacterUpdate,
+    encode_profile_dimensions,
+    encode_profile_sections,
+)
 
 
 class CharacterNotFoundError(Exception):
@@ -60,6 +65,8 @@ class CharacterService:
             secret=data.secret,
             arc=data.arc,
             notes=data.notes,
+            profile_sections=encode_profile_sections(data.profile_sections),
+            profile_dimensions=encode_profile_dimensions(data.profile_dimensions),
         )
         created = self.character_repo.create(character)
         self._mark_dirty(project_id, created.id, "upsert")
@@ -74,6 +81,11 @@ class CharacterService:
     def update_character(self, character_id: str, data: CharacterUpdate) -> Character:
         character = self.get_character(character_id)
         values = data.model_dump(exclude_unset=True)
+        # Encode array fields to JSON strings for DB storage
+        if "profile_sections" in values:
+            values["profile_sections"] = encode_profile_sections(values["profile_sections"])
+        if "profile_dimensions" in values:
+            values["profile_dimensions"] = encode_profile_dimensions(values["profile_dimensions"])
         updated = self.character_repo.update(character, values)
         self._mark_dirty(character.project_id, character_id, "upsert")
         return updated

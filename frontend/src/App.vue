@@ -26,6 +26,7 @@ useCloudSyncLifecycle()
   flex-direction: column;
   min-height: 100vh;
   --top-bar-clearance: calc(var(--banner-height, 0px) + 64px);
+  --top-bar-width: 220px;
 }
 
 .app-top-bar {
@@ -35,11 +36,11 @@ useCloudSyncLifecycle()
   z-index: 90;
   display: flex;
   align-items: center;
-  gap: var(--zs-space-2);
+  gap: var(--zs-space-1);
   padding: var(--zs-space-1);
-  border-radius: var(--zs-radius-md);
+  border: 1px solid var(--zs-color-border-soft);
+  border-radius: var(--zs-radius-sm);
   background: var(--zs-color-surface);
-  box-shadow: var(--zs-shadow-sm);
   transition: top 0.3s ease;
 }
 

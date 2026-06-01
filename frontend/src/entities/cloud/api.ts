@@ -50,6 +50,12 @@ export function cloudLogout(): Promise<void> {
   return apiRequest<void>('/api/cloud/auth/logout', { method: 'POST' })
 }
 
+export function refreshCloudToken(): Promise<{ refreshed: boolean }> {
+  return apiRequest<{ refreshed: boolean }>('/api/cloud/auth/refresh', {
+    method: 'POST',
+  })
+}
+
 export function enableCloud(
   projectId: string,
   cloudProjectId?: string,

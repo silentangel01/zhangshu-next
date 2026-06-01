@@ -297,7 +297,8 @@ def _create_fts_triggers(conn: Connection, tokenizer: str) -> None:  # noqa: ARG
         "|| COALESCE(NEW.motivation, '') || ' '"
         "|| COALESCE(NEW.secret, '') || ' '"
         "|| COALESCE(NEW.arc, '') || ' '"
-        "|| COALESCE(NEW.notes, '')"
+        "|| COALESCE(NEW.notes, '') || ' '"
+        "|| COALESCE(NEW.profile_sections, '')"
     )
     _char_body_old = _char_body.replace("NEW.", "OLD.")
     conn.execute(
@@ -625,7 +626,8 @@ def _backfill_fts_index(conn: Connection, tokenizer: str) -> None:  # noqa: ARG0
             "  || ' ' || COALESCE(appearance, '') || ' ' || COALESCE(personality, '')"
             "  || ' ' || COALESCE(background, '') || ' ' || COALESCE(ability, '')"
             "  || ' ' || COALESCE(motivation, '') || ' ' || COALESCE(secret, '')"
-            "  || ' ' || COALESCE(arc, '') || ' ' || COALESCE(notes, ''),"
+            "  || ' ' || COALESCE(arc, '') || ' ' || COALESCE(notes, '')"
+            "  || ' ' || COALESCE(profile_sections, ''),"
             "  '', '{}',"
             "  COALESCE(strftime('%s', updated_at), '0')"
             " FROM characters WHERE deleted_at IS NULL"

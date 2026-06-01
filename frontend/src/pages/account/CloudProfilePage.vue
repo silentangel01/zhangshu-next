@@ -96,9 +96,8 @@ async function handleLogout() {
 }
 
 function openLoginDialog() {
-  // Emit event to parent or use router to open dialog
-  // For now, redirect to projects page where user can open the dialog
-  router.push('/projects')
+  // Navigate to projects page with query param to auto-open login dialog
+  router.push('/projects?openCloudDialog=1')
 }
 
 function formatDate(d: string | null): string {

@@ -16,11 +16,33 @@ function makeState(overrides: Partial<CloudSyncManagerState> = {}): CloudSyncMan
     cloudProjectId: 'cp-1',
     lastStatusCheckedAt: '2026-05-31T10:00:00Z',
     conflictCount: 0,
+    tokenExpired: false,
     ...overrides,
   }
 }
 
 describe('deriveCloudSyncViewState', () => {
+  // ── token_expired ─────────────────────────────
+
+  it('returns token_expired when tokenExpired is true', () => {
+    const view = deriveCloudSyncViewState(
+      makeState({ tokenExpired: true, cloudLoggedIn: false }),
+      true,
+    )
+    expect(view.kind).toBe('token_expired')
+    expect(view.label).toContain('登录已过期')
+    expect(view.tone).toBe('danger')
+    expect(view.canRetry).toBe(false)
+  })
+
+  it('token_expired takes priority over disabled', () => {
+    const view = deriveCloudSyncViewState(
+      makeState({ tokenExpired: true, cloudLoggedIn: false, cloudEnabled: false }),
+      true,
+    )
+    expect(view.kind).toBe('token_expired')
+  })
+
   // ── disabled ──────────────────────────────────
 
   it('returns disabled when not logged in', () => {

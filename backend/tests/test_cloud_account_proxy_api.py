@@ -13,6 +13,7 @@ from app.api.cloud import (  # noqa: E402
     get_auth_service,
     get_cloud_backup_service,
     get_network_service,
+    get_profile_service,
 )
 from app.main import app  # noqa: E402
 from app.services.cloud_auth_service import CloudAuthError  # noqa: E402
@@ -34,10 +35,21 @@ def mock_network_service():
 
 
 @pytest.fixture
-def client(mock_auth_service, mock_backup_service, mock_network_service):
+def mock_profile_service():
+    return MagicMock()
+
+
+@pytest.fixture
+def client(
+    mock_auth_service,
+    mock_backup_service,
+    mock_network_service,
+    mock_profile_service,
+):
     app.dependency_overrides[get_auth_service] = lambda: mock_auth_service
     app.dependency_overrides[get_cloud_backup_service] = lambda: mock_backup_service
     app.dependency_overrides[get_network_service] = lambda: mock_network_service
+    app.dependency_overrides[get_profile_service] = lambda: mock_profile_service
 
     with TestClient(app, raise_server_exceptions=False) as c:
         yield c
@@ -48,8 +60,8 @@ def client(mock_auth_service, mock_backup_service, mock_network_service):
 # ── Profile ──────────────────────────────────────────────────────────
 
 
-def test_get_profile(client, mock_auth_service):
-    mock_auth_service.get_account_profile.return_value = {
+def test_get_profile(client, mock_profile_service):
+    mock_profile_service.get_profile.return_value = {
         "id": "user-123",
         "email": "user@example.com",
         "display_name": "Test User",
@@ -63,15 +75,15 @@ def test_get_profile(client, mock_auth_service):
     assert data["display_name"] == "Test User"
 
 
-def test_get_profile_unauthorized(client, mock_auth_service):
-    mock_auth_service.get_account_profile.side_effect = CloudAuthError("Not logged in")
+def test_get_profile_unauthorized(client, mock_profile_service):
+    mock_profile_service.get_profile.side_effect = CloudAuthError("Not logged in")
 
     response = client.get("/api/cloud/account/profile")
     assert response.status_code == 401
 
 
-def test_update_profile(client, mock_auth_service):
-    mock_auth_service.update_account_profile.return_value = {
+def test_update_profile(client, mock_profile_service):
+    mock_profile_service.update_profile.return_value = {
         "id": "user-123",
         "email": "user@example.com",
         "display_name": "New Name",
@@ -84,34 +96,34 @@ def test_update_profile(client, mock_auth_service):
     )
     assert response.status_code == 200
     assert response.json()["display_name"] == "New Name"
-    mock_auth_service.update_account_profile.assert_called_once_with("New Name")
+    mock_profile_service.update_profile.assert_called_once_with(
+        display_name="New Name",
+        signature=None,
+    )
 
 
 # ── Password ─────────────────────────────────────────────────────────
 
 
-def test_change_password(client, mock_auth_service):
-    mock_auth_service.change_password.return_value = {"ok": True}
+def test_change_password(client, mock_profile_service):
+    mock_profile_service.change_password.return_value = {"ok": True}
 
     response = client.post(
         "/api/cloud/account/password/change",
         json={"old_password": "old123", "new_password": "new12345"},
     )
     assert response.status_code == 200
-    mock_auth_service.change_password.assert_called_once_with("old123", "new12345")
-    # After password change, logout should be called
-    mock_auth_service.logout.assert_called_once()
+    mock_profile_service.change_password.assert_called_once_with("old123", "new12345")
 
 
-def test_change_password_error(client, mock_auth_service):
-    mock_auth_service.change_password.side_effect = CloudAuthError("Wrong password")
+def test_change_password_error(client, mock_profile_service):
+    mock_profile_service.change_password.side_effect = CloudAuthError("Wrong password")
 
     response = client.post(
         "/api/cloud/account/password/change",
         json={"old_password": "wrong", "new_password": "new12345"},
     )
     assert response.status_code == 400
-    mock_auth_service.logout.assert_not_called()
 
 
 # ── Sessions ─────────────────────────────────────────────────────────

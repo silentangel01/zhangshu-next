@@ -9,6 +9,22 @@ export type CharacterRole =
 export type CharacterImportance = 'low' | 'normal' | 'high' | 'critical'
 export type CharacterStatus = 'active' | 'inactive' | 'dead' | 'missing' | 'unknown'
 
+export interface CharacterProfileSection {
+  id: string
+  title: string
+  content: string
+  order: number
+  collapsed: boolean
+}
+
+export interface CharacterProfileDimension {
+  id: string
+  name: string
+  value: number
+  max: number
+  order: number
+}
+
 export interface Character {
   id: string
   project_id: string
@@ -27,6 +43,8 @@ export interface Character {
   secret: string
   arc: string
   notes: string
+  profile_sections: CharacterProfileSection[]
+  profile_dimensions: CharacterProfileDimension[]
   created_at: string
   updated_at: string
   deleted_at: string | null
@@ -49,6 +67,8 @@ export interface CharacterPayload {
   secret?: string
   arc?: string
   notes?: string
+  profile_sections?: CharacterProfileSection[]
+  profile_dimensions?: CharacterProfileDimension[]
 }
 
 export type CreateCharacterPayload = CharacterPayload

@@ -624,6 +624,27 @@ def _ensure_sync_tables_and_columns() -> None:
     Base.metadata.create_all(bind=engine)
 
 
+def _ensure_character_profile_columns() -> None:
+    inspector = inspect(engine)
+    if "characters" not in inspector.get_table_names():
+        return
+
+    existing_columns = {column["name"] for column in inspector.get_columns("characters")}
+    with engine.begin() as connection:
+        if "profile_sections" not in existing_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE characters ADD COLUMN profile_sections TEXT NOT NULL DEFAULT '[]'"
+                )
+            )
+        if "profile_dimensions" not in existing_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE characters ADD COLUMN profile_dimensions TEXT NOT NULL DEFAULT '[]'"
+                )
+            )
+
+
 def run_migrations() -> None:
     """Run schema migrations and FTS setup.
 
@@ -641,6 +662,7 @@ def run_migrations() -> None:
     _ensure_cloud_user_id_columns()
     _ensure_sync_tables_and_columns()
     _ensure_join_sync_columns()
+    _ensure_character_profile_columns()
     _backfill_timeline_tracks()
     if added_position_ratio:
         _backfill_timeline_event_position_ratios()

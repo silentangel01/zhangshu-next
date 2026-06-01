@@ -614,7 +614,7 @@ function isVolumeDropTarget(volumeId: string | null) {
 <style scoped>
 .chapter-tree {
   display: grid;
-  gap: var(--zs-space-1);
+  gap: 1px;
   min-width: 0;
 }
 
@@ -635,13 +635,14 @@ function isVolumeDropTarget(volumeId: string | null) {
   display: flex;
   align-items: center;
   gap: var(--zs-space-1);
-  min-height: 30px;
+  min-height: 28px;
   border: 0;
   border-radius: var(--zs-radius-sm);
   padding: 0 var(--zs-space-2);
   background: transparent;
   color: var(--zs-color-text);
   font: inherit;
+  font-size: 0.88rem;
   text-align: left;
   cursor: pointer;
 }
@@ -653,20 +654,25 @@ function isVolumeDropTarget(volumeId: string | null) {
 }
 
 .root-row {
-  min-height: 32px;
-  color: var(--zs-color-text);
-  font-weight: 800;
+  min-height: 30px;
+  color: var(--zs-color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding-bottom: var(--zs-space-1);
+  border-bottom: 1px solid var(--zs-color-border-soft);
+  margin-bottom: var(--zs-space-1);
 }
 
 .create-row {
   justify-content: center;
-  min-height: 28px;
+  min-height: 26px;
   border: 1px dashed var(--zs-color-border-soft);
   background: transparent;
-  color: var(--zs-color-text-muted);
-  font-size: 0.82rem;
-  font-weight: 600;
-  opacity: 0.8;
+  color: var(--zs-color-text-faint);
+  font-size: 0.78rem;
+  font-weight: 500;
+  opacity: 0.7;
   transition: opacity 0.15s, border-color 0.15s, color 0.15s;
 }
 
@@ -683,9 +689,11 @@ function isVolumeDropTarget(volumeId: string | null) {
 }
 
 .volume-row {
-  min-height: 32px;
+  min-height: 30px;
   color: var(--zs-color-text);
   font-weight: 700;
+  font-size: 0.86rem;
+  border-bottom: 1px solid var(--zs-color-border-soft);
 }
 
 .volume-row.drop-target {
@@ -702,7 +710,9 @@ function isVolumeDropTarget(volumeId: string | null) {
 .chapter-row.selected {
   background: var(--zs-color-primary-soft);
   color: var(--zs-color-primary);
-  font-weight: 800;
+  font-weight: 600;
+  border-left: 3px solid var(--zs-color-primary);
+  padding-left: 17px;
 }
 
 .chapter-row.selected:hover,
@@ -718,10 +728,10 @@ function isVolumeDropTarget(volumeId: string | null) {
 .chapter-row.drop-after::after {
   content: '';
   position: absolute;
-  left: 40px;
-  right: 10px;
+  left: 20px;
+  right: 8px;
   height: 2px;
-  border-radius: var(--zs-radius-pill);
+  border-radius: 1px;
   background: var(--zs-color-primary);
 }
 
@@ -761,12 +771,12 @@ function isVolumeDropTarget(volumeId: string | null) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
+  width: 18px;
   flex: 0 0 auto;
   color: var(--zs-color-text-faint);
-  font-size: 0.8rem;
-  letter-spacing: 0;
-  opacity: 0.3;
+  font-size: 0.72rem;
+  letter-spacing: -1px;
+  opacity: 0.2;
   cursor: grab;
 }
 

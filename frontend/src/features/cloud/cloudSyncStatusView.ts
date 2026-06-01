@@ -25,6 +25,7 @@ export type CloudSyncViewKind =
   | 'offline_with_pending'
   | 'error'
   | 'conflict'
+  | 'token_expired'
   | 'unknown'
 
 export type CloudSyncViewTone = 'success' | 'info' | 'warning' | 'danger' | 'muted'
@@ -42,7 +43,19 @@ export function deriveCloudSyncViewState(
   state: CloudSyncManagerState,
   isOnline: boolean,
 ): CloudSyncViewState {
-  // 1. Not logged in or cloud not enabled → disabled
+  // 1. Token expired — must check before cloudLoggedIn since tokenExpired sets cloudLoggedIn=false
+  if (state.tokenExpired) {
+    return {
+      kind: 'token_expired',
+      label: '登录已过期',
+      description: '请登录以恢复云同步',
+      tone: 'danger',
+      canRetry: false,
+      pendingCountLabel: null,
+    }
+  }
+
+  // 2. Not logged in or cloud not enabled → disabled
   if (!state.cloudLoggedIn || !state.cloudEnabled) {
     return {
       kind: 'disabled',
@@ -54,7 +67,7 @@ export function deriveCloudSyncViewState(
     }
   }
 
-  // 2. Offline states
+  // 3. Offline states
   if (!isOnline) {
     if (state.pendingCount > 0) {
       return {
@@ -76,7 +89,7 @@ export function deriveCloudSyncViewState(
     }
   }
 
-  // 3. Currently syncing
+  // 4. Currently syncing
   if (state.syncing) {
     return {
       kind: 'syncing',
@@ -88,7 +101,7 @@ export function deriveCloudSyncViewState(
     }
   }
 
-  // 4. Error state
+  // 5. Error state
   if (state.status === 'error' || state.lastError) {
     const errorDetail = state.lastError || '未知错误'
     return {
@@ -101,7 +114,7 @@ export function deriveCloudSyncViewState(
     }
   }
 
-  // 5. Conflict state
+  // 6. Conflict state
   if (state.status === 'has_conflicts' || state.conflictCount > 0) {
     return {
       kind: 'conflict',
@@ -113,7 +126,7 @@ export function deriveCloudSyncViewState(
     }
   }
 
-  // 6. Pending changes waiting for debounce
+  // 7. Pending changes waiting for debounce
   if (state.pendingCount > 0) {
     return {
       kind: 'pending',
@@ -125,7 +138,7 @@ export function deriveCloudSyncViewState(
     }
   }
 
-  // 7. Synced — requires all conditions met
+  // 8. Synced — requires all conditions met
   if (state.lastSyncAt) {
     return {
       kind: 'synced',
@@ -137,7 +150,7 @@ export function deriveCloudSyncViewState(
     }
   }
 
-  // 8. Fallback: enabled and online but no sync has ever completed
+  // 9. Fallback: enabled and online but no sync has ever completed
   return {
     kind: 'local_only',
     label: '已连接，等待首次同步',

@@ -961,6 +961,13 @@ button:disabled {
   line-height: 1.8;
 }
 
+/* Reserve space for fixed top-right bar (notification + theme) */
+@media (min-width: 861px) and (max-width: 1600px) {
+  .page-header {
+    padding-right: var(--top-bar-width, 220px);
+  }
+}
+
 @media (max-width: 860px) {
   .versions-layout {
     grid-template-columns: 1fr;

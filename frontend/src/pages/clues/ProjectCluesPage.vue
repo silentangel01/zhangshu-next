@@ -570,7 +570,13 @@ async function handleOpenGraphNode() {
       summary: selectedClue.value!.description || selectedClue.value!.payoff_plan,
     })
     cloudSyncManager.notifyDirty(projectId.value)
-    await router.push(graphFocusRoute(projectId.value, node.id))
+    await router.push(
+      graphFocusRoute(projectId.value, node.id, {
+        returnTo: 'clues',
+        returnId: selectedClue.value!.id,
+        returnLabel: selectedClue.value!.title,
+      }),
+    )
   }, '打开关系图节点失败。')
 }
 

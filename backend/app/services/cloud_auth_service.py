@@ -93,6 +93,15 @@ class CloudAuthService:
         token = self._config.get_decrypted(_KEY_ACCESS_TOKEN)
         return bool(token)
 
+    def refresh_token(self) -> dict:
+        """Public method to manually refresh the access token.
+
+        Returns:
+            dict: {"refreshed": True} on success, {"refreshed": False} on failure
+        """
+        success = self._try_refresh_token()
+        return {"refreshed": success}
+
     def login(self, email: str, password: str) -> dict:
         client = self._build_client()
         try:

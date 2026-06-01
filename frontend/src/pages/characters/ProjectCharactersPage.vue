@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 import {
@@ -9,11 +9,11 @@ import {
   listProjectCharacters,
   updateCharacter,
 } from '@/entities/character/api'
-import { cloudSyncManager } from '@/features/cloud/cloudSyncManager'
-import { useDebouncedAutosave } from '@/shared/composables/useDebouncedAutosave'
 import type {
   Character,
   CharacterImportance,
+  CharacterProfileDimension,
+  CharacterProfileSection,
   CharacterRole,
   CharacterStatus,
 } from '@/entities/character/types'
@@ -24,8 +24,23 @@ import {
 } from '@/entities/character/types'
 import { getProject } from '@/entities/project/api'
 import type { Project } from '@/entities/project/types'
+import { cloudSyncManager } from '@/features/cloud/cloudSyncManager'
+import {
+  createDefaultProfileDimensions,
+  legacyFieldsToSections,
+  sectionsToLegacyFields,
+} from '@/features/characters/characterProfileDefaults'
+import {
+  FACTION_INPUT_DELIMITERS,
+  formatFactionDisplay,
+  formatFactionTags,
+  parseFactionTags,
+} from '@/features/characters/characterFactionTags'
+import CharacterDimensionRadar from '@/features/characters/CharacterDimensionRadar.vue'
+import CharacterProfileSections from '@/features/characters/CharacterProfileSections.vue'
 import { ensureMaterialGraphNode, graphFocusRoute } from '@/features/graph/useMaterialGraphNode'
 import MaterialLinkPanel from '@/features/material-links/MaterialLinkPanel.vue'
+import { useDebouncedAutosave } from '@/shared/composables/useDebouncedAutosave'
 
 const route = useRoute()
 const router = useRouter()
@@ -62,12 +77,167 @@ const form = reactive({
   secret: '',
   arc: '',
   notes: '',
+  profile_sections: [] as CharacterProfileSection[],
+  profile_dimensions: [] as CharacterProfileDimension[],
 })
 
 let isApplyingForm = false
 let lastSavedPayload = ''
+let initialQueryHandled = false
+
+// ---------------------------------------------------------------------------
+// Filter menu (task #30)
+// ---------------------------------------------------------------------------
+
+const isFilterMenuOpen = ref(false)
+const filterMenuRef = ref<HTMLElement | null>(null)
+const searchInputRef = ref<HTMLInputElement | null>(null)
+
+const activeFilterCount = computed(() => {
+  let count = 0
+  if (filters.role) count++
+  if (filters.importance) count++
+  if (filters.status) count++
+  return count
+})
+
+function toggleFilterMenu() {
+  isFilterMenuOpen.value = !isFilterMenuOpen.value
+}
+
+async function handleApplyFiltersFromMenu() {
+  isFilterMenuOpen.value = false
+  await handleApplyFilters()
+}
+
+function handleResetSecondaryFilters() {
+  filters.role = ''
+  filters.importance = ''
+  filters.status = ''
+}
+
+function handleFilterMenuClickOutside(event: MouseEvent) {
+  if (!isFilterMenuOpen.value) return
+  const el = filterMenuRef.value
+  if (el && !el.contains(event.target as Node)) {
+    isFilterMenuOpen.value = false
+  }
+}
+
+async function handleSearchSubmit() {
+  await handleApplyFilters()
+}
+
+// ---------------------------------------------------------------------------
+// Panel collapse (task #32)
+// ---------------------------------------------------------------------------
+
+const isLeftPanelCollapsed = ref(false)
+const isRightPanelCollapsed = ref(false)
+
+function toggleLeftPanel() {
+  isLeftPanelCollapsed.value = !isLeftPanelCollapsed.value
+}
+
+function toggleRightPanel() {
+  isRightPanelCollapsed.value = !isRightPanelCollapsed.value
+}
+
+const layoutClasses = computed(() => ({
+  'left-collapsed': isLeftPanelCollapsed.value,
+  'right-collapsed': isRightPanelCollapsed.value,
+}))
+
+// ---------------------------------------------------------------------------
+// Grouped characters (task #31)
+// ---------------------------------------------------------------------------
+
+const roles: CharacterRole[] = [
+  'protagonist',
+  'deuteragonist',
+  'antagonist',
+  'supporting',
+  'minor',
+  'unknown',
+]
+const importances: CharacterImportance[] = ['low', 'normal', 'high', 'critical']
+const statuses: CharacterStatus[] = ['active', 'inactive', 'dead', 'missing', 'unknown']
+
+const collapsedGroups = reactive<Record<string, boolean>>({})
+
+const groupedCharacters = computed(() => {
+  const groups: Array<{ role: CharacterRole; label: string; characters: Character[] }> = []
+  for (const role of roles) {
+    const items = characters.value.filter((c) => c.role === role)
+    if (items.length > 0) {
+      groups.push({ role, label: characterRoleLabels[role], characters: items })
+    }
+  }
+  return groups
+})
+
+function isGroupCollapsed(role: string): boolean {
+  return collapsedGroups[role] === true
+}
+
+function toggleGroup(role: string) {
+  collapsedGroups[role] = !collapsedGroups[role]
+}
+
+// ---------------------------------------------------------------------------
+// Faction tags (task #33)
+// ---------------------------------------------------------------------------
+
+const factionTags = ref<string[]>([])
+const factionInput = ref('')
+const factionInputRef = ref<HTMLInputElement | null>(null)
+
+function syncFactionTagsFromForm() {
+  factionTags.value = parseFactionTags(form.faction)
+  factionInput.value = ''
+}
+
+function commitFactionTags() {
+  form.faction = formatFactionTags(factionTags.value) ?? ''
+}
+
+function addFactionTag(raw: string) {
+  const tag = raw.trim()
+  if (!tag) return
+  if (factionTags.value.includes(tag)) return
+  factionTags.value.push(tag)
+  factionInput.value = ''
+  commitFactionTags()
+}
+
+function removeFactionTag(index: number) {
+  factionTags.value.splice(index, 1)
+  commitFactionTags()
+}
+
+function handleFactionKeydown(event: KeyboardEvent) {
+  if (FACTION_INPUT_DELIMITERS.includes(event.key)) {
+    event.preventDefault()
+    addFactionTag(factionInput.value)
+  }
+}
+
+function handleFactionBlur() {
+  if (factionInput.value.trim()) {
+    addFactionTag(factionInput.value)
+  }
+}
+
+function getCharacterFactionDisplay(character: Character) {
+  return formatFactionDisplay(parseFactionTags(character.faction))
+}
+
+// ---------------------------------------------------------------------------
+// Form & data
+// ---------------------------------------------------------------------------
 
 function buildCharacterPayload() {
+  const legacyFromSections = sectionsToLegacyFields(form.profile_sections)
   return {
     name: form.name,
     role: form.role,
@@ -76,14 +246,16 @@ function buildCharacterPayload() {
     faction: form.faction.trim() || null,
     summary: form.summary,
     biography: form.biography,
-    appearance: form.appearance,
-    personality: form.personality,
-    background: form.background,
-    ability: form.ability,
-    motivation: form.motivation,
-    secret: form.secret,
-    arc: form.arc,
-    notes: form.notes,
+    appearance: legacyFromSections.appearance ?? form.appearance,
+    personality: legacyFromSections.personality ?? form.personality,
+    background: legacyFromSections.background ?? form.background,
+    ability: legacyFromSections.ability ?? form.ability,
+    motivation: legacyFromSections.motivation ?? form.motivation,
+    secret: legacyFromSections.secret ?? form.secret,
+    arc: legacyFromSections.arc ?? form.arc,
+    notes: legacyFromSections.notes ?? form.notes,
+    profile_sections: form.profile_sections,
+    profile_dimensions: form.profile_dimensions,
   }
 }
 
@@ -127,24 +299,18 @@ watch(
   { deep: true },
 )
 
-const roles: CharacterRole[] = [
-  'protagonist',
-  'deuteragonist',
-  'antagonist',
-  'supporting',
-  'minor',
-  'unknown',
-]
-const importances: CharacterImportance[] = ['low', 'normal', 'high', 'critical']
-const statuses: CharacterStatus[] = ['active', 'inactive', 'dead', 'missing', 'unknown']
-
 const projectId = computed<string>(() => {
   const value = route.params.projectId
   return (Array.isArray(value) ? value[0] : value) ?? ''
 })
 
 onMounted(() => {
+  document.addEventListener('click', handleFilterMenuClickOutside, true)
   void loadWorkspace()
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleFilterMenuClickOutside, true)
 })
 
 watch(projectId, () => {
@@ -152,6 +318,7 @@ watch(projectId, () => {
   selectedCharacter.value = null
   lastSavedPayload = ''
   resetForm()
+  initialQueryHandled = false
   void loadWorkspace()
 })
 
@@ -171,6 +338,17 @@ async function loadWorkspace() {
     ])
     project.value = projectDetail
     characters.value = projectCharacters
+
+    if (!initialQueryHandled) {
+      initialQueryHandled = true
+      const queryId = route.query.characterId
+      if (typeof queryId === 'string' && queryId) {
+        const target = characters.value.find(c => c.id === queryId)
+        if (target) {
+          await handleSelectCharacter(target)
+        }
+      }
+    }
   } catch (error) {
     errorMessage.value = getErrorMessage(error, '加载人物库失败。')
   } finally {
@@ -274,7 +452,7 @@ async function handleDeleteCharacter() {
     if (!flushed) return
   }
 
-  const confirmed = window.confirm(`确认删除人物”${selectedCharacter.value.name}”吗？`)
+  const confirmed = window.confirm(`确认删除人物"${selectedCharacter.value.name}"吗？`)
   if (!confirmed) {
     return
   }
@@ -307,7 +485,13 @@ async function handleOpenGraphNode() {
       summary: selectedCharacter.value!.summary || selectedCharacter.value!.biography,
     })
     cloudSyncManager.notifyDirty(projectId.value)
-    await router.push(graphFocusRoute(projectId.value, node.id))
+    await router.push(
+      graphFocusRoute(projectId.value, node.id, {
+        returnTo: 'characters',
+        returnId: selectedCharacter.value!.id,
+        returnLabel: selectedCharacter.value!.name,
+      }),
+    )
   }, '打开关系图节点失败。')
 }
 
@@ -341,6 +525,20 @@ function applyCharacterToForm(character: Character) {
   form.secret = character.secret
   form.arc = character.arc
   form.notes = character.notes
+
+  if (character.profile_sections && character.profile_sections.length > 0) {
+    form.profile_sections = character.profile_sections
+  } else {
+    form.profile_sections = legacyFieldsToSections(character)
+  }
+
+  if (character.profile_dimensions && character.profile_dimensions.length > 0) {
+    form.profile_dimensions = character.profile_dimensions
+  } else {
+    form.profile_dimensions = createDefaultProfileDimensions()
+  }
+
+  syncFactionTagsFromForm()
 }
 
 function resetForm() {
@@ -359,6 +557,9 @@ function resetForm() {
   form.secret = ''
   form.arc = ''
   form.notes = ''
+  form.profile_sections = []
+  form.profile_dimensions = createDefaultProfileDimensions()
+  syncFactionTagsFromForm()
 }
 
 function getErrorMessage(error: unknown, fallback: string): string {
@@ -378,63 +579,152 @@ function getErrorMessage(error: unknown, fallback: string): string {
         <h1>人物库</h1>
         <p class="project-title">{{ project?.title || '正在加载项目……' }}</p>
       </div>
-      <button class="primary-button" type="button" :disabled="isSaving" @click="handleNewCharacter">
-        新建人物
-      </button>
+      <div class="header-toolbar">
+        <form class="header-search" @submit.prevent="handleSearchSubmit">
+          <input
+            ref="searchInputRef"
+            v-model="filters.keyword"
+            type="search"
+            placeholder="搜索姓名、简介、资料、势力"
+            class="search-input"
+          />
+        </form>
+        <div ref="filterMenuRef" class="filter-menu-wrapper">
+          <button
+            class="secondary-button filter-toggle"
+            type="button"
+            :disabled="isSaving"
+            @click.stop="toggleFilterMenu"
+          >
+            筛选
+            <span v-if="activeFilterCount > 0" class="filter-badge">{{ activeFilterCount }}</span>
+          </button>
+          <div v-if="isFilterMenuOpen" class="filter-menu">
+            <label class="filter-field">
+              <span>角色定位</span>
+              <select v-model="filters.role">
+                <option value="">全部</option>
+                <option v-for="role in roles" :key="role" :value="role">
+                  {{ characterRoleLabels[role] }}
+                </option>
+              </select>
+            </label>
+            <label class="filter-field">
+              <span>重要程度</span>
+              <select v-model="filters.importance">
+                <option value="">全部</option>
+                <option v-for="imp in importances" :key="imp" :value="imp">
+                  {{ characterImportanceLabels[imp] }}
+                </option>
+              </select>
+            </label>
+            <label class="filter-field">
+              <span>状态</span>
+              <select v-model="filters.status">
+                <option value="">全部</option>
+                <option v-for="st in statuses" :key="st" :value="st">
+                  {{ characterStatusLabels[st] }}
+                </option>
+              </select>
+            </label>
+            <div class="filter-actions">
+              <button
+                class="secondary-button"
+                type="button"
+                @click="handleResetSecondaryFilters"
+              >
+                重置
+              </button>
+              <button class="primary-button" type="button" @click="handleApplyFiltersFromMenu">
+                应用
+              </button>
+            </div>
+          </div>
+        </div>
+        <button
+          class="primary-button"
+          type="button"
+          :disabled="isSaving"
+          @click="handleNewCharacter"
+        >
+          新建人物
+        </button>
+      </div>
     </header>
 
     <section v-if="errorMessage" class="error-banner" role="alert">{{ errorMessage }}</section>
     <section v-if="successMessage" class="success-banner" role="status">{{ successMessage }}</section>
     <section v-if="isLoading" class="state-message">正在加载人物库……</section>
 
-    <section v-else class="characters-layout material-layout">
-      <aside class="list-panel material-list-panel">
-        <div class="filters">
-          <input v-model="filters.keyword" type="search" placeholder="搜索姓名、简介、小传、势力" />
-          <select v-model="filters.role">
-            <option value="">全部角色</option>
-            <option v-for="role in roles" :key="role" :value="role">{{ characterRoleLabels[role] }}</option>
-          </select>
-          <select v-model="filters.importance">
-            <option value="">全部重要程度</option>
-            <option v-for="importance in importances" :key="importance" :value="importance">
-              {{ characterImportanceLabels[importance] }}
-            </option>
-          </select>
-          <select v-model="filters.status">
-            <option value="">全部状态</option>
-            <option v-for="status in statuses" :key="status" :value="status">
-              {{ characterStatusLabels[status] }}
-            </option>
-          </select>
-          <button class="secondary-button" type="button" :disabled="isSaving" @click="handleApplyFilters">
-            筛选
-          </button>
+    <section v-else class="characters-layout material-layout" :class="layoutClasses">
+      <!-- Left panel: character list / rail -->
+      <Transition name="panel-fold" mode="out-in">
+      <aside v-if="!isLeftPanelCollapsed" key="left-panel" class="list-panel material-list-panel">
+        <header class="panel-header">
+          <span class="panel-title">人物列表</span>
+          <span class="panel-count">{{ characters.length }}</span>
+          <button class="collapse-btn" type="button" title="收起列表" @click="toggleLeftPanel">◀</button>
+        </header>
+
+        <div class="character-tree-scroll">
+          <p v-if="characters.length === 0" class="empty-state">暂无人物，请先新建人物。</p>
+
+          <template v-else>
+            <div v-for="group in groupedCharacters" :key="group.role" class="character-group">
+              <button
+                class="group-header"
+                type="button"
+                @click="toggleGroup(group.role)"
+              >
+                <span class="group-arrow" :class="{ collapsed: isGroupCollapsed(group.role) }">▾</span>
+                <span class="group-label">{{ group.label }}</span>
+                <span class="group-count">{{ group.characters.length }}</span>
+              </button>
+
+              <Transition name="group-expand">
+                <ul v-if="!isGroupCollapsed(group.role)" class="character-list">
+                  <li v-for="character in group.characters" :key="character.id">
+                    <button
+                      class="character-card"
+                      type="button"
+                      :class="{ active: selectedCharacter?.id === character.id }"
+                      @click="handleSelectCharacter(character)"
+                    >
+                      <div class="card-top">
+                        <span class="name">{{ character.name }}</span>
+                        <span class="card-tags">
+                          <span class="tag tag-role">{{ characterRoleLabels[character.role] }}</span>
+                          <span class="tag tag-importance">{{ characterImportanceLabels[character.importance] }}</span>
+                          <span class="tag tag-status">{{ characterStatusLabels[character.status] }}</span>
+                        </span>
+                      </div>
+                      <div v-if="character.faction" class="card-faction">
+                        <span
+                          v-for="tag in getCharacterFactionDisplay(character).visible"
+                          :key="tag"
+                          class="faction-chip"
+                        >{{ tag }}</span>
+                        <span v-if="getCharacterFactionDisplay(character).overflow > 0" class="faction-chip faction-overflow">
+                          +{{ getCharacterFactionDisplay(character).overflow }}
+                        </span>
+                      </div>
+                      <span class="summary">{{ character.summary || '暂无简介' }}</span>
+                    </button>
+                  </li>
+                </ul>
+              </Transition>
+            </div>
+          </template>
         </div>
-
-        <p v-if="characters.length === 0" class="empty-state">暂无人物，请先新建人物。</p>
-
-        <ul v-else class="character-list">
-          <li v-for="character in characters" :key="character.id">
-            <button
-              class="character-card"
-              type="button"
-              :class="{ active: selectedCharacter?.id === character.id }"
-              @click="handleSelectCharacter(character)"
-            >
-              <span class="name">{{ character.name }}</span>
-              <span class="meta">
-                {{ characterRoleLabels[character.role] }} ·
-                {{ characterImportanceLabels[character.importance] }} ·
-                {{ characterStatusLabels[character.status] }}
-              </span>
-              <span v-if="character.faction" class="faction">{{ character.faction }}</span>
-              <span class="summary">{{ character.summary || '暂无简介' }}</span>
-            </button>
-          </li>
-        </ul>
       </aside>
+      <aside v-else key="left-rail" class="panel-rail left-rail" @click="toggleLeftPanel">
+        <span class="rail-label">人物</span>
+        <span class="rail-count">{{ characters.length }}</span>
+        <button class="collapse-btn" type="button" title="展开列表">▶</button>
+      </aside>
+      </Transition>
 
+      <!-- Center: editor -->
       <form class="editor-panel material-editor-panel" @submit.prevent="handleSaveCharacter">
         <header class="editor-header">
           <div>
@@ -444,18 +734,18 @@ function getErrorMessage(error: unknown, fallback: string): string {
           <span v-if="selectedCharacter" class="version">v{{ selectedCharacter.version }}</span>
         </header>
 
-        <div class="form-grid">
-          <label>
+        <div class="basic-fields">
+          <label class="field-compact">
             <span>姓名</span>
             <input v-model.trim="form.name" type="text" required />
           </label>
-          <label>
+          <label class="field-compact">
             <span>角色定位</span>
             <select v-model="form.role">
               <option v-for="role in roles" :key="role" :value="role">{{ characterRoleLabels[role] }}</option>
             </select>
           </label>
-          <label>
+          <label class="field-compact">
             <span>重要程度</span>
             <select v-model="form.importance">
               <option v-for="importance in importances" :key="importance" :value="importance">
@@ -463,7 +753,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
               </option>
             </select>
           </label>
-          <label>
+          <label class="field-compact">
             <span>状态</span>
             <select v-model="form.status">
               <option v-for="status in statuses" :key="status" :value="status">
@@ -471,31 +761,55 @@ function getErrorMessage(error: unknown, fallback: string): string {
               </option>
             </select>
           </label>
-          <label>
-            <span>所属势力</span>
-            <input v-model.trim="form.faction" type="text" />
-          </label>
+          <div class="field-faction">
+            <span class="field-label">所属势力/组织</span>
+            <div class="faction-input-container" @click="factionInputRef?.focus()">
+              <span
+                v-for="(tag, idx) in factionTags"
+                :key="tag + idx"
+                class="faction-chip"
+              >
+                {{ tag }}
+                <button
+                  type="button"
+                  class="chip-remove"
+                  :disabled="isSaving"
+                  @click.stop="removeFactionTag(idx)"
+                >✕</button>
+              </span>
+              <input
+                ref="factionInputRef"
+                v-model="factionInput"
+                type="text"
+                class="faction-text-input"
+                placeholder="添加势力或组织"
+                :disabled="isSaving"
+                @keydown="handleFactionKeydown"
+                @blur="handleFactionBlur"
+              />
+            </div>
+          </div>
         </div>
 
-        <label>
+        <label class="field-summary">
           <span>简介</span>
-          <textarea v-model="form.summary" rows="3" />
-        </label>
-        <label>
-          <span>人物小传</span>
-          <textarea v-model="form.biography" rows="6" />
+          <input v-model="form.summary" type="text" placeholder="一句话简介" />
         </label>
 
-        <div class="text-grid">
-          <label><span>外貌</span><textarea v-model="form.appearance" rows="4" /></label>
-          <label><span>性格</span><textarea v-model="form.personality" rows="4" /></label>
-          <label><span>背景</span><textarea v-model="form.background" rows="4" /></label>
-          <label><span>能力</span><textarea v-model="form.ability" rows="4" /></label>
-          <label><span>动机</span><textarea v-model="form.motivation" rows="4" /></label>
-          <label><span>秘密</span><textarea v-model="form.secret" rows="4" /></label>
-          <label><span>成长线</span><textarea v-model="form.arc" rows="4" /></label>
-          <label><span>备注</span><textarea v-model="form.notes" rows="4" /></label>
-        </div>
+        <label class="field-biography">
+          <span>人物记录</span>
+          <textarea v-model="form.biography" rows="4" placeholder="自由记录人物备忘、经历、想法等……" />
+        </label>
+
+        <CharacterProfileSections
+          v-model="form.profile_sections"
+          :disabled="isSaving"
+        />
+
+        <CharacterDimensionRadar
+          v-model="form.profile_dimensions"
+          :disabled="isSaving"
+        />
 
         <footer class="editor-actions">
           <span v-if="!isCreating && autosaveStatusText" class="autosave-status">{{ autosaveStatusText }}</span>
@@ -520,16 +834,29 @@ function getErrorMessage(error: unknown, fallback: string): string {
           </button>
         </footer>
       </form>
-      <aside class="material-related-panel">
+
+      <!-- Right panel: related materials / rail -->
+      <Transition name="panel-fold" mode="out-in">
+      <aside v-if="!isRightPanelCollapsed" key="right-panel" class="material-related-panel">
+        <header class="panel-header">
+          <span class="panel-title">关联资料</span>
+          <button class="collapse-btn" type="button" title="收起关联" @click="toggleRightPanel">▶</button>
+        </header>
         <MaterialLinkPanel
           v-if="selectedCharacter"
           :project-id="projectId"
           source-type="character"
           :source-id="selectedCharacter.id"
           :source-title="selectedCharacter.name"
+          :compact="true"
         />
         <article v-else class="empty-state related-empty">暂无关联资料</article>
       </aside>
+      <aside v-else key="right-rail" class="panel-rail right-rail" @click="toggleRightPanel">
+        <button class="collapse-btn" type="button" title="展开关联">◀</button>
+        <span class="rail-label">关联</span>
+      </aside>
+      </Transition>
     </section>
   </main>
 </template>
@@ -538,7 +865,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
 .characters-page {
   min-height: 100vh;
   box-sizing: border-box;
-  padding: 32px;
+  padding: var(--zs-space-6);
   background: var(--zs-color-bg);
   color: var(--zs-color-text);
 }
@@ -548,7 +875,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
 .success-banner,
 .state-message,
 .characters-layout {
-  max-width: 1280px;
+  max-width: 1480px;
   margin-right: auto;
   margin-left: auto;
 }
@@ -557,13 +884,13 @@ function getErrorMessage(error: unknown, fallback: string): string {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 22px;
+  gap: var(--zs-space-4);
+  margin-bottom: var(--zs-space-4);
 }
 
 .back-link {
   display: inline-flex;
-  margin-bottom: 14px;
+  margin-bottom: var(--zs-space-2);
   color: var(--zs-color-primary);
   font-weight: 800;
   text-decoration: none;
@@ -589,12 +916,119 @@ h2 {
 
 h1 {
   margin-bottom: 8px;
-  font-size: 2rem;
+  font-size: 1.6rem;
 }
 
 h2 {
   font-size: 1.35rem;
 }
+
+/* --- Header toolbar (task #30) --- */
+
+.header-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--zs-space-2);
+  flex-shrink: 0;
+}
+
+.header-search {
+  display: flex;
+}
+
+.search-input {
+  width: 220px;
+  box-sizing: border-box;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-sm);
+  padding: 8px 12px;
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
+  font: inherit;
+  font-size: 0.86rem;
+}
+
+.search-input::placeholder {
+  color: var(--zs-color-text-muted);
+}
+
+.search-input:focus {
+  border-color: var(--zs-color-primary);
+  outline: none;
+}
+
+.filter-menu-wrapper {
+  position: relative;
+}
+
+.filter-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.filter-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  padding: 0 5px;
+  background: var(--zs-color-primary);
+  color: var(--zs-color-on-primary);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.filter-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  display: grid;
+  gap: 10px;
+  min-width: 220px;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-md);
+  padding: var(--zs-space-3);
+  background: var(--zs-color-surface);
+  box-shadow: var(--zs-shadow-md);
+}
+
+.filter-field {
+  display: grid;
+  gap: 4px;
+  color: var(--zs-color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.filter-field select {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-sm);
+  padding: 7px 10px;
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
+  font: inherit;
+  font-size: 0.86rem;
+}
+
+.filter-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.filter-actions button {
+  min-height: 32px;
+  padding: 0 12px;
+  font-size: 0.82rem;
+}
+
+/* --- Error / success banners --- */
 
 .error-banner,
 .success-banner {
@@ -621,97 +1055,340 @@ h2 {
 .empty-state {
   display: grid;
   place-items: center;
-  min-height: 220px;
+  min-height: 180px;
   border: 1px dashed var(--zs-color-border);
-  border-radius: 8px;
+  border-radius: var(--zs-radius-md);
   background: var(--zs-color-surface);
   color: var(--zs-color-text-muted);
   text-align: center;
 }
 
+/* --- Three-column layout with collapse (task #32) --- */
+
 .characters-layout {
   display: grid;
   grid-template-columns: minmax(280px, 340px) minmax(0, 1fr) minmax(280px, 320px);
-  gap: 18px;
+  gap: var(--zs-space-4);
   align-items: start;
+  transition: grid-template-columns 0.25s ease;
 }
+
+.characters-layout.left-collapsed {
+  grid-template-columns: 48px minmax(0, 1fr) minmax(280px, 320px);
+}
+
+.characters-layout.right-collapsed {
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr) 48px;
+}
+
+.characters-layout.left-collapsed.right-collapsed {
+  grid-template-columns: 48px minmax(0, 1fr) 48px;
+}
+
+/* --- Panel header & rail --- */
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  gap: var(--zs-space-2);
+  margin-bottom: var(--zs-space-3);
+}
+
+.panel-title {
+  color: var(--zs-color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.panel-count {
+  border-radius: 999px;
+  padding: 1px 8px;
+  background: var(--zs-color-info-soft);
+  color: var(--zs-color-info);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.collapse-btn {
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-sm);
+  padding: 0;
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text-muted);
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.collapse-btn:hover {
+  border-color: var(--zs-color-primary);
+  color: var(--zs-color-primary);
+}
+
+.panel-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--zs-space-2);
+  min-height: 200px;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-md);
+  padding: var(--zs-space-3) var(--zs-space-1);
+  background: var(--zs-color-surface);
+  box-shadow: var(--zs-shadow-sm);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.panel-rail:hover {
+  background: var(--zs-color-bg);
+}
+
+.rail-label {
+  writing-mode: vertical-rl;
+  color: var(--zs-color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.rail-count {
+  border-radius: 999px;
+  padding: 1px 6px;
+  background: var(--zs-color-info-soft);
+  color: var(--zs-color-info);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.panel-rail .collapse-btn {
+  margin-left: 0;
+}
+
+/* --- Left list panel (task #31) --- */
 
 .list-panel,
 .editor-panel {
   min-width: 0;
   border: 1px solid var(--zs-color-border);
-  border-radius: 8px;
-  padding: 20px;
+  border-radius: var(--zs-radius-md);
+  padding: var(--zs-space-4);
   background: var(--zs-color-surface);
-  box-shadow: 0 10px 28px rgb(20 24 31 / 6%);
+  box-shadow: var(--zs-shadow-sm);
 }
 
-.filters {
-  display: grid;
-  gap: 10px;
-  margin-bottom: 14px;
+.character-tree-scroll {
+  overflow-y: auto;
+  max-height: calc(100vh - 260px);
+  padding-right: 4px;
 }
 
-input,
-select,
-textarea {
+/* Group */
+
+.character-group {
+  margin-bottom: var(--zs-space-2);
+}
+
+.group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   width: 100%;
-  box-sizing: border-box;
-  border: 1px solid var(--zs-color-border);
-  border-radius: 6px;
-  padding: 10px 12px;
+  min-height: 32px;
+  border: none;
+  border-radius: var(--zs-radius-sm);
+  padding: 4px 8px;
+  background: transparent;
   color: var(--zs-color-text);
   font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s;
 }
 
-textarea {
-  resize: vertical;
-  line-height: 1.7;
+.group-header:hover {
+  background: var(--zs-color-bg);
 }
+
+.group-arrow {
+  display: inline-block;
+  transition: transform 0.2s;
+  font-size: 0.72rem;
+  color: var(--zs-color-text-muted);
+}
+
+.group-arrow.collapsed {
+  transform: rotate(-90deg);
+}
+
+.group-label {
+  flex: 1;
+}
+
+.group-count {
+  color: var(--zs-color-text-muted);
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+/* Group expand/collapse transition */
+
+.group-expand-enter-active,
+.group-expand-leave-active {
+  overflow: hidden;
+  transition: all 0.2s ease;
+  max-height: 2000px;
+  opacity: 1;
+}
+
+.group-expand-enter-from,
+.group-expand-leave-to {
+  max-height: 0;
+  opacity: 0;
+}
+
+/* Panel fold transition (left/right panel ↔ rail) */
+
+.panel-fold-enter-active,
+.panel-fold-leave-active {
+  transition: opacity 0.2s var(--zs-ease-standard), transform 0.2s var(--zs-ease-standard);
+}
+
+.panel-fold-enter-from {
+  opacity: 0;
+  transform: scaleX(0.96);
+}
+
+.panel-fold-leave-to {
+  opacity: 0;
+  transform: scaleX(0.96);
+}
+
+/* Character list & compact card */
 
 .character-list {
   display: grid;
-  gap: 10px;
+  gap: 4px;
   margin: 0;
   padding: 0;
+  padding-left: 8px;
   list-style: none;
 }
 
 .character-card {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   width: 100%;
   border: 1px solid var(--zs-color-border);
-  border-radius: 8px;
-  padding: 12px;
+  border-radius: var(--zs-radius-sm);
+  padding: 8px 10px;
   background: var(--zs-color-surface);
   color: var(--zs-color-text);
   font: inherit;
   text-align: left;
   cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.character-card:hover {
+  border-color: var(--zs-color-primary);
 }
 
 .character-card.active {
+  border-left: 3px solid var(--zs-color-primary);
   border-color: var(--zs-color-primary);
   background: var(--zs-color-primary-soft);
 }
 
-.name {
-  font-size: 1rem;
-  font-weight: 800;
+.card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
 }
 
-.meta,
-.faction,
+.name {
+  font-size: 0.9rem;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-tags {
+  display: flex;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.tag {
+  display: inline-block;
+  border-radius: 3px;
+  padding: 0 5px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.tag-role {
+  background: var(--zs-color-primary-soft);
+  color: var(--zs-color-primary);
+}
+
+.tag-importance {
+  background: var(--zs-color-warning-soft);
+  color: var(--zs-color-warning);
+}
+
+.tag-status {
+  background: var(--zs-color-info-soft);
+  color: var(--zs-color-info);
+}
+
+.card-faction {
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+}
+
+.faction-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border-radius: 3px;
+  padding: 0 6px;
+  background: var(--zs-color-bg);
+  border: 1px solid var(--zs-color-border);
+  color: var(--zs-color-text-muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1.7;
+  white-space: nowrap;
+}
+
+.faction-overflow {
+  border-style: dashed;
+}
+
 .summary {
   color: var(--zs-color-text-muted);
-  font-size: 0.86rem;
-  line-height: 1.5;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.summary {
-  color: var(--zs-color-text);
-}
+/* --- Editor panel --- */
 
 .editor-panel {
   display: grid;
@@ -726,11 +1403,143 @@ textarea {
   gap: 12px;
 }
 
-.form-grid,
-.text-grid {
+.basic-fields {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.field-compact {
+  display: grid;
+  gap: 4px;
+  color: var(--zs-color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.field-compact input,
+.field-compact select {
+  padding: 7px 10px;
+  font-size: 0.86rem;
+}
+
+/* --- Faction chip input (task #33) --- */
+
+.field-faction {
+  display: grid;
+  gap: 4px;
+}
+
+.field-label {
+  color: var(--zs-color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.faction-input-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  min-height: 36px;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-sm);
+  padding: 4px 8px;
+  background: var(--zs-color-surface);
+  cursor: text;
+}
+
+.faction-input-container:focus-within {
+  border-color: var(--zs-color-primary);
+}
+
+.faction-input-container .faction-chip {
+  font-size: 0.78rem;
+  line-height: 1.8;
+  padding: 0 4px 0 8px;
+  background: var(--zs-color-primary-soft);
+  border-color: var(--zs-color-primary);
+  color: var(--zs-color-primary);
+}
+
+.chip-remove {
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+  display: inline-grid;
+  place-items: center;
+  border: none;
+  border-radius: 50%;
+  padding: 0;
+  background: transparent;
+  color: var(--zs-color-text-muted);
+  font-size: 0.66rem;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.chip-remove:hover {
+  color: var(--zs-color-danger);
+}
+
+.faction-text-input {
+  flex: 1;
+  min-width: 80px;
+  border: none;
+  padding: 2px 0;
+  background: transparent;
+  color: var(--zs-color-text);
+  font: inherit;
+  font-size: 0.82rem;
+  outline: none;
+}
+
+.faction-text-input::placeholder {
+  color: var(--zs-color-text-muted);
+}
+
+.field-summary {
+  display: grid;
+  gap: 4px;
+  color: var(--zs-color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.field-summary input {
+  padding: 7px 10px;
+  font-size: 0.86rem;
+}
+
+.field-biography {
+  display: grid;
+  gap: 4px;
+  color: var(--zs-color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.field-biography textarea {
+  min-height: 72px;
+  font-size: 0.86rem;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-sm);
+  padding: 10px 12px;
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
+  font: inherit;
+}
+
+textarea {
+  resize: vertical;
+  line-height: 1.7;
 }
 
 label {
@@ -752,7 +1561,7 @@ label {
 
 button {
   min-height: 38px;
-  border-radius: 6px;
+  border-radius: var(--zs-radius-sm);
   border: 1px solid transparent;
   padding: 0 14px;
   font: inherit;
@@ -782,160 +1591,55 @@ button:disabled {
   color: var(--zs-color-danger);
 }
 
-@media (max-width: 860px) {
-  .characters-page {
-    padding: 24px 16px;
-  }
-
-  .page-header,
-  .characters-layout {
-    align-items: stretch;
-    grid-template-columns: 1fr;
-  }
-
-  .page-header {
-    flex-direction: column;
-  }
-}
-
-.material-page {
-  overflow-x: hidden;
-  padding: var(--zs-space-6);
-  background: var(--zs-color-bg);
-  color: var(--zs-color-text);
-}
-
-.material-page .page-header,
-.material-page .error-banner,
-.material-page .success-banner,
-.material-page .state-message,
-.material-layout {
-  max-width: 1480px;
-}
-
-.material-page .page-header {
-  gap: var(--zs-space-4);
-  margin-bottom: var(--zs-space-4);
-}
-
-.material-page .back-link {
-  margin-bottom: var(--zs-space-2);
-  color: var(--zs-color-primary);
-}
-
-.material-page .eyebrow,
-.material-page .project-title,
-.material-page .meta,
-.material-page .faction {
-  color: var(--zs-color-text-muted);
-}
-
-.material-page h1 {
-  font-size: 1.6rem;
-}
-
-.material-layout {
-  display: grid;
-  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr) minmax(280px, 320px);
-  gap: var(--zs-space-4);
-  align-items: start;
-}
-
-.material-list-panel,
-.material-editor-panel,
-.material-related-panel {
-  min-width: 0;
-  border: 1px solid var(--zs-color-border);
-  border-radius: var(--zs-radius-md);
-  padding: var(--zs-space-4);
-  background: var(--zs-color-surface);
-  box-shadow: var(--zs-shadow-sm);
-}
-
-.material-page input,
-.material-page select,
-.material-page textarea {
-  border-color: var(--zs-color-border);
-  border-radius: var(--zs-radius-sm);
-  background: var(--zs-color-surface);
-  color: var(--zs-color-text);
-}
-
-.material-page .character-card {
-  border-color: var(--zs-color-border);
-  background: var(--zs-color-surface);
-  color: var(--zs-color-text);
-}
-
-.material-page .character-card.active {
-  border-color: var(--zs-color-primary);
-  background: var(--zs-color-primary-soft);
-}
-
-.material-page .empty-state,
-.material-page .state-message {
-  border-color: var(--zs-color-border);
-  background: var(--zs-color-surface);
-  color: var(--zs-color-text-muted);
-}
-
-.material-page .error-banner {
-  border-color: var(--zs-color-danger);
-  background: var(--zs-color-danger-soft);
-  color: var(--zs-color-danger);
-}
-
-.material-page .success-banner {
-  border-color: var(--zs-color-success);
-  background: var(--zs-color-success-soft);
-  color: var(--zs-color-success);
-}
-
-.material-page .primary-button {
-  background: var(--zs-color-primary);
-  color: var(--zs-color-on-primary);
-}
-
-.material-page .secondary-button {
-  border-color: var(--zs-color-border);
-  background: var(--zs-color-surface);
-  color: var(--zs-color-text);
-}
-
-.material-page .danger-button {
-  border-color: var(--zs-color-danger);
-  background: var(--zs-color-danger-soft);
-  color: var(--zs-color-danger);
-}
-
-.material-page .version {
-  background: var(--zs-color-info-soft);
-  color: var(--zs-color-info);
-}
-
-@media (max-width: 1366px) {
-  .material-page {
-    padding: var(--zs-space-4);
-  }
-
-  .material-layout {
-    grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
-  }
-
-  .material-related-panel {
-    grid-column: 1 / -1;
-  }
-}
-
-@media (max-width: 900px) {
-  .material-layout {
-    grid-template-columns: 1fr;
-  }
-}
-
 .autosave-status {
   margin-right: auto;
   color: var(--zs-color-text-muted);
   font-size: 0.85rem;
+}
+
+/* --- Related panel --- */
+
+.related-empty {
+  min-height: 120px;
+}
+
+/* --- Responsive --- */
+
+@media (max-width: 1366px) {
+  .characters-page {
+    padding: var(--zs-space-4);
+  }
+}
+
+@media (max-width: 900px) {
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .header-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .search-input {
+    width: 100%;
+  }
+
+  .characters-layout,
+  .characters-layout.left-collapsed,
+  .characters-layout.right-collapsed,
+  .characters-layout.left-collapsed.right-collapsed {
+    grid-template-columns: 1fr;
+  }
+
+  .panel-rail {
+    flex-direction: row;
+    min-height: 0;
+    padding: var(--zs-space-2);
+  }
+
+  .rail-label {
+    writing-mode: horizontal-tb;
+  }
 }
 </style>

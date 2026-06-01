@@ -131,6 +131,33 @@ const projectId = computed(() => {
   return (Array.isArray(value) ? value[0] : value) ?? ''
 })
 
+type ReturnTarget = 'characters' | 'settings' | 'clues' | 'timeline' | 'outlines'
+
+const RETURN_ROUTE_MAP: Record<ReturnTarget, { path: string; queryKey: string; label: string }> = {
+  characters: { path: 'characters', queryKey: 'characterId', label: '返回人物库' },
+  settings: { path: 'settings', queryKey: 'settingId', label: '返回设定库' },
+  clues: { path: 'clues', queryKey: 'clueId', label: '返回伏笔库' },
+  timeline: { path: 'timeline', queryKey: 'eventId', label: '返回时间轴' },
+  outlines: { path: 'outlines', queryKey: 'outlineId', label: '返回大纲' },
+}
+
+const VALID_RETURN_TARGETS = new Set<string>(['characters', 'settings', 'clues', 'timeline', 'outlines'])
+
+const returnContext = computed(() => {
+  const returnTo = route.query.returnTo
+  if (typeof returnTo !== 'string' || !VALID_RETURN_TARGETS.has(returnTo)) return null
+  const returnId = typeof route.query.returnId === 'string' ? route.query.returnId : ''
+  const returnLabel = typeof route.query.returnLabel === 'string' ? route.query.returnLabel : ''
+  const mapping = RETURN_ROUTE_MAP[returnTo as ReturnTarget]
+  if (!mapping) return null
+  const query: Record<string, string> = {}
+  if (returnId) query[mapping.queryKey] = returnId
+  return {
+    to: { path: `/projects/${projectId.value}/${mapping.path}`, query },
+    text: returnLabel ? `${mapping.label}（${returnLabel}）` : mapping.label,
+  }
+})
+
 const graphViewStorageKey = computed(() => `zhangshu:graph:view:${projectId.value}`)
 
 const nodeMap = computed(() => new Map(nodes.value.map((node) => [node.id, node] as const)))
@@ -975,6 +1002,7 @@ function clamp(value: number, min: number, max: number) {
   <main class="graph-page">
     <header class="page-header">
       <div>
+        <RouterLink v-if="returnContext" class="back-link context-back" :to="returnContext.to">{{ returnContext.text }}</RouterLink>
         <RouterLink class="back-link" :to="`/projects/${projectId}`">返回写作页</RouterLink>
         <h1>关系图</h1>
         <p>用画布管理人物、设定、伏笔、时间轴事件之间的关系。</p>
@@ -1102,12 +1130,17 @@ function clamp(value: number, min: number, max: number) {
 }
 
 .back-link {
-  display: inline-flex;
-  margin-bottom: var(--zs-space-2);
+  display: block;
+  margin-bottom: var(--zs-space-1);
   color: var(--zs-color-primary);
   font-size: 0.86rem;
   font-weight: 800;
   text-decoration: none;
+}
+
+.context-back {
+  font-size: 0.92rem;
+  color: var(--zs-color-primary);
 }
 
 h1,

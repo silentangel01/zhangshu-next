@@ -562,8 +562,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
   <main class="project-detail-page">
     <header class="page-header">
       <div>
-        <RouterLink class="back-link" to="/projects">返回项目列表</RouterLink>
-        <p class="eyebrow">写作工作区</p>
+        <RouterLink class="back-link" to="/projects">← 返回作品库</RouterLink>
       </div>
       <div class="header-actions">
         <CloudSyncStatusIndicator />
@@ -647,8 +646,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
         <article v-else class="project-summary">
           <header class="panel-header">
             <div>
-              <p class="eyebrow">项目概览</p>
-              <h2>{{ project?.title || '项目' }}</h2>
+              <h2>{{ project?.title || '作品' }}</h2>
             </div>
             <div class="panel-badges">
               <span v-if="project" class="status-pill" :class="`status-${project.status}`">
@@ -777,44 +775,37 @@ function getErrorMessage(error: unknown, fallback: string): string {
   min-height: 100vh;
   box-sizing: border-box;
   overflow-x: hidden;
-  padding: var(--top-bar-clearance, var(--zs-space-6)) var(--zs-space-6) var(--zs-space-6);
+  padding: var(--top-bar-clearance, var(--zs-space-4)) var(--zs-space-4) var(--zs-space-4);
   background: var(--zs-color-bg);
   color: var(--zs-color-text);
 }
 
 .page-header {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
-  gap: var(--zs-space-4);
+  gap: var(--zs-space-3);
   max-width: 1600px;
-  margin: 0 auto var(--zs-space-4);
+  margin: 0 auto var(--zs-space-3);
 }
 
 .back-link {
   display: inline-flex;
-  margin-bottom: var(--zs-space-2);
-  color: var(--zs-color-primary);
-  font-weight: 800;
+  color: var(--zs-color-text-muted);
+  font-size: 0.84rem;
+  font-weight: 600;
   text-decoration: none;
 }
 
-.eyebrow {
-  margin: 0 0 var(--zs-space-1);
-  color: var(--zs-color-text-muted);
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0;
-  text-transform: uppercase;
+.back-link:hover {
+  color: var(--zs-color-primary);
 }
 
 h2 {
   margin: 0;
-  line-height: 1.15;
-}
-
-h2 {
-  font-size: 1.35rem;
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1.3;
 }
 
 .header-actions,
@@ -829,15 +820,22 @@ h2 {
 .more-menu > summary {
   display: inline-flex;
   align-items: center;
-  min-height: 34px;
+  min-height: 30px;
   box-sizing: border-box;
   border: 1px solid var(--zs-color-border);
   border-radius: var(--zs-radius-sm);
-  padding: 0 var(--zs-space-3);
+  padding: 0 var(--zs-space-2);
   background: var(--zs-color-surface);
-  color: var(--zs-color-primary);
-  font-weight: 800;
+  color: var(--zs-color-text-muted);
+  font-size: 0.84rem;
+  font-weight: 600;
   text-decoration: none;
+}
+
+.toolbar-link:hover,
+.more-menu > summary:hover {
+  color: var(--zs-color-primary);
+  border-color: var(--zs-color-border-strong);
 }
 
 .more-menu {
@@ -869,10 +867,11 @@ h2 {
 
 .more-menu-list a,
 .more-menu-list button {
-  border-radius: 6px;
-  padding: 9px 10px;
+  border-radius: var(--zs-radius-sm);
+  padding: 7px 10px;
   color: var(--zs-color-text);
-  font-weight: 800;
+  font-weight: 500;
+  font-size: 0.88rem;
   text-decoration: none;
 }
 
@@ -910,13 +909,14 @@ h2 {
 
 .error-banner {
   box-sizing: border-box;
-  margin-bottom: var(--zs-space-4);
+  margin-bottom: var(--zs-space-3);
   border: 1px solid var(--zs-color-danger);
   border-radius: var(--zs-radius-md);
-  padding: var(--zs-space-3) var(--zs-space-4);
+  padding: var(--zs-space-2) var(--zs-space-3);
   background: var(--zs-color-danger-soft);
   color: var(--zs-color-danger);
-  font-weight: 800;
+  font-weight: 600;
+  font-size: 0.88rem;
 }
 
 .state-message {
@@ -999,19 +999,20 @@ h2 {
 
 .collapse-tab {
   justify-self: start;
-  min-height: 30px;
-  border-color: var(--zs-color-border);
-  border-radius: var(--zs-radius-pill);
+  min-height: 28px;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-sm);
   padding: 0 var(--zs-space-2);
-  background: color-mix(in srgb, var(--zs-color-surface) 84%, transparent);
+  background: var(--zs-color-surface);
   color: var(--zs-color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
   box-shadow: none;
   transition:
     min-height var(--workspace-transition-duration) var(--workspace-transition-easing),
     padding var(--workspace-transition-duration) var(--workspace-transition-easing),
     background-color 160ms ease,
-    color 160ms ease,
-    box-shadow 160ms ease;
+    color 160ms ease;
   white-space: nowrap;
 }
 
@@ -1075,9 +1076,8 @@ h2 {
   box-sizing: border-box;
   border: 1px solid var(--zs-color-border);
   border-radius: var(--zs-radius-md);
-  padding: var(--zs-space-4);
+  padding: var(--zs-space-3);
   background: var(--zs-color-surface);
-  box-shadow: var(--zs-shadow-sm);
 }
 
 .detail-panel > .chapter-preview {
@@ -1100,23 +1100,23 @@ h2 {
 
 .metadata-grid div {
   border: 1px solid var(--zs-color-border-soft);
-  border-radius: var(--zs-radius-md);
-  padding: var(--zs-space-3);
+  border-radius: var(--zs-radius-sm);
+  padding: var(--zs-space-2) var(--zs-space-3);
   background: var(--zs-color-surface-soft);
 }
 
 dt {
-  margin: 0 0 4px;
-  color: var(--zs-color-text-muted);
-  font-size: 0.78rem;
-  font-weight: 800;
-  text-transform: uppercase;
+  margin: 0 0 2px;
+  color: var(--zs-color-text-faint);
+  font-size: 0.74rem;
+  font-weight: 600;
 }
 
 dd {
   margin: 0;
   color: var(--zs-color-text);
-  font-weight: 800;
+  font-weight: 600;
+  font-size: 0.92rem;
 }
 
 .summary-text {
@@ -1157,17 +1157,18 @@ dd {
 }
 
 .summary-tag {
-  border-radius: 999px;
-  padding: 3px 10px;
-  background: var(--zs-color-info-soft, #eef2ff);
-  color: var(--zs-color-info, #3730a3);
+  border-radius: var(--zs-radius-sm);
+  padding: 2px 6px;
+  background: var(--zs-color-surface-soft);
+  color: var(--zs-color-text-muted);
   font-size: 0.78rem;
-  font-weight: 700;
+  font-weight: 600;
+  border: 1px solid var(--zs-color-border-soft);
 }
 
 .status-planning {
-  background: var(--zs-color-info-soft, #f0f4ff);
-  color: var(--zs-color-info, #3730a3);
+  background: var(--zs-color-info-soft);
+  color: var(--zs-color-info);
 }
 
 .status-writing {
@@ -1186,8 +1187,8 @@ dd {
 }
 
 .status-archived {
-  background: var(--zs-color-surface-soft);
-  color: var(--zs-color-text-muted);
+  background: var(--zs-color-surface-muted);
+  color: var(--zs-color-text-faint);
 }
 
 .chapter-loading {
@@ -1203,22 +1204,23 @@ dd {
 
 .version {
   flex: 0 0 auto;
-  border-radius: 999px;
-  padding: 4px 9px;
+  border-radius: var(--zs-radius-sm);
+  padding: 2px 6px;
   background: var(--zs-color-info-soft);
   color: var(--zs-color-info);
-  font-size: 0.78rem;
-  font-weight: 800;
+  font-size: 0.74rem;
+  font-weight: 600;
 }
 
 .status-pill {
   flex: 0 0 auto;
-  border-radius: 999px;
-  padding: 4px 9px;
-  background: var(--zs-color-success-soft);
-  color: var(--zs-color-success);
-  font-size: 0.78rem;
-  font-weight: 800;
+  border-radius: var(--zs-radius-sm);
+  padding: 2px 8px;
+  background: var(--zs-color-surface-soft);
+  color: var(--zs-color-text-muted);
+  font-size: 0.74rem;
+  font-weight: 600;
+  border: 1px solid var(--zs-color-border-soft);
 }
 
 .version-message {
@@ -1228,12 +1230,13 @@ dd {
 }
 
 button {
-  min-height: 38px;
+  min-height: 32px;
   border-radius: var(--zs-radius-sm);
   border: 1px solid transparent;
-  padding: 0 14px;
+  padding: 0 12px;
   font: inherit;
-  font-weight: 800;
+  font-weight: 600;
+  font-size: 0.88rem;
   cursor: pointer;
 }
 
@@ -1253,6 +1256,13 @@ button:disabled {
   color: var(--zs-color-text);
 }
 
+/* Reserve space for fixed top-right bar (notification + theme) */
+@media (min-width: 1100px) and (max-width: 1600px) {
+  .page-header {
+    padding-right: var(--top-bar-width, 220px);
+  }
+}
+
 @media (max-width: 1439px) {
   .project-detail-page {
     padding: var(--zs-space-4);
@@ -1266,7 +1276,8 @@ button:disabled {
 
   .toolbar-link,
   .more-menu > summary {
-    padding: 0 var(--zs-space-2);
+    padding: 0 var(--zs-space-1);
+    font-size: 0.8rem;
   }
 }
 

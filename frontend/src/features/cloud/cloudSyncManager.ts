@@ -8,12 +8,14 @@
  * - Resumes on window 'online' event with 5s delay.
  */
 
-import { getCloudSyncStatus, runCloudSync } from '@/entities/cloud/api'
+import { getCloudSyncStatus, refreshCloudToken, runCloudSync } from '@/entities/cloud/api'
+import { ApiError } from '@/shared/api/client'
 
 const POLL_INTERVAL_MS = 5_000
 const DEBOUNCE_MS = 15_000
 const ONLINE_DELAY_MS = 5_000
 const RETRY_THROTTLE_MS = 3_000
+const PROACTIVE_REFRESH_INTERVAL_MS = 50 * 60_000 // 50 minutes (access token is 60 min)
 
 export interface CloudSyncManagerState {
   status: string
@@ -27,6 +29,7 @@ export interface CloudSyncManagerState {
   cloudProjectId: string | null
   lastStatusCheckedAt: string | null
   conflictCount: number
+  tokenExpired: boolean
 }
 
 export class CloudSyncManager {
@@ -46,11 +49,14 @@ export class CloudSyncManager {
     cloudProjectId: null,
     lastStatusCheckedAt: null,
     conflictCount: 0,
+    tokenExpired: false,
   }
   private listeners: Array<(state: CloudSyncManagerState) => void> = []
   private lastDirtyAt = 0
   private lastRetryAt = 0
+  private lastRefreshAt = 0
   private initialSyncDone = false
+  private refreshing = false
 
   getState(): CloudSyncManagerState {
     return { ...this.state }
@@ -79,7 +85,9 @@ export class CloudSyncManager {
     this.syncing = false
     this.lastDirtyAt = Date.now()
     this.lastRetryAt = 0
+    this.lastRefreshAt = Date.now()
     this.initialSyncDone = false
+    this.state.tokenExpired = false
 
     // Listen for online/offline events
     window.addEventListener('online', this.handleOnline)
@@ -153,6 +161,14 @@ export class CloudSyncManager {
         return
       }
 
+      // Proactive token refresh before it expires
+      if (!this.refreshing && !this.syncing && !this.state.tokenExpired) {
+        const refreshElapsed = Date.now() - this.lastRefreshAt
+        if (refreshElapsed >= PROACTIVE_REFRESH_INTERVAL_MS) {
+          void this.proactiveRefresh()
+        }
+      }
+
       // Initial sync on first successful status after start()
       if (!this.initialSyncDone) {
         this.initialSyncDone = true
@@ -164,7 +180,7 @@ export class CloudSyncManager {
       }
 
       // Auto-trigger sync if there are pending changes and debounce has elapsed
-      if (status.pending_count > 0 && !this.syncing) {
+      if (status.pending_count > 0 && !this.syncing && !this.state.tokenExpired) {
         const elapsed = Date.now() - this.lastDirtyAt
         if (elapsed >= DEBOUNCE_MS) {
           void this.triggerSync()
@@ -197,8 +213,16 @@ export class CloudSyncManager {
       this.state.status = result.conflicts > 0 ? 'has_conflicts' : 'idle'
       this.state.conflictCount = result.conflicts
     } catch (error) {
-      this.state.lastError = error instanceof Error ? error.message : '同步失败'
-      this.state.status = 'error'
+      // Detect token expiry — mark user as logged out so UI can prompt re-login
+      if (error instanceof ApiError && error.errorKind === 'token_expired') {
+        this.state.tokenExpired = true
+        this.state.cloudLoggedIn = false
+        this.state.lastError = '登录已过期，请重新登录。'
+        this.state.status = 'error'
+      } else {
+        this.state.lastError = error instanceof Error ? error.message : '同步失败'
+        this.state.status = 'error'
+      }
       this.state.conflictCount = 0
     } finally {
       this.syncing = false
@@ -217,6 +241,24 @@ export class CloudSyncManager {
     this.state.conflictCount = 0
     this.notify()
     void this.triggerSync()
+  }
+
+  private async proactiveRefresh(): Promise<void> {
+    if (this.refreshing || !navigator.onLine || this.state.tokenExpired) return
+    this.refreshing = true
+    try {
+      const result = await refreshCloudToken()
+      if (result.refreshed) {
+        this.lastRefreshAt = Date.now()
+      } else {
+        // Refresh failed — token may be expired, but don't mark yet;
+        // let the next sync attempt detect the actual error.
+      }
+    } catch {
+      // Network error during refresh — silently ignore, retry next poll.
+    } finally {
+      this.refreshing = false
+    }
   }
 }
 
