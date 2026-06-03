@@ -1,6 +1,6 @@
 {
   "name": "frontend",
-  "version": "0.1.0",
+  "version": "0.8.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -20,6 +20,7 @@
     "tauri:build:backend": "cd .. && backend\\.venv\\Scripts\\python.exe -m PyInstaller --noconfirm --clean --onedir --name zhangshu-backend --distpath frontend/src-tauri/binaries --workpath build/pyinstaller-sidecar --specpath build/spec-sidecar --hidden-import app.api.cloud --hidden-import app.api.cloud_sync --hidden-import app.api.knowledge_embedding --hidden-import app.api.knowledge_retrieval --hidden-import app.api.rag backend/tauri_sidecar_main.py"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.11.0",
     "pinia": "^3.0.4",
     "vue": "beta",
     "vue-router": "^5.0.4"

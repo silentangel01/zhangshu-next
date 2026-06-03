@@ -45,6 +45,7 @@ Thumbs.db
 .trae/
 .augment/
 .qoder/
+.codex-tmp/
 
 # bat files
 *.bat
@@ -67,6 +68,9 @@ frontend/src-tauri/binaries/
 
 # Agents Rules
 # (AGENTS.md already ignored above)
+
+# raw design assets (generated icons live in frontend/src-tauri/icons/)
+icon/
 
 # build output
 build/
