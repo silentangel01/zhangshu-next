@@ -1,7 +1,10 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod updater;
+
 use std::process::{Child, Command};
+use std::sync::Mutex;
 use tauri::Manager;
 
 #[cfg(target_os = "windows")]
@@ -204,6 +207,14 @@ fn forward_pipe_to_log(
 
 fn main() {
     tauri::Builder::default()
+        .manage(updater::VerifiedUpdateState {
+            metadata: Mutex::new(None),
+        })
+        .invoke_handler(tauri::generate_handler![
+            updater::check_update,
+            updater::download_update,
+            updater::install_update,
+        ])
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             // Second instance launched — focus existing window
             if let Some(window) = app.get_webview_window("main") {
@@ -213,6 +224,33 @@ fn main() {
             }
         }))
         .setup(|app| {
+            // ── Set window icon for taskbar display ──
+            if let Some(window) = app.get_webview_window("main") {
+                let icon_bytes = include_bytes!("../icons/128x128.png");
+                let decoder = png::Decoder::new(std::io::Cursor::new(icon_bytes));
+                if let Ok(mut reader) = decoder.read_info() {
+                    let width = reader.info().width;
+                    let height = reader.info().height;
+                    let color_type = reader.info().color_type;
+                    let mut buf = vec![0u8; reader.output_buffer_size()];
+                    if reader.next_frame(&mut buf).is_ok() {
+                        let rgba = match color_type {
+                            png::ColorType::Rgba => buf,
+                            png::ColorType::Rgb => {
+                                let mut rgba = Vec::with_capacity((width * height * 4) as usize);
+                                for chunk in buf.chunks_exact(3) {
+                                    rgba.extend_from_slice(&[chunk[0], chunk[1], chunk[2], 255]);
+                                }
+                                rgba
+                            }
+                            _ => buf,
+                        };
+                        let icon = tauri::image::Image::new_owned(rgba, width, height);
+                        let _ = window.set_icon(icon);
+                    }
+                }
+            }
+
             // ── Release-only: launch bundled backend and navigate ──
             // In dev mode, the developer runs the backend separately
             // (uvicorn) and Tauri uses the Vite devUrl (localhost:5180).

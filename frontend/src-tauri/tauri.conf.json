@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicegram/nicegram-ios/develop/sidecar_schema.json",
   "productName": "章枢",
-  "version": "0.1.0",
+  "version": "0.8.1",
   "identifier": "com.zhangshu.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",

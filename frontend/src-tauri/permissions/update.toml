@@ -1,0 +1,14 @@
+[[permission]]
+identifier = "allow-check-update"
+description = "允许主窗口检查章枢更新清单。"
+commands.allow = ["check_update"]
+
+[[permission]]
+identifier = "allow-download-update"
+description = "允许主窗口下载并校验章枢更新安装包。"
+commands.allow = ["download_update"]
+
+[[permission]]
+identifier = "allow-install-update"
+description = "允许主窗口启动已校验的章枢更新安装程序。"
+commands.allow = ["install_update"]
