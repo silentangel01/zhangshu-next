@@ -61,8 +61,51 @@ class Settings(BaseSettings):
     access_log_json: bool = True
     rate_limit_login_per_5m: int = 10
     rate_limit_backup_init_per_hour: int = 30
+    rate_limit_email_check_per_5m: int = 20
+    rate_limit_email_code_send_per_5m: int = 5
+    rate_limit_email_code_verify_per_5m: int = 10
     default_storage_quota_bytes: int = 1_073_741_824  # 1 GB
     default_backup_count_quota: int = 100
+
+    # Auth email verification
+    email_delivery_mode: str = "log"  # "smtp", "log", or "disabled"
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    smtp_use_tls: bool = True
+    smtp_use_ssl: bool = False
+    auth_email_code_secret: str = ""
+    auth_email_code_length: int = 6
+    auth_email_code_ttl_seconds: int = 600
+    auth_email_code_resend_cooldown_seconds: int = 60
+    auth_email_code_max_attempts: int = 5
+
+    # Phone/SMS verification
+    phone_auth_enabled: bool = False
+    sms_delivery_mode: str = "log"  # "aliyun", "log", or "disabled"
+    aliyun_sms_access_key_id: str = ""
+    aliyun_sms_access_key_secret: str = ""
+    aliyun_sms_sign_name: str = ""
+    aliyun_sms_template_code: str = ""
+    aliyun_sms_region_id: str = "cn-hangzhou"
+    aliyun_sms_endpoint: str = "https://dysmsapi.aliyuncs.com/"
+    auth_phone_code_secret: str = ""
+    auth_phone_code_length: int = 6
+    auth_phone_code_ttl_seconds: int = 600
+    auth_phone_code_resend_cooldown_seconds: int = 60
+    auth_phone_code_max_attempts: int = 5
+
+    # OAuth login (WeChat / QQ)
+    oauth_public_base_url: str = ""
+    oauth_session_ttl_seconds: int = 600
+    wechat_oauth_enabled: bool = False
+    wechat_oauth_app_id: str = ""
+    wechat_oauth_app_secret: str = ""
+    qq_oauth_enabled: bool = False
+    qq_oauth_app_id: str = ""
+    qq_oauth_app_secret: str = ""
 
     # Admin
     admin_emails: str = ""
@@ -276,6 +319,54 @@ def validate_production_config(settings: Settings) -> list[str]:
             f"RATE_LIMIT_BACKEND 为 '{settings.rate_limit_backend}'，"
             "生产环境建议使用 'redis'。"
         )
+
+    # Email verification must use real SMTP in production
+    email_delivery_mode = settings.email_delivery_mode.lower().strip()
+    if email_delivery_mode != "smtp":
+        issues.append(
+            "EMAIL_DELIVERY_MODE 生产环境必须为 smtp，不能使用 log 或 disabled。"
+        )
+    if email_delivery_mode == "smtp":
+        if not settings.smtp_host or not settings.smtp_from:
+            issues.append(
+                "SMTP_HOST 和 SMTP_FROM 生产环境必须配置，"
+                "否则无法发送登录/注册验证码。"
+            )
+    if settings.smtp_use_tls and settings.smtp_use_ssl:
+        issues.append(
+            "SMTP_USE_TLS 和 SMTP_USE_SSL 不能同时为 true。"
+        )
+
+    if settings.phone_auth_enabled:
+        sms_delivery_mode = settings.sms_delivery_mode.lower().strip()
+        if sms_delivery_mode != "aliyun":
+            issues.append(
+                "PHONE_AUTH_ENABLED=true 时，生产环境 SMS_DELIVERY_MODE 必须为 aliyun。"
+            )
+        if sms_delivery_mode == "aliyun":
+            if (
+                not settings.aliyun_sms_access_key_id
+                or not settings.aliyun_sms_access_key_secret
+                or not settings.aliyun_sms_sign_name
+                or not settings.aliyun_sms_template_code
+            ):
+                issues.append(
+                    "阿里云短信 AccessKey、签名和模板未完整配置，无法发送手机验证码。"
+                )
+
+    if settings.wechat_oauth_enabled or settings.qq_oauth_enabled:
+        if not settings.oauth_public_base_url.startswith("https://"):
+            issues.append(
+                "启用微信/QQ 登录时，OAUTH_PUBLIC_BASE_URL 必须配置为公网 HTTPS 地址。"
+            )
+        if settings.wechat_oauth_enabled and (
+            not settings.wechat_oauth_app_id or not settings.wechat_oauth_app_secret
+        ):
+            issues.append("微信登录已启用，但 WECHAT_OAUTH_APP_ID/SECRET 未完整配置。")
+        if settings.qq_oauth_enabled and (
+            not settings.qq_oauth_app_id or not settings.qq_oauth_app_secret
+        ):
+            issues.append("QQ 登录已启用，但 QQ_OAUTH_APP_ID/SECRET 未完整配置。")
 
     # Cache backend must be redis in production
     if settings.cache_backend != "redis":

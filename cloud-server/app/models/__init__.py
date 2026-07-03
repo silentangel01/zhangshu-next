@@ -2,6 +2,10 @@
 
 from app.models.user import User
 from app.models.refresh_token import RefreshToken
+from app.models.email_verification_code import EmailVerificationCode
+from app.models.phone_verification_code import PhoneVerificationCode
+from app.models.auth_identity import AuthIdentity
+from app.models.oauth_login_session import OAuthLoginSession
 from app.models.cloud_project import CloudProject
 from app.models.cloud_backup import CloudBackup
 from app.models.rate_limit_event import RateLimitEvent
@@ -21,6 +25,10 @@ from app.models.cloud_sync_conflict import CloudSyncConflict
 __all__ = [
     "User",
     "RefreshToken",
+    "EmailVerificationCode",
+    "PhoneVerificationCode",
+    "AuthIdentity",
+    "OAuthLoginSession",
     "CloudProject",
     "CloudBackup",
     "RateLimitEvent",

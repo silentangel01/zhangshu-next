@@ -35,6 +35,9 @@ from app.schemas.version import (
     VersionDetail,
     VersionListItem,
     VersionListResponse,
+    VersionSnapshotTarget,
+    VersionSnapshotTargetsResponse,
+    VersionSummaryResponse,
 )
 
 
@@ -481,14 +484,139 @@ class VersionService:
         project_id: str,
         *,
         keep_days: int = 30,
+        source: str | None = None,
     ) -> CleanupVersionsResponse:
         self._ensure_project(project_id)
+
+        if source == "manual_save":
+            sources = ["manual_save"]
+        elif source == "routine":
+            sources = ["autosave", "manual_save"]
+        else:
+            sources = ["autosave"]
+
         count = self._chapter_repo.cleanup_unpinned_autosave(
-            project_id, keep_days=keep_days
+            project_id, keep_days=keep_days, sources=sources
         )
         return CleanupVersionsResponse(
             deleted_count=count,
             message=f"已清理 {count} 个旧自动保存版本",
+        )
+
+    # -- summary -----------------------------------------------------------
+
+    def get_summary(self, project_id: str) -> VersionSummaryResponse:
+        self._ensure_project(project_id)
+
+        cv_counts = self._chapter_repo.count_by_source(project_id)
+        ev_counts = self._entity_repo.count_by_source(project_id)
+
+        # Merge counts from both tables
+        merged: dict[str, int] = {}
+        for k, v in cv_counts.items():
+            merged[k] = merged.get(k, 0) + v
+        for k, v in ev_counts.items():
+            merged[k] = merged.get(k, 0) + v
+
+        cv_latest = self._chapter_repo.get_latest_created_at(project_id)
+        ev_latest = self._entity_repo.get_latest_created_at(project_id)
+        latest_at = None
+        if cv_latest and ev_latest:
+            latest_at = max(cv_latest, ev_latest)
+        else:
+            latest_at = cv_latest or ev_latest
+
+        total = sum(merged.values())
+        milestone_count = merged.get("milestone", 0)
+        pinned_cv = self._chapter_repo.count_pinned(project_id)
+        pinned_ev = self._entity_repo.count_pinned(project_id)
+        pinned_count = pinned_cv + pinned_ev
+
+        return VersionSummaryResponse(
+            project_id=project_id,
+            total=total,
+            milestone_count=milestone_count,
+            pinned_count=pinned_count,
+            autosave_count=merged.get("autosave", 0),
+            manual_save_count=merged.get("manual_save", 0),
+            restore_count=merged.get("restore", 0),
+            before_restore_count=merged.get("before_restore", 0),
+            legacy_manual_count=merged.get("manual", 0),
+            latest_version_at=latest_at,
+        )
+
+    # -- snapshot targets --------------------------------------------------
+
+    def list_snapshot_targets(
+        self,
+        project_id: str,
+        *,
+        entity_type: str | None = None,
+        keyword: str | None = None,
+        limit: int = 50,
+    ) -> VersionSnapshotTargetsResponse:
+        self._ensure_project(project_id)
+        limit = max(1, min(limit, 200))
+
+        targets: list[VersionSnapshotTarget] = []
+
+        if entity_type is None or entity_type == "chapter":
+            from app.repositories.chapter_repo import ChapterRepository
+
+            chapters = ChapterRepository(self.db).list_active_by_project(project_id)
+            for ch in chapters:
+                if keyword and keyword.lower() not in ch.title.lower():
+                    continue
+                targets.append(
+                    VersionSnapshotTarget(
+                        entity_type="chapter",
+                        entity_id=ch.id,
+                        title=ch.title,
+                        subtitle=f"正文 · 约 {ch.word_count} 字",
+                        updated_at=ch.updated_at,
+                    )
+                )
+
+        _type_model_map = {
+            "setting": (SettingItem, "title"),
+            "character": (Character, "name"),
+            "clue": (Clue, "title"),
+            "outline": (OutlineItem, "title"),
+            "knowledge_source": (KnowledgeSource, "title"),
+        }
+
+        for etype, (model_cls, title_field) in _type_model_map.items():
+            if entity_type is not None and entity_type != etype:
+                continue
+            rows = (
+                self.db.query(model_cls)
+                .filter(model_cls.project_id == project_id)
+                .filter(
+                    getattr(model_cls, "deleted_at", None) == None  # noqa: E711
+                )
+            )
+            if keyword:
+                col = getattr(model_cls, title_field)
+                rows = rows.filter(col.ilike(f"%{keyword}%"))
+            rows = rows.limit(limit).all()
+            for row in rows:
+                title = getattr(row, title_field, "")
+                targets.append(
+                    VersionSnapshotTarget(
+                        entity_type=etype,
+                        entity_id=row.id,
+                        title=title,
+                        subtitle="",
+                        updated_at=getattr(row, "updated_at", None),
+                    )
+                )
+
+        targets.sort(key=lambda t: t.updated_at or datetime.min, reverse=True)
+        targets = targets[:limit]
+
+        return VersionSnapshotTargetsResponse(
+            project_id=project_id,
+            targets=targets,
         )
 
     # ------------------------------------------------------------------
@@ -513,7 +641,7 @@ class VersionService:
             title=chapter.title,
             content=chapter.content,
             word_count=chapter.word_count,
-            source="manual",
+            source=data.source or "milestone",
             label=data.label,
             note=data.note,
         )
@@ -624,7 +752,7 @@ class VersionService:
             snapshot_json=json.dumps(snapshot, ensure_ascii=False),
             content_text=content_text,
             word_count=_count_words(content_text),
-            source="manual",
+            source=data.source or "milestone",
             label=data.label,
             note=data.note,
         )

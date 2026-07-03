@@ -1,6 +1,7 @@
 * text=auto
 .editorconfig text eol=lf
 .gitattributes text eol=lf
+*.env.example text eol=lf
 *.ts text eol=lf
 *.vue text eol=lf
 *.py text eol=lf

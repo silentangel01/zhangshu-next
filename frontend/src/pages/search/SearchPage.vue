@@ -153,8 +153,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
   <main class="search-page">
     <header class="page-header">
       <div>
-        <RouterLink class="back-link" :to="`/projects/${projectId}`">返回写作页</RouterLink>
-        <p class="eyebrow">全文搜索</p>
+        <RouterLink class="back-link" :to="`/projects/${projectId}`">← 返回写作页</RouterLink>
         <h1>搜索</h1>
       </div>
       <div class="header-actions">
@@ -164,7 +163,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
           :disabled="isRefreshing"
           @click="handleRefreshIndex"
         >
-          {{ isRefreshing ? '正在刷新…' : '刷新搜索索引' }}
+          {{ isRefreshing ? '正在刷新…' : '刷新索引' }}
         </button>
         <RouterLink class="secondary-link" to="/projects">项目列表</RouterLink>
       </div>
@@ -252,7 +251,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
   min-height: 100vh;
   box-sizing: border-box;
   overflow-x: hidden;
-  padding: var(--zs-space-8) var(--zs-space-5);
+  padding: var(--zs-space-4) var(--zs-space-4) var(--zs-space-6);
   background: var(--zs-color-bg);
   color: var(--zs-color-text);
 }
@@ -278,21 +277,13 @@ function getErrorMessage(error: unknown, fallback: string): string {
 .page-header {
   align-items: flex-end;
   justify-content: space-between;
-  margin-bottom: var(--zs-space-6);
+  margin-bottom: var(--zs-space-4);
 }
 
 .header-actions {
   display: flex;
   gap: var(--zs-space-3);
   align-items: center;
-}
-
-.eyebrow {
-  margin: 0 0 6px;
-  color: var(--zs-color-text-muted);
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0;
 }
 
 h1,
@@ -304,49 +295,66 @@ h2,
 }
 
 h1 {
-  font-size: 1.8rem;
-  line-height: 1.1;
-  letter-spacing: 0;
+  font-size: 1.3rem;
+  line-height: 1.3;
+  font-weight: 700;
 }
 
 h2 {
-  font-size: 1.1rem;
-  line-height: 1.25;
+  font-size: 1rem;
+  line-height: 1.35;
 }
 
 .back-link {
   display: inline-flex;
   margin-bottom: var(--zs-space-2);
-  color: var(--zs-color-primary);
-  font-weight: 800;
+  color: var(--zs-color-text-muted);
+  font-size: 0.84rem;
+  font-weight: 600;
   text-decoration: none;
+}
+
+.back-link:hover {
+  color: var(--zs-color-primary);
 }
 
 .secondary-link {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 38px;
+  min-height: 34px;
   box-sizing: border-box;
   border: 1px solid var(--zs-color-border);
   border-radius: var(--zs-radius-sm);
-  padding: 0 14px;
+  padding: 0 var(--zs-space-3);
   background: var(--zs-color-surface);
   color: var(--zs-color-text);
-  font-weight: 800;
+  font-size: 0.84rem;
+  font-weight: 600;
   text-decoration: none;
+  transition: background 0.15s;
+}
+
+.secondary-link:hover {
+  background: var(--zs-color-surface-soft);
 }
 
 .ghost-button {
-  min-height: 38px;
+  min-height: 34px;
   border: 1px solid var(--zs-color-border);
   border-radius: var(--zs-radius-sm);
-  padding: 0 14px;
+  padding: 0 var(--zs-space-3);
   background: transparent;
   color: var(--zs-color-text-muted);
   font: inherit;
-  font-weight: 800;
+  font-size: 0.84rem;
+  font-weight: 600;
   cursor: pointer;
+  transition: background 0.15s;
+}
+
+.ghost-button:hover {
+  background: var(--zs-color-surface-soft);
 }
 
 .ghost-button:disabled {
@@ -357,17 +365,16 @@ h2 {
 .search-panel,
 .result-card {
   box-sizing: border-box;
-  border: 1px solid var(--zs-color-border);
+  border: 1px solid var(--zs-color-border-soft);
   border-radius: var(--zs-radius-md);
   background: var(--zs-color-surface);
-  box-shadow: var(--zs-shadow-sm);
 }
 
 .search-panel {
   display: grid;
-  gap: var(--zs-space-4);
-  margin-bottom: var(--zs-space-5);
-  padding: var(--zs-space-5);
+  gap: var(--zs-space-3);
+  margin-bottom: var(--zs-space-4);
+  padding: var(--zs-space-4);
 }
 
 .search-form {
@@ -377,20 +384,28 @@ h2 {
 .field-group {
   flex: 1 1 auto;
   display: grid;
-  gap: 8px;
+  gap: var(--zs-space-1);
   color: var(--zs-color-text-muted);
-  font-weight: 800;
+  font-size: 0.84rem;
+  font-weight: 600;
 }
 
 input {
   width: 100%;
   box-sizing: border-box;
   border: 1px solid var(--zs-color-border);
-  border-radius: var(--zs-radius-md);
-  padding: 12px;
+  border-radius: var(--zs-radius-sm);
+  padding: var(--zs-space-2) var(--zs-space-3);
   background: var(--zs-color-surface);
   color: var(--zs-color-text);
   font: inherit;
+  font-size: 0.88rem;
+}
+
+input:focus {
+  outline: none;
+  border-color: var(--zs-color-primary);
+  box-shadow: var(--zs-shadow-focus);
 }
 
 .filter-bar {
@@ -400,45 +415,53 @@ input {
 }
 
 .filter-chip {
-  min-height: 32px;
-  border: 1px solid var(--zs-color-border);
+  min-height: 28px;
+  border: 1px solid var(--zs-color-border-soft);
   border-radius: 999px;
-  padding: 0 14px;
+  padding: 0 12px;
   background: var(--zs-color-surface);
   color: var(--zs-color-text-muted);
   font: inherit;
-  font-size: 0.85rem;
-  font-weight: 800;
+  font-size: 0.8rem;
+  font-weight: 500;
   cursor: pointer;
   transition: all 0.15s;
+}
+
+.filter-chip:hover {
+  border-color: var(--zs-color-border);
+  color: var(--zs-color-text);
 }
 
 .filter-chip.active {
   border-color: var(--zs-color-primary);
   background: var(--zs-color-primary-soft);
   color: var(--zs-color-primary);
+  font-weight: 600;
 }
 
 .error-banner {
   box-sizing: border-box;
-  margin-bottom: var(--zs-space-4);
+  margin-bottom: var(--zs-space-3);
   border: 1px solid var(--zs-color-danger);
-  border-radius: var(--zs-radius-md);
-  padding: 12px 14px;
+  border-radius: var(--zs-radius-sm);
+  padding: var(--zs-space-2) var(--zs-space-3);
   background: var(--zs-color-danger-soft);
   color: var(--zs-color-danger);
-  font-weight: 800;
+  font-weight: 600;
+  font-size: 0.84rem;
 }
 
 .info-banner {
   box-sizing: border-box;
-  margin-bottom: var(--zs-space-4);
+  margin-bottom: var(--zs-space-3);
   border: 1px solid var(--zs-color-success);
-  border-radius: var(--zs-radius-md);
-  padding: 10px 14px;
+  border-radius: var(--zs-radius-sm);
+  padding: var(--zs-space-2) var(--zs-space-3);
   background: var(--zs-color-success-soft, rgba(34, 197, 94, 0.08));
   color: var(--zs-color-success);
-  font-weight: 800;
+  font-weight: 600;
+  font-size: 0.84rem;
   max-width: 980px;
   margin-right: auto;
   margin-left: auto;
@@ -451,14 +474,19 @@ input {
 
 .result-count {
   color: var(--zs-color-text-muted);
-  font-size: 0.88rem;
-  font-weight: 800;
+  font-size: 0.84rem;
+  font-weight: 600;
 }
 
 .result-card {
   display: grid;
-  gap: var(--zs-space-3);
-  padding: var(--zs-space-4);
+  gap: var(--zs-space-2);
+  padding: var(--zs-space-3) var(--zs-space-4);
+  transition: border-color 0.15s;
+}
+
+.result-card:hover {
+  border-color: var(--zs-color-border);
 }
 
 .result-header,
@@ -475,12 +503,12 @@ input {
 
 .type-pill {
   flex: 0 0 auto;
-  border-radius: 999px;
-  padding: 3px 10px;
+  border-radius: var(--zs-radius-sm);
+  padding: 2px 8px;
   background: var(--zs-color-primary-soft);
   color: var(--zs-color-primary);
-  font-size: 0.75rem;
-  font-weight: 800;
+  font-size: 0.72rem;
+  font-weight: 600;
 }
 
 .subtitle {
@@ -499,7 +527,7 @@ input {
   background: var(--zs-color-warning-soft, rgba(245, 158, 11, 0.15));
   color: var(--zs-color-text);
   padding: 0 2px;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .updated-at {
@@ -510,22 +538,25 @@ input {
 .empty-state {
   display: grid;
   place-items: center;
-  min-height: 180px;
+  min-height: 120px;
   border: 1px dashed var(--zs-color-border);
   border-radius: var(--zs-radius-md);
   background: var(--zs-color-surface);
   color: var(--zs-color-text-muted);
-  font-weight: 800;
+  font-size: 0.86rem;
+  font-weight: 500;
 }
 
 button {
-  min-height: 38px;
+  min-height: 34px;
   border-radius: var(--zs-radius-sm);
   border: 1px solid transparent;
-  padding: 0 14px;
+  padding: 0 var(--zs-space-3);
   font: inherit;
-  font-weight: 800;
+  font-weight: 600;
+  font-size: 0.84rem;
   cursor: pointer;
+  transition: background 0.15s;
 }
 
 button:disabled {
@@ -538,10 +569,18 @@ button:disabled {
   color: var(--zs-color-on-primary);
 }
 
+.primary-button:hover:not(:disabled) {
+  background: var(--zs-color-primary-hover);
+}
+
 .secondary-button {
   border-color: var(--zs-color-border);
   background: var(--zs-color-surface);
   color: var(--zs-color-primary);
+}
+
+.secondary-button:hover {
+  background: var(--zs-color-surface-soft);
 }
 
 /* Reserve space for fixed top-right bar (notification + theme) */

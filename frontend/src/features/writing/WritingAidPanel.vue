@@ -77,7 +77,6 @@ function isAidTab(value: unknown): value is AidTab {
 
 <template>
   <aside class="writing-aid-panel">
-    <h3 class="panel-title">写作资料</h3>
     <nav class="tab-list" aria-label="写作资料分类">
       <button
         v-for="tab in tabs"
@@ -126,16 +125,9 @@ function isAidTab(value: unknown): value is AidTab {
 <style scoped>
 .writing-aid-panel {
   display: grid;
-  gap: var(--zs-space-2);
+  gap: var(--zs-space-3);
   min-height: 0;
-}
-
-.panel-title {
-  margin: 0;
-  color: var(--zs-color-text-faint);
-  font-size: 0.74rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .state-message,
@@ -146,39 +138,42 @@ function isAidTab(value: unknown): value is AidTab {
 .tab-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 1px;
-  border: 1px solid var(--zs-color-border-soft);
-  border-radius: var(--zs-radius-sm);
-  overflow: hidden;
-  background: var(--zs-color-border-soft);
+  gap: 0 var(--zs-space-1);
+  border-bottom: 1px solid var(--zs-color-border-soft);
+  padding: 0 var(--zs-space-1) 0;
+  margin: 0 calc(-1 * var(--zs-space-3));
 }
 
 .tab-list button {
-  min-height: 28px;
+  min-height: 32px;
   border: none;
+  border-bottom: 2px solid transparent;
   border-radius: 0;
   padding: 0 var(--zs-space-2);
-  background: var(--zs-color-surface);
+  background: transparent;
   color: var(--zs-color-text-muted);
   font: inherit;
-  font-size: 0.78rem;
-  font-weight: 600;
+  font-size: 0.82rem;
+  font-weight: 500;
   cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  margin-bottom: -1px;
 }
 
 .tab-list button:hover {
   color: var(--zs-color-text);
-  background: var(--zs-color-surface-soft);
 }
 
 .tab-list button.active {
-  background: var(--zs-color-primary-soft);
   color: var(--zs-color-primary);
+  border-bottom-color: var(--zs-color-primary);
+  font-weight: 600;
 }
 
 .tab-content {
   min-height: 0;
   overflow: auto;
+  padding-top: var(--zs-space-2);
 }
 
 .state-message {

@@ -152,6 +152,14 @@ const lineStyles: TimelineEdgeLineStyle[] = ['straight', 'arc', 'dashed', 'arrow
 const visibilities: TimelineEdgeVisibility[] = ['normal', 'subtle', 'hidden']
 const hiddenTrackIds = ref<string[]>([])
 const progressMessage = ref('')
+
+const toolbarStatusText = computed(() => progressMessage.value || successMessage.value || '')
+const toolbarStatusClass = computed(() => {
+  if (progressMessage.value) return 'status-progress'
+  if (successMessage.value) return 'status-success'
+  return ''
+})
+const toolbarStatusKey = computed(() => toolbarStatusClass.value + ':' + toolbarStatusText.value)
 const DRAG_START_THRESHOLD_PX = 4
 const dragState = reactive({
   active: false,
@@ -369,14 +377,34 @@ const defaultEventTrackId = computed(() => {
 const hasDetailSelection = computed(() => panelKind.value !== 'none')
 
 const edgePoints = ref<RenderedEdge[]>([])
-const canvasWidth = ref(0)
 const canvasHeight = ref(0)
 const canvasViewportRef = ref<HTMLElement | null>(null)
 const canvasBodyRef = ref<HTMLElement | null>(null)
 const trackLaneRefs = ref<Record<string, HTMLElement | null>>({})
 const eventNodeRefs = ref<Record<string, HTMLElement | null>>({})
+
+// Fixed ribbon width — all node positions are relative to this.
+// Nodes live at pixel positions within [0, TIMELINE_BASE_WIDTH].
+// The body is always at least BASE + viewport wide so the user can scroll
+// past the rightmost node. Body width only GROWS (never shrinks), so
+// scrolling back left does not shift any existing content.
+const TIMELINE_BASE_WIDTH = 2400
+const canvasBodyWidth = ref(0)
+
 let edgeMeasureFrameId: number | null = null
 let timelineResizeObserver: ResizeObserver | null = null
+let successMessageTimerId: ReturnType<typeof setTimeout> | null = null
+
+function setSuccessMessage(message: string) {
+  successMessage.value = message
+  if (successMessageTimerId !== null) {
+    clearTimeout(successMessageTimerId)
+  }
+  successMessageTimerId = setTimeout(() => {
+    successMessage.value = ''
+    successMessageTimerId = null
+  }, 3000)
+}
 
 onMounted(() => {
   void loadWorkspace()
@@ -384,16 +412,42 @@ onMounted(() => {
   void nextTick(() => {
     setupTimelineResizeObserver()
     requestMeasureEdges()
+    if (canvasViewportRef.value) {
+      canvasViewportRef.value.addEventListener('scroll', handleCanvasScroll, { passive: true })
+      canvasBodyWidth.value = TIMELINE_BASE_WIDTH + canvasViewportRef.value.clientWidth
+    }
   })
 })
+
+function handleCanvasScroll() {
+  const vp = canvasViewportRef.value
+  if (!vp) return
+  // Grow when scrolling right, shrink when scrolling back.
+  // Nodes live in [0, BASE], so body = max(BASE + viewport, scroll + viewport).
+  const needed = Math.max(TIMELINE_BASE_WIDTH + vp.clientWidth, vp.scrollLeft + vp.clientWidth)
+  if (needed !== canvasBodyWidth.value) {
+    canvasBodyWidth.value = needed
+  }
+  // NOTE: edge paths are NOT recalculated during scroll.
+  // Nodes and the SVG are both children of the body — they scroll together
+  // naturally. Recalculating would introduce a 1-frame offset that makes
+  // edges appear to lag behind nodes.
+}
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', scheduleMeasureEdges)
   timelineResizeObserver?.disconnect()
   timelineResizeObserver = null
+  if (canvasViewportRef.value) {
+    canvasViewportRef.value.removeEventListener('scroll', handleCanvasScroll)
+  }
   if (edgeMeasureFrameId !== null) {
     window.cancelAnimationFrame(edgeMeasureFrameId)
     edgeMeasureFrameId = null
+  }
+  if (successMessageTimerId !== null) {
+    clearTimeout(successMessageTimerId)
+    successMessageTimerId = null
   }
 })
 
@@ -433,6 +487,10 @@ async function loadWorkspace() {
   isLoading.value = true
   errorMessage.value = ''
   successMessage.value = ''
+  if (successMessageTimerId !== null) {
+    clearTimeout(successMessageTimerId)
+    successMessageTimerId = null
+  }
 
   try {
     const [projectDetail, projectChapters, projectSettings, projectTracks, projectEvents, projectEdges] =
@@ -463,6 +521,14 @@ async function loadWorkspace() {
 
 async function refreshWorkspace() {
   await loadWorkspace()
+  await nextTick()
+  if (canvasViewportRef.value) {
+    const needed = TIMELINE_BASE_WIDTH + canvasViewportRef.value.clientWidth
+    if (needed > canvasBodyWidth.value) {
+      canvasBodyWidth.value = needed
+    }
+  }
+  requestMeasureEdges()
 }
 
 function syncSelectionAfterLoad() {
@@ -809,7 +875,7 @@ async function handleSaveTrack() {
     panelMode.value = 'edit'
     await loadWorkspace()
     selectedTrackId.value = saved.id
-    successMessage.value = '时间轴已保存。'
+    setSuccessMessage('时间轴已保存。')
     cloudSyncManager.notifyDirty(projectId.value)
   }, '保存时间轴失败。')
 }
@@ -826,7 +892,7 @@ async function handleDeleteTrack(track: TimelineTrack) {
       resetSelection()
     }
     await loadWorkspace()
-    successMessage.value = '时间轴已删除。'
+    setSuccessMessage('时间轴已删除。')
     cloudSyncManager.notifyDirty(projectId.value)
   }, '删除时间轴失败。')
 }
@@ -865,7 +931,7 @@ async function handleSaveEvent() {
     await loadWorkspace()
     selectedEventId.value = saved.id
     selectedTrackId.value = saved.track_id
-    successMessage.value = '时间轴节点已保存。'
+    setSuccessMessage('时间轴节点已保存。')
     cloudSyncManager.notifyDirty(projectId.value)
   }, '保存时间轴节点失败。')
 }
@@ -891,7 +957,7 @@ async function handleDeleteEvent() {
       selectedTrackId.value = deletedTrackId
     }
     await loadWorkspace()
-    successMessage.value = '时间轴节点已删除。'
+    setSuccessMessage('时间轴节点已删除。')
     cloudSyncManager.notifyDirty(projectId.value)
   }, '删除时间轴节点失败。')
 }
@@ -923,7 +989,7 @@ async function handleSaveEdge() {
     panelMode.value = 'edit'
     await loadWorkspace()
     selectedEdgeId.value = saved.id
-    successMessage.value = '时间轴连接已保存。'
+    setSuccessMessage('时间轴连接已保存。')
     cloudSyncManager.notifyDirty(projectId.value)
   }, '保存时间轴连接失败。')
 }
@@ -944,7 +1010,7 @@ async function handleDeleteEdge() {
     panelKind.value = 'none'
     panelMode.value = 'view'
     await loadWorkspace()
-    successMessage.value = '时间轴连接已删除。'
+    setSuccessMessage('时间轴连接已删除。')
     cloudSyncManager.notifyDirty(projectId.value)
   }, '删除时间轴连接失败。')
 }
@@ -953,6 +1019,10 @@ async function runSave(action: () => Promise<void>, fallback: string) {
   isSaving.value = true
   errorMessage.value = ''
   successMessage.value = ''
+  if (successMessageTimerId !== null) {
+    clearTimeout(successMessageTimerId)
+    successMessageTimerId = null
+  }
 
   try {
     await action()
@@ -1070,15 +1140,14 @@ function measureEdgeOverlay() {
   const body = canvasBodyRef.value
   if (!viewport || !body) {
     edgePoints.value = []
-    canvasWidth.value = 0
     canvasHeight.value = 0
     return
   }
 
   const bodyRect = body.getBoundingClientRect()
-  const scrollLeft = viewport.scrollLeft
-  const scrollTop = viewport.scrollTop
   const nextPoints: RenderedEdge[] = []
+  // The SVG overlay lives inside the scrolling body, so paths use body-local
+  // coordinates. Adding viewport scroll offsets would make edges drift on scroll.
   const nodeBoxes = Object.entries(eventNodeRefs.value)
     .flatMap(([eventId, node]) => {
       if (!node) {
@@ -1087,10 +1156,10 @@ function measureEdgeOverlay() {
       const rect = node.getBoundingClientRect()
       return [{
         eventId,
-        left: rect.left - bodyRect.left + scrollLeft,
-        right: rect.right - bodyRect.left + scrollLeft,
-        top: rect.top - bodyRect.top + scrollTop,
-        bottom: rect.bottom - bodyRect.top + scrollTop,
+        left: rect.left - bodyRect.left,
+        right: rect.right - bodyRect.left,
+        top: rect.top - bodyRect.top,
+        bottom: rect.bottom - bodyRect.top,
       }]
     })
   const similarEdgeCounts = new Map<string, number>()
@@ -1105,12 +1174,12 @@ function measureEdgeOverlay() {
     const fromRect = fromNode.getBoundingClientRect()
     const toRect = toNode.getBoundingClientRect()
     const start = {
-      x: fromRect.left - bodyRect.left + scrollLeft + fromRect.width / 2,
-      y: fromRect.top - bodyRect.top + scrollTop + fromRect.height / 2,
+      x: fromRect.left - bodyRect.left + fromRect.width / 2,
+      y: fromRect.top - bodyRect.top + fromRect.height / 2,
     }
     const end = {
-      x: toRect.left - bodyRect.left + scrollLeft + toRect.width / 2,
-      y: toRect.top - bodyRect.top + scrollTop + toRect.height / 2,
+      x: toRect.left - bodyRect.left + toRect.width / 2,
+      y: toRect.top - bodyRect.top + toRect.height / 2,
     }
 
     const areaKey = buildEdgeAreaKey(start.x, start.y, end.x, end.y)
@@ -1134,7 +1203,6 @@ function measureEdgeOverlay() {
   }
 
   edgePoints.value = nextPoints
-  canvasWidth.value = Math.max(body.scrollWidth, body.clientWidth)
   canvasHeight.value = Math.max(body.scrollHeight, body.clientHeight)
 }
 
@@ -1175,10 +1243,12 @@ function buildEdgeRoute(
     const lift = Math.max(34, Math.min(140, distance / 4 + Math.abs(y2 - y1) / 3))
     const controlX = (x1 + x2) / 2
     const controlY = (y1 + y2) / 2 + liftDirection * lift + siblingOffset
+    const curveMidX = 0.25 * x1 + 0.5 * controlX + 0.25 * x2
+    const curveMidY = 0.25 * y1 + 0.5 * controlY + 0.25 * y2
     return {
       path: `M ${x1} ${y1} Q ${controlX} ${controlY} ${x2} ${y2}`,
-      labelX: controlX,
-      labelY: controlY - 8,
+      labelX: curveMidX,
+      labelY: curveMidY - 8,
       curved: true,
     }
   }
@@ -1241,7 +1311,7 @@ function getNodeClass(event: TimelineEvent) {
 function getNodeStyle(row: TrackRow, event: TimelineEvent) {
   const ratio = getDisplayPositionRatio(row, event)
   return {
-    left: `${ratio}%`,
+    left: `${(ratio / 100) * TIMELINE_BASE_WIDTH}px`,
   }
 }
 
@@ -1280,13 +1350,10 @@ function getLaneWidth(trackId: string) {
 }
 
 function clampNodePositionRatio(trackId: string, eventId: string, candidateRatio: number) {
-  const laneWidth = getLaneWidth(trackId)
-  if (laneWidth <= 0) {
-    return clampNumber(candidateRatio, 0, 100)
-  }
+  const baseWidth = TIMELINE_BASE_WIDTH
 
   const draggedWidth = getNodeWidth(eventId)
-  const minCenter = (draggedWidth / 2 / laneWidth) * 100
+  const minCenter = (draggedWidth / 2 / baseWidth) * 100
   const maxCenter = 100 - minCenter
 
   const siblings = getTrackEvents(trackId)
@@ -1302,7 +1369,7 @@ function clampNodePositionRatio(trackId: string, eventId: string, candidateRatio
   let upperBound = maxCenter
 
   for (const sibling of siblings) {
-    const gapRatio = ((draggedWidth / 2 + sibling.width / 2 + 12) / laneWidth) * 100
+    const gapRatio = ((draggedWidth / 2 + sibling.width / 2 + 12) / baseWidth) * 100
     if (sibling.ratio <= candidateRatio) {
       lowerBound = Math.max(lowerBound, sibling.ratio + gapRatio)
       continue
@@ -1411,7 +1478,7 @@ async function handleNodePointerUp(_track: TimelineTrack, event: TimelineEvent, 
         position_ratio: clampNumber(Number(dragState.currentRatio.toFixed(2)), 0, 100),
       })
       events.value = events.value.map((item) => (item.id === saved.id ? saved : item))
-      successMessage.value = '节点位置已更新'
+      setSuccessMessage('节点位置已更新')
       cloudSyncManager.notifyDirty(projectId.value)
     }, '节点位置更新失败，请重试')
     await scheduleMeasureEdges()
@@ -1470,6 +1537,78 @@ function toggleTrackVisibility(track: TimelineTrack) {
   void scheduleMeasureEdges()
 }
 
+// ---------------------------------------------------------------------------
+// Visual helpers — type colours, edge colours, importance, temporal icons
+// ---------------------------------------------------------------------------
+
+const mainTrackIds = computed(() =>
+  new Set(tracks.value.filter((t) => t.is_main).map((t) => t.id)),
+)
+
+const EVENT_TYPE_COLORS: Record<TimelineEventType, string> = {
+  plot: 'var(--zs-color-primary)',
+  background: 'var(--zs-color-text-faint)',
+  character: 'var(--zs-color-accent)',
+  world: 'var(--zs-color-info)',
+  clue: 'var(--zs-color-warning)',
+  conflict: 'var(--zs-color-danger)',
+  custom: 'var(--zs-color-text-muted)',
+}
+
+const EDGE_TYPE_COLORS: Record<TimelineEdgeType, string> = {
+  cause: 'var(--zs-color-primary)',
+  parallel: 'var(--zs-color-text-muted)',
+  clue_payoff: 'var(--zs-color-warning)',
+  conflict: 'var(--zs-color-danger)',
+  echo: 'var(--zs-color-accent)',
+  related: 'var(--zs-canvas-text-muted)',
+  custom: 'var(--zs-canvas-text-muted)',
+}
+
+const TEMPORAL_ICONS: Record<TimelineEdgeTemporalRelation, string> = {
+  previous: '◀',
+  parallel: '⇄',
+  delayed: '⏳',
+  future: '▶',
+  unordered: '',
+}
+
+function getEventTypeColor(type: TimelineEventType): string {
+  return EVENT_TYPE_COLORS[type] ?? EVENT_TYPE_COLORS.custom
+}
+
+function getEdgeTypeColor(type: TimelineEdgeType): string {
+  return EDGE_TYPE_COLORS[type] ?? EDGE_TYPE_COLORS.related
+}
+
+function getTemporalIcon(relation: TimelineEdgeTemporalRelation): string {
+  return TEMPORAL_ICONS[relation] ?? ''
+}
+
+function isEventCriticalOrHigh(event: TimelineEvent): boolean {
+  return event.importance === 'critical' || event.importance === 'high'
+}
+
+// ---------------------------------------------------------------------------
+// Detail panel collapsible sections
+// ---------------------------------------------------------------------------
+
+const panelSectionState = reactive({
+  trackBasic: true,
+  trackBind: false,
+  eventBasic: true,
+  eventTime: true,
+  eventAttrs: false,
+  eventNotes: true,
+  edgeEndpoints: true,
+  edgeRelation: true,
+  edgeNotes: true,
+})
+
+function togglePanelSection(key: keyof typeof panelSectionState) {
+  panelSectionState[key] = !panelSectionState[key]
+}
+
 function clearDragState() {
   dragState.active = false
   dragState.eventId = ''
@@ -1499,13 +1638,13 @@ function clearDragState() {
       <section class="toolbar-group" aria-label="工具">
         <span class="toolbar-label">工具</span>
         <div class="toolbar-row">
-          <button class="primary-button" type="button" :disabled="isSaving || isLoading" @click="openCreateTrack">
+          <button class="primary-button" type="button" :disabled="isLoading" @click="openCreateTrack">
             新建时间轴
           </button>
-          <button class="secondary-button" type="button" :disabled="isSaving || isLoading" @click="openCreateEvent">
+          <button class="secondary-button" type="button" :disabled="isLoading" @click="openCreateEvent">
             新建
           </button>
-          <button class="secondary-button" type="button" :disabled="isSaving || isLoading" @click="openCreateEdge">
+          <button class="secondary-button" type="button" :disabled="isLoading" @click="openCreateEdge">
             连线
           </button>
         </div>
@@ -1535,11 +1674,11 @@ function clearDragState() {
           </button>
         </div>
       </section>
+
+      <span :key="toolbarStatusKey" class="toolbar-status" :class="toolbarStatusClass">{{ toolbarStatusText }}</span>
     </section>
 
-    <p v-if="progressMessage" class="status-banner warning">{{ progressMessage }}</p>
     <p v-if="errorMessage" class="status-banner error">{{ errorMessage }}</p>
-    <p v-else-if="successMessage" class="status-banner success">{{ successMessage }}</p>
     <p v-if="invalidEdgeCount > 0" class="status-banner warning">
       已跳过 {{ invalidEdgeCount }} 条无效连接。
     </p>
@@ -1608,13 +1747,18 @@ function clearDragState() {
         <div v-if="isLoading" class="loading-mask">正在加载时间轴…</div>
 
         <div ref="canvasViewportRef" class="timeline-canvas-viewport" @click.self="resetSelection">
-          <div ref="canvasBodyRef" class="timeline-canvas-body" @click.self="resetSelection">
+          <div
+            ref="canvasBodyRef"
+            class="timeline-canvas-body"
+            :style="{ width: canvasBodyWidth + 'px' }"
+            @click.self="resetSelection"
+          >
             <svg
               v-if="edgePoints.length > 0"
               class="timeline-edge-overlay"
-              :width="canvasWidth"
+              :width="canvasBodyWidth"
               :height="canvasHeight"
-              :viewBox="`0 0 ${canvasWidth} ${canvasHeight}`"
+              :viewBox="`0 0 ${canvasBodyWidth} ${canvasHeight}`"
             >
               <defs>
                 <marker
@@ -1634,6 +1778,7 @@ function clearDragState() {
                 :key="edge.id"
                 class="timeline-edge"
                 :class="{ selected: selectedEdgeId === edge.id, curved: edge.curved }"
+                :style="{ color: getEdgeTypeColor(edge.edge.edge_type) }"
                 @click.stop="selectEdge(edge.edge)"
               >
                 <path class="edge-hitbox" :d="edge.path" />
@@ -1644,14 +1789,13 @@ function clearDragState() {
                   :marker-end="edge.hasArrow ? 'url(#timeline-arrow)' : undefined"
                 />
                 <text
-                  v-if="edge.edge.label || selectedEdgeId === edge.id"
+                  v-if="edge.edge.label || getTemporalIcon(edge.edge.temporal_relation)"
                   class="edge-floating-label"
                   :x="edge.labelX"
                   :y="edge.labelY"
                   text-anchor="middle"
-                >
-                  {{ edge.edge.label || getEdgeLabel(edge.edge) }}
-                </text>
+                  dominant-baseline="central"
+                >{{ getTemporalIcon(edge.edge.temporal_relation) }} {{ edge.edge.label || getEdgeLabel(edge.edge) }}</text>
               </g>
             </svg>
 
@@ -1659,7 +1803,7 @@ function clearDragState() {
               v-for="row in rows"
               :key="row.id"
               class="track-row"
-              :class="{ virtual: row.isVirtual, active: selectedTrackId === row.id, dragging: dragState.dragging && dragState.trackId === row.id }"
+              :class="{ virtual: row.isVirtual, active: selectedTrackId === row.id, dragging: dragState.dragging && dragState.trackId === row.id, 'main-track': row.track?.is_main }"
               @click.self="resetSelection"
             >
               <button
@@ -1682,7 +1826,11 @@ function clearDragState() {
               <div
                 :ref="(element) => registerTrackLane(row.id, element as Element | null)"
                 class="track-row-lane"
-                :class="{ dragging: dragState.dragging && dragState.trackId === row.id }"
+                :class="{
+                  dragging: dragState.dragging && dragState.trackId === row.id,
+                  'main-lane': row.track?.is_main,
+                }"
+                :style="{ width: Math.max(TIMELINE_BASE_WIDTH, canvasBodyWidth - 200) + 'px' }"
                 @click.self="resetSelection"
               >
                 <span class="lane-axis"></span>
@@ -1692,7 +1840,7 @@ function clearDragState() {
                   :key="trackEvent.id"
                   :ref="(element) => registerEventNode(trackEvent.id, element as Element | null)"
                   class="timeline-node"
-                  :class="getNodeClass(trackEvent)"
+                  :class="[getNodeClass(trackEvent), { 'main-node': row.track?.is_main }]"
                   :style="getNodeStyle(row, trackEvent)"
                   type="button"
                   @click="handleNodeClick(trackEvent)"
@@ -1701,17 +1849,28 @@ function clearDragState() {
                   @pointerup="row.track ? handleNodePointerUp(row.track, trackEvent, $event) : undefined"
                   @pointercancel="row.track ? handleNodePointerCancel(row.track, trackEvent, $event) : undefined"
                 >
-                  <span v-if="row.track" class="drag-handle" aria-hidden="true">
-                    ⋮⋮
-                  </span>
-                  <span class="node-title">{{ trackEvent.title }}</span>
-                  <span class="node-meta">{{ getEventSubtitle(trackEvent) }}</span>
-                  <span v-if="!cleanMode && trackEvent.chapter_id" class="node-chip">
-                    {{ getEventDetailChapter(trackEvent) }}
-                  </span>
-                  <span v-if="!cleanMode && trackEvent.description" class="node-description">
-                    {{ truncateText(trackEvent.description, 54) }}
-                  </span>
+                  <span v-if="row.track" class="drag-handle" aria-hidden="true">⋮⋮</span>
+                  <div class="node-info">
+                    <div class="node-title-row">
+                      <span class="node-type-dot" :style="{ background: getEventTypeColor(trackEvent.event_type) }"></span>
+                      <span class="node-title">{{ trackEvent.title }}</span>
+                    </div>
+                    <span class="node-meta">{{ getEventSubtitle(trackEvent) }}</span>
+                    <span v-if="!cleanMode && trackEvent.location_setting_id" class="node-location">
+                      {{ getEventDetailSetting(trackEvent) }}
+                    </span>
+                    <span v-if="!cleanMode && trackEvent.description" class="node-description">
+                      {{ truncateText(trackEvent.description, 48) }}
+                    </span>
+                    <div class="node-chips">
+                      <span v-if="!cleanMode && trackEvent.chapter_id" class="node-chip">
+                        {{ getEventDetailChapter(trackEvent) }}
+                      </span>
+                      <span v-if="isEventCriticalOrHigh(trackEvent)" class="node-chip importance-chip" :class="'imp-' + trackEvent.importance">
+                        {{ timelineEventImportanceLabels[trackEvent.importance] }}
+                      </span>
+                    </div>
+                  </div>
                 </button>
               </div>
             </article>
@@ -1722,62 +1881,74 @@ function clearDragState() {
       <aside v-if="hasDetailSelection" class="detail-panel">
         <template v-if="panelKind === 'track'">
           <header class="detail-header">
-            <div>
-              <p class="panel-eyebrow">{{ panelMode === 'create' ? '新建时间轴' : '时间轴详情' }}</p>
-              <h2>{{ panelMode === 'create' ? '创建时间轴' : selectedTrack?.title || '时间轴' }}</h2>
+            <div class="detail-identity">
+              <span class="detail-type-badge">时间轴</span>
+              <h2 class="detail-title">{{ panelMode === 'create' ? '创建时间轴' : selectedTrack?.title || '时间轴' }}</h2>
             </div>
           </header>
 
-          <div class="form-grid">
-            <label class="field">
-              <span>标题</span>
-              <input v-model="trackForm.title" type="text" placeholder="例如：主角成长线" />
-            </label>
+          <section class="panel-section">
+            <button type="button" class="panel-section-header" @click="togglePanelSection('trackBasic')">
+              <span class="pchevron" :class="{ open: panelSectionState.trackBasic }">▾</span>
+              <span>基本信息</span>
+            </button>
+            <div v-if="panelSectionState.trackBasic" class="panel-section-body">
+              <div class="form-grid">
+                <label class="field field-wide">
+                  <span>标题</span>
+                  <input v-model="trackForm.title" type="text" placeholder="例如：主角成长线" />
+                </label>
+                <label class="field field-wide">
+                  <span>描述</span>
+                  <textarea v-model="trackForm.description" rows="3" placeholder="说明这条时间轴追踪什么内容" />
+                </label>
+                <label class="field">
+                  <span>类型</span>
+                  <select v-model="trackForm.track_type">
+                    <option v-for="trackType in trackTypes" :key="trackType" :value="trackType">
+                      {{ timelineTrackTypeLabels[trackType] }}
+                    </option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>是否主时间轴</span>
+                  <select v-model="trackForm.is_main">
+                    <option :value="true">是</option>
+                    <option :value="false">否</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+          </section>
 
-            <label class="field field-wide">
-              <span>描述</span>
-              <textarea v-model="trackForm.description" rows="3" placeholder="说明这条时间轴追踪什么内容" />
-            </label>
+          <section class="panel-section">
+            <button type="button" class="panel-section-header" @click="togglePanelSection('trackBind')">
+              <span class="pchevron" :class="{ open: panelSectionState.trackBind }">▾</span>
+              <span>样式与绑定</span>
+            </button>
+            <div v-if="panelSectionState.trackBind" class="panel-section-body">
+              <div class="form-grid">
+                <label class="field">
+                  <span>颜色</span>
+                  <input v-model="trackForm.color" type="text" placeholder="#6B8AFD" />
+                </label>
+                <label class="field">
+                  <span>排序序号</span>
+                  <input v-model.number="trackForm.order_index" type="number" min="0" />
+                </label>
+                <label class="field">
+                  <span>绑定类型</span>
+                  <input v-model="trackForm.bound_type" type="text" placeholder="例如：character" />
+                </label>
+                <label class="field">
+                  <span>绑定 ID</span>
+                  <input v-model="trackForm.bound_id" type="text" placeholder="可选" />
+                </label>
+              </div>
+            </div>
+          </section>
 
-            <label class="field">
-              <span>类型</span>
-              <select v-model="trackForm.track_type">
-                <option v-for="trackType in trackTypes" :key="trackType" :value="trackType">
-                  {{ timelineTrackTypeLabels[trackType] }}
-                </option>
-              </select>
-            </label>
-
-            <label class="field">
-              <span>排序序号</span>
-              <input v-model.number="trackForm.order_index" type="number" min="0" />
-            </label>
-
-            <label class="field">
-              <span>颜色</span>
-              <input v-model="trackForm.color" type="text" placeholder="#6B8AFD" />
-            </label>
-
-            <label class="field">
-              <span>是否主时间轴</span>
-              <select v-model="trackForm.is_main">
-                <option :value="true">是</option>
-                <option :value="false">否</option>
-              </select>
-            </label>
-
-            <label class="field">
-              <span>绑定对象类型</span>
-              <input v-model="trackForm.bound_type" type="text" placeholder="例如：character" />
-            </label>
-
-            <label class="field">
-              <span>绑定对象 ID</span>
-              <input v-model="trackForm.bound_id" type="text" placeholder="可选" />
-            </label>
-          </div>
-
-          <div class="form-actions">
+          <div class="detail-actions">
             <button class="primary-button" type="button" :disabled="isSaving" @click="handleSaveTrack">
               保存时间轴
             </button>
@@ -1804,107 +1975,133 @@ function clearDragState() {
 
         <template v-else-if="panelKind === 'event'">
           <header class="detail-header">
-            <div>
-              <p class="panel-eyebrow">{{ panelMode === 'create' ? '新建节点' : '节点详情' }}</p>
-              <h2>{{ panelMode === 'create' ? '创建时间轴节点' : selectedEvent?.title || '时间轴节点' }}</h2>
+            <div class="detail-identity">
+              <span class="detail-type-badge" :style="{ background: getEventTypeColor(eventForm.event_type) + '22', color: getEventTypeColor(eventForm.event_type) }">
+                {{ timelineEventTypeLabels[eventForm.event_type] }}
+              </span>
+              <h2 class="detail-title">{{ panelMode === 'create' ? '创建节点' : selectedEvent?.title || '节点' }}</h2>
             </div>
           </header>
 
-          <div class="form-grid">
-            <label class="field field-wide">
-              <span>标题</span>
-              <input v-model="eventForm.title" type="text" placeholder="例如：主角进入青萍城" />
-            </label>
+          <section class="panel-section">
+            <button type="button" class="panel-section-header" @click="togglePanelSection('eventBasic')">
+              <span class="pchevron" :class="{ open: panelSectionState.eventBasic }">▾</span>
+              <span>基本信息</span>
+            </button>
+            <div v-if="panelSectionState.eventBasic" class="panel-section-body">
+              <div class="form-grid">
+                <label class="field field-wide">
+                  <span>标题</span>
+                  <input v-model="eventForm.title" type="text" placeholder="例如：主角进入青萍城" />
+                </label>
+                <label class="field field-wide">
+                  <span>描述</span>
+                  <textarea v-model="eventForm.description" rows="3" placeholder="节点发生了什么" />
+                </label>
+                <label class="field">
+                  <span>所属时间轴</span>
+                  <select v-model="eventForm.track_id">
+                    <option value="">自动使用主时间轴</option>
+                    <option v-for="track in trackOptions" :key="track.id" :value="track.id">
+                      {{ track.label }}
+                    </option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>事件类型</span>
+                  <select v-model="eventForm.event_type">
+                    <option v-for="eventType in eventTypes" :key="eventType" :value="eventType">
+                      {{ timelineEventTypeLabels[eventType] }}
+                    </option>
+                  </select>
+                </label>
+              </div>
+            </div>
+          </section>
 
-            <label class="field field-wide">
-              <span>描述</span>
-              <textarea v-model="eventForm.description" rows="3" placeholder="节点发生了什么" />
-            </label>
+          <section class="panel-section">
+            <button type="button" class="panel-section-header" @click="togglePanelSection('eventTime')">
+              <span class="pchevron" :class="{ open: panelSectionState.eventTime }">▾</span>
+              <span>时间与位置</span>
+            </button>
+            <div v-if="panelSectionState.eventTime" class="panel-section-body">
+              <div class="form-grid">
+                <label class="field">
+                  <span>故事日期</span>
+                  <input v-model="eventForm.story_date" type="text" placeholder="第一卷第一日" />
+                </label>
+                <label class="field">
+                  <span>故事时间</span>
+                  <input v-model="eventForm.story_time" type="text" placeholder="傍晚" />
+                </label>
+                <label class="field">
+                  <span>关联章节</span>
+                  <select v-model="eventForm.chapter_id">
+                    <option value="">未绑定</option>
+                    <option v-for="chapter in chapterOptions" :key="chapter.id" :value="chapter.id">
+                      {{ chapter.label }}
+                    </option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>发生地点</span>
+                  <select v-model="eventForm.location_setting_id">
+                    <option value="">未绑定</option>
+                    <option v-for="setting in settingOptions" :key="setting.id" :value="setting.id">
+                      {{ setting.label }}
+                    </option>
+                  </select>
+                </label>
+              </div>
+            </div>
+          </section>
 
-            <label class="field">
-              <span>所属时间轴</span>
-              <select v-model="eventForm.track_id">
-                <option value="">自动使用主时间轴</option>
-                <option v-for="track in trackOptions" :key="track.id" :value="track.id">
-                  {{ track.label }}
-                </option>
-              </select>
-            </label>
+          <section class="panel-section">
+            <button type="button" class="panel-section-header" @click="togglePanelSection('eventAttrs')">
+              <span class="pchevron" :class="{ open: panelSectionState.eventAttrs }">▾</span>
+              <span>属性</span>
+            </button>
+            <div v-if="panelSectionState.eventAttrs" class="panel-section-body">
+              <div class="form-grid">
+                <label class="field">
+                  <span>重要程度</span>
+                  <select v-model="eventForm.importance">
+                    <option v-for="importance in eventImportances" :key="importance" :value="importance">
+                      {{ timelineEventImportanceLabels[importance] }}
+                    </option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>状态</span>
+                  <select v-model="eventForm.status">
+                    <option v-for="status in eventStatuses" :key="status" :value="status">
+                      {{ timelineEventStatusLabels[status] }}
+                    </option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>排序序号</span>
+                  <input v-model.number="eventForm.order_index" type="number" min="0" />
+                </label>
+                <label class="field">
+                  <span>位置序号</span>
+                  <input v-model.number="eventForm.position_index" type="number" min="0" />
+                </label>
+              </div>
+            </div>
+          </section>
 
-            <label class="field">
-              <span>事件类型</span>
-              <select v-model="eventForm.event_type">
-                <option v-for="eventType in eventTypes" :key="eventType" :value="eventType">
-                  {{ timelineEventTypeLabels[eventType] }}
-                </option>
-              </select>
-            </label>
-
-            <label class="field">
-              <span>故事日期</span>
-              <input v-model="eventForm.story_date" type="text" placeholder="第一卷第一日" />
-            </label>
-
-            <label class="field">
-              <span>故事时间</span>
-              <input v-model="eventForm.story_time" type="text" placeholder="傍晚" />
-            </label>
-
-            <label class="field">
-              <span>关联章节</span>
-              <select v-model="eventForm.chapter_id">
-                <option value="">未绑定</option>
-                <option v-for="chapter in chapterOptions" :key="chapter.id" :value="chapter.id">
-                  {{ chapter.label }}
-                </option>
-              </select>
-            </label>
-
-            <label class="field">
-              <span>发生地点 / 关联地点设定</span>
-              <select v-model="eventForm.location_setting_id">
-                <option value="">未绑定</option>
-                <option v-for="setting in settingOptions" :key="setting.id" :value="setting.id">
-                  {{ setting.label }}
-                </option>
-              </select>
-            </label>
-
-            <label class="field">
-              <span>排序序号</span>
-              <input v-model.number="eventForm.order_index" type="number" min="0" />
-            </label>
-
-            <label class="field">
-              <span>位置序号</span>
-              <input v-model.number="eventForm.position_index" type="number" min="0" />
-            </label>
-
-            <label class="field">
-              <span>重要程度</span>
-              <select v-model="eventForm.importance">
-                <option v-for="importance in eventImportances" :key="importance" :value="importance">
-                  {{ timelineEventImportanceLabels[importance] }}
-                </option>
-              </select>
-            </label>
-
-            <label class="field">
-              <span>状态</span>
-              <select v-model="eventForm.status">
-                <option v-for="status in eventStatuses" :key="status" :value="status">
-                  {{ timelineEventStatusLabels[status] }}
-                </option>
-              </select>
-            </label>
-
-            <label class="field field-wide">
+          <section class="panel-section">
+            <button type="button" class="panel-section-header" @click="togglePanelSection('eventNotes')">
+              <span class="pchevron" :class="{ open: panelSectionState.eventNotes }">▾</span>
               <span>备注</span>
-              <textarea v-model="eventForm.note" rows="3" placeholder="补充说明" />
-            </label>
-          </div>
+            </button>
+            <div v-if="panelSectionState.eventNotes" class="panel-section-body">
+              <textarea v-model="eventForm.note" class="field-wide-textarea" rows="3" placeholder="补充说明" />
+            </div>
+          </section>
 
-          <div class="form-actions">
+          <div class="detail-actions">
             <button class="primary-button" type="button" :disabled="isSaving" @click="handleSaveEvent">
               保存节点
             </button>
@@ -1922,81 +2119,99 @@ function clearDragState() {
 
         <template v-else-if="panelKind === 'edge'">
           <header class="detail-header">
-            <div>
-              <p class="panel-eyebrow">{{ panelMode === 'create' ? '新建连接' : '连接详情' }}</p>
-              <h2>{{ panelMode === 'create' ? '创建时间轴连接' : selectedEdge ? getEdgeLabel(selectedEdge) : '时间轴连接' }}</h2>
+            <div class="detail-identity">
+              <span class="detail-type-badge edge-badge">连接</span>
+              <h2 class="detail-title">{{ panelMode === 'create' ? '创建连接' : selectedEdge ? getEdgeLabel(selectedEdge) : '连接' }}</h2>
             </div>
           </header>
 
-          <div class="form-grid">
-            <label class="field field-wide">
-              <span>起点事件</span>
-              <select v-model="edgeForm.from_event_id">
-                <option value="" disabled>请选择起点事件</option>
-                <option v-for="event in eventOptions" :key="event.id" :value="event.id">
-                  {{ event.label }}
-                </option>
-              </select>
-            </label>
+          <section class="panel-section">
+            <button type="button" class="panel-section-header" @click="togglePanelSection('edgeEndpoints')">
+              <span class="pchevron" :class="{ open: panelSectionState.edgeEndpoints }">▾</span>
+              <span>端点</span>
+            </button>
+            <div v-if="panelSectionState.edgeEndpoints" class="panel-section-body">
+              <div class="form-grid">
+                <label class="field field-wide">
+                  <span>起点事件</span>
+                  <select v-model="edgeForm.from_event_id">
+                    <option value="" disabled>请选择起点事件</option>
+                    <option v-for="event in eventOptions" :key="event.id" :value="event.id">
+                      {{ event.label }}
+                    </option>
+                  </select>
+                </label>
+                <label class="field field-wide">
+                  <span>终点事件</span>
+                  <select v-model="edgeForm.to_event_id">
+                    <option value="" disabled>请选择终点事件</option>
+                    <option v-for="event in eventOptions" :key="event.id" :value="event.id">
+                      {{ event.label }}
+                    </option>
+                  </select>
+                </label>
+              </div>
+            </div>
+          </section>
 
-            <label class="field field-wide">
-              <span>终点事件</span>
-              <select v-model="edgeForm.to_event_id">
-                <option value="" disabled>请选择终点事件</option>
-                <option v-for="event in eventOptions" :key="event.id" :value="event.id">
-                  {{ event.label }}
-                </option>
-              </select>
-            </label>
+          <section class="panel-section">
+            <button type="button" class="panel-section-header" @click="togglePanelSection('edgeRelation')">
+              <span class="pchevron" :class="{ open: panelSectionState.edgeRelation }">▾</span>
+              <span>关系属性</span>
+            </button>
+            <div v-if="panelSectionState.edgeRelation" class="panel-section-body">
+              <div class="form-grid">
+                <label class="field">
+                  <span>关系类型</span>
+                  <select v-model="edgeForm.edge_type">
+                    <option v-for="edgeType in edgeTypes" :key="edgeType" :value="edgeType">
+                      {{ timelineEdgeTypeLabels[edgeType] }}
+                    </option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>时序关系</span>
+                  <select v-model="edgeForm.temporal_relation">
+                    <option v-for="temporalRelation in temporalRelations" :key="temporalRelation" :value="temporalRelation">
+                      {{ timelineEdgeTemporalRelationLabels[temporalRelation] }}
+                    </option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>线条样式</span>
+                  <select v-model="edgeForm.line_style">
+                    <option v-for="lineStyle in lineStyles" :key="lineStyle" :value="lineStyle">
+                      {{ timelineEdgeLineStyleLabels[lineStyle] }}
+                    </option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>可见性</span>
+                  <select v-model="edgeForm.visibility">
+                    <option v-for="visibility in visibilities" :key="visibility" :value="visibility">
+                      {{ timelineEdgeVisibilityLabels[visibility] }}
+                    </option>
+                  </select>
+                </label>
+                <label class="field field-wide">
+                  <span>标签</span>
+                  <input v-model="edgeForm.label" type="text" placeholder="例如：导致" />
+                </label>
+              </div>
+            </div>
+          </section>
 
-            <label class="field">
-              <span>关系类型</span>
-              <select v-model="edgeForm.edge_type">
-                <option v-for="edgeType in edgeTypes" :key="edgeType" :value="edgeType">
-                  {{ timelineEdgeTypeLabels[edgeType] }}
-                </option>
-              </select>
-            </label>
-
-            <label class="field">
-              <span>时序关系</span>
-              <select v-model="edgeForm.temporal_relation">
-                <option v-for="temporalRelation in temporalRelations" :key="temporalRelation" :value="temporalRelation">
-                  {{ timelineEdgeTemporalRelationLabels[temporalRelation] }}
-                </option>
-              </select>
-            </label>
-
-            <label class="field">
-              <span>线条样式</span>
-              <select v-model="edgeForm.line_style">
-                <option v-for="lineStyle in lineStyles" :key="lineStyle" :value="lineStyle">
-                  {{ timelineEdgeLineStyleLabels[lineStyle] }}
-                </option>
-              </select>
-            </label>
-
-            <label class="field">
-              <span>标签</span>
-              <input v-model="edgeForm.label" type="text" placeholder="例如：导致" />
-            </label>
-
-            <label class="field">
-              <span>可见性</span>
-              <select v-model="edgeForm.visibility">
-                <option v-for="visibility in visibilities" :key="visibility" :value="visibility">
-                  {{ timelineEdgeVisibilityLabels[visibility] }}
-                </option>
-              </select>
-            </label>
-
-            <label class="field field-wide">
+          <section class="panel-section">
+            <button type="button" class="panel-section-header" @click="togglePanelSection('edgeNotes')">
+              <span class="pchevron" :class="{ open: panelSectionState.edgeNotes }">▾</span>
               <span>批注</span>
-              <textarea v-model="edgeForm.note" rows="3" placeholder="说明这条连接的用途" />
-            </label>
-          </div>
+            </button>
+            <div v-if="panelSectionState.edgeNotes" class="panel-section-body">
+              <textarea v-model="edgeForm.note" class="field-wide-textarea" rows="3" placeholder="说明这条连接的用途" />
+            </div>
+          </section>
 
-          <div class="form-actions">
+          <div class="detail-actions">
             <button class="primary-button" type="button" :disabled="isSaving" @click="handleSaveEdge">
               保存连接
             </button>
@@ -2124,7 +2339,7 @@ function clearDragState() {
 }
 
 .left-panel .panel-eyebrow {
-  margin: 0 0 2px;
+  margin: 0;
   line-height: 1.2;
 }
 
@@ -2212,6 +2427,39 @@ h1 {
   color: var(--zs-color-text-muted);
 }
 
+.toolbar-status {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  height: 36px;
+  border: 1px solid transparent;
+  border-radius: var(--zs-radius-md);
+  padding: 0 14px;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  margin-left: auto;
+  animation: status-crossfade 0.32s ease forwards;
+}
+
+.toolbar-status.status-success {
+  border-color: var(--zs-color-success);
+  background: var(--zs-color-success-soft);
+  color: var(--zs-color-success);
+}
+
+.toolbar-status.status-progress {
+  border-color: var(--zs-color-warning);
+  background: var(--zs-color-warning-soft);
+  color: var(--zs-color-warning);
+}
+
+@keyframes status-crossfade {
+  0%   { opacity: 0; }
+  40%  { opacity: 0; }
+  100% { opacity: 1; }
+}
+
 .primary-button,
 .secondary-button,
 .toggle-button,
@@ -2284,13 +2532,13 @@ button:disabled {
 
 .workspace {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 280px) minmax(0, 1fr);
   gap: var(--zs-space-4);
   min-height: 0;
 }
 
 .workspace.detail-visible {
-  grid-template-columns: 280px minmax(0, 1fr) 360px;
+  grid-template-columns: minmax(0, 280px) minmax(0, 1fr) minmax(0, 360px);
 }
 
 .left-panel,
@@ -2310,7 +2558,13 @@ button:disabled {
 }
 
 .left-panel {
-  gap: var(--zs-space-1);
+  align-content: start;
+  gap: 0;
+  padding: var(--zs-space-3);
+  width: 280px;
+  min-width: 0;
+  max-width: 280px;
+  box-sizing: border-box;
 }
 
 .panel-head {
@@ -2321,7 +2575,7 @@ button:disabled {
 }
 
 .left-panel .panel-head {
-  margin-bottom: var(--zs-space-1);
+  margin-bottom: 4px;
 }
 
 .panel-head.compact {
@@ -2354,8 +2608,10 @@ h2 {
 }
 
 .track-list {
+  align-content: start;
   display: grid;
   gap: var(--zs-space-1);
+  margin-top: 4px;
 }
 
 .track-list-item {
@@ -2494,18 +2750,18 @@ h2 {
 .timeline-canvas-body {
   position: relative;
   min-height: 100%;
-  min-width: 100%;
   padding: 18px 20px 20px;
 }
 
 .timeline-edge-overlay {
   position: absolute;
   inset: 0 auto auto 0;
-  z-index: 0;
-  pointer-events: auto;
+  z-index: 1;
+  pointer-events: none;
 }
 
 .timeline-edge {
+  pointer-events: auto;
   cursor: pointer;
 }
 
@@ -2552,7 +2808,7 @@ h2 {
 
 .track-row {
   position: relative;
-  z-index: 1;
+  pointer-events: none;
   display: grid;
   grid-template-columns: 190px minmax(0, 1fr);
   gap: 16px;
@@ -2574,6 +2830,9 @@ h2 {
 }
 
 .track-row-label {
+  position: relative;
+  z-index: 2;
+  pointer-events: auto;
   display: grid;
   gap: 5px;
   border: 1px solid var(--zs-canvas-node-border);
@@ -2622,7 +2881,8 @@ h2 {
 .timeline-node {
   position: absolute;
   top: 50%;
-  z-index: 1;
+  z-index: 2;
+  pointer-events: auto;
   display: grid;
   align-content: start;
   gap: 4px;
@@ -2827,12 +3087,216 @@ textarea {
 @media (max-width: 1280px) {
   .workspace,
   .workspace.detail-visible {
-    grid-template-columns: 260px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 280px) minmax(0, 1fr);
+  }
+
+  .left-panel {
+    width: 100%;
+    max-width: 280px;
   }
 
   .detail-panel {
     grid-column: 1 / -1;
   }
+}
+
+/* =========================================================================
+   Timeline v2 — Writing-tool visual enhancements
+   ========================================================================= */
+
+/* --- Main track distinction --- */
+
+.track-row.main-track {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--zs-color-primary-soft) 40%, transparent), transparent 70%);
+}
+
+.track-row.main-track .track-row-label {
+  border-left: 3px solid var(--zs-color-primary);
+}
+
+.track-row-lane.main-lane .lane-axis {
+  height: 4px;
+  background: linear-gradient(90deg, transparent, var(--zs-color-primary-soft) 8%, var(--zs-color-primary) 50%, var(--zs-color-primary-soft) 92%, transparent);
+}
+
+.timeline-node.main-node {
+  width: 180px;
+  border-left: 3px solid var(--zs-color-primary);
+}
+
+/* --- Enhanced node card --- */
+
+.node-info {
+  display: grid;
+  gap: 3px;
+  align-content: start;
+}
+
+.node-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.node-type-dot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 999px;
+}
+
+.node-location {
+  display: block;
+  color: var(--zs-canvas-text-muted);
+  font-size: 0.74rem;
+  line-height: 1.4;
+}
+
+.node-chips {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.importance-chip {
+  font-weight: 700;
+}
+
+.importance-chip.imp-critical {
+  background: var(--zs-color-danger-soft);
+  color: var(--zs-color-danger);
+}
+
+.importance-chip.imp-high {
+  background: var(--zs-color-warning-soft);
+  color: var(--zs-color-warning);
+}
+
+/* --- Edge label visibility --- */
+
+.edge-floating-label {
+  opacity: 0.85 !important;
+  font-size: 0.72rem !important;
+  font-weight: 700 !important;
+}
+
+.timeline-edge:hover .edge-floating-label {
+  opacity: 1 !important;
+}
+
+/* --- Detail panel: identity header --- */
+
+.detail-identity {
+  display: grid;
+  gap: 6px;
+}
+
+.detail-type-badge {
+  display: inline-flex;
+  align-self: start;
+  border-radius: var(--zs-radius-sm);
+  padding: 2px 8px;
+  background: var(--zs-color-primary-soft);
+  color: var(--zs-color-primary);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.detail-type-badge.edge-badge {
+  background: var(--zs-module-graph);
+  color: #fff;
+}
+
+.detail-title {
+  font-size: 1.2rem !important;
+  font-weight: 700;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.detail-actions {
+  display: flex;
+  gap: var(--zs-space-2);
+  flex-wrap: wrap;
+  padding-top: var(--zs-space-2);
+  border-top: 1px solid var(--zs-color-border-soft);
+  position: sticky;
+  bottom: 0;
+  background: var(--zs-color-surface);
+  z-index: 2;
+}
+
+/* --- Detail panel: collapsible sections --- */
+
+.panel-section {
+  border: 1px solid var(--zs-color-border-soft);
+  border-radius: var(--zs-radius-md);
+  overflow: hidden;
+}
+
+.panel-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 34px;
+  border: none;
+  border-radius: 0;
+  padding: 6px 10px;
+  background: var(--zs-color-surface-soft);
+  color: var(--zs-color-text);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--zs-duration-fast) var(--zs-ease-standard);
+}
+
+.panel-section-header:hover {
+  background: var(--zs-color-surface-muted);
+}
+
+.pchevron {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 14px;
+  color: var(--zs-color-text-faint);
+  font-size: 0.68rem;
+  text-align: center;
+  transition: transform 0.2s ease;
+}
+
+.pchevron.open {
+  transform: rotate(0deg);
+}
+
+.pchevron:not(.open) {
+  transform: rotate(-90deg);
+}
+
+.panel-section-body {
+  padding: var(--zs-space-3);
+}
+
+.field-wide-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-sm);
+  padding: 8px 10px;
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
+  font: inherit;
+  font-size: 0.84rem;
+  line-height: 1.7;
+  resize: vertical;
+}
+
+.field-wide-textarea:focus {
+  border-color: var(--zs-color-primary);
+  outline: none;
 }
 
 @media (max-width: 1366px) {

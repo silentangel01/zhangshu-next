@@ -81,7 +81,7 @@ class TestGetDescriptor:
     def test_known_id(self):
         desc = get_provider_descriptor(PROVIDER_LOCAL_BASIC_HASH)
         assert desc.id == PROVIDER_LOCAL_BASIC_HASH
-        assert desc.model_name == "bigram-hash-v1"
+        assert desc.model_name == "bigram-hash-v2"
         assert desc.vector_dim == 256
 
     def test_unknown_id_raises(self):
@@ -93,7 +93,7 @@ class TestCreateProvider:
     def test_create_basic_hash(self):
         provider = create_provider(PROVIDER_LOCAL_BASIC_HASH)
         assert isinstance(provider, BigramHashEmbeddingProvider)
-        assert provider.model_name == "bigram-hash-v1"
+        assert provider.model_name == "bigram-hash-v2"
 
     def test_create_unavailable_raises(self):
         with pytest.raises(RuntimeError, match="不可用"):

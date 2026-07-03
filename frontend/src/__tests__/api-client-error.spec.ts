@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { parseApiErrorPayload } from '@/shared/api/client'
+import { ApiError, formatApiErrorMessage, parseApiErrorPayload } from '@/shared/api/client'
 
 describe('parseApiErrorPayload', () => {
   const fallback = 'API request failed: 400'
@@ -107,5 +107,38 @@ describe('parseApiErrorPayload', () => {
     const result = parseApiErrorPayload(payload, fallback)
     // Array detail is not a recognized format, falls through
     expect(result.message).toBe(fallback)
+  })
+})
+
+describe('formatApiErrorMessage', () => {
+  const fallback = '操作失败，请稍后重试。'
+
+  it('returns ApiError message', () => {
+    const error = new ApiError('云端连接失败', 503)
+    expect(formatApiErrorMessage(error, fallback)).toBe('云端连接失败')
+  })
+
+  it('appends suggestion when present', () => {
+    const error = new ApiError('连接被重置', 503, '请切换兼容模式。')
+    const result = formatApiErrorMessage(error, fallback)
+    expect(result).toContain('连接被重置')
+    expect(result).toContain('请切换兼容模式。')
+  })
+
+  it('returns plain Error message', () => {
+    const error = new Error('普通错误')
+    expect(formatApiErrorMessage(error, fallback)).toBe('普通错误')
+  })
+
+  it('returns fallback for non-Error values', () => {
+    expect(formatApiErrorMessage('some string', fallback)).toBe(fallback)
+    expect(formatApiErrorMessage(42, fallback)).toBe(fallback)
+    expect(formatApiErrorMessage(null, fallback)).toBe(fallback)
+    expect(formatApiErrorMessage(undefined, fallback)).toBe(fallback)
+  })
+
+  it('returns fallback when ApiError has empty message', () => {
+    const error = new ApiError('', 500)
+    expect(formatApiErrorMessage(error, fallback)).toBe(fallback)
   })
 })

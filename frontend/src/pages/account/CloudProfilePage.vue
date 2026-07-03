@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   getCloudAccountProfile,
@@ -22,6 +22,11 @@ const cloudAvailable = ref(false)
 const tokenExpired = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
+
+const accountIdentifier = computed(() => {
+  if (!profile.value) return ''
+  return profile.value.email || profile.value.phone_number || '未绑定登录方式'
+})
 
 onMounted(async () => {
   try {
@@ -120,11 +125,13 @@ function formatBytes(bytes: number): string {
 <template>
   <div class="profile-page">
     <header class="page-header">
-      <button class="btn-back" @click="router.push('/projects')">&larr; 返回项目列表</button>
+      <RouterLink class="back-link" to="/projects">← 返回项目列表</RouterLink>
       <h1 class="page-title">个人账户</h1>
     </header>
 
-    <p v-if="loading" class="loading-text">加载中...</p>
+    <div v-if="loading" class="loading-state">
+      <p>正在加载账户信息…</p>
+    </div>
 
     <template v-else>
       <!-- Messages -->
@@ -132,9 +139,10 @@ function formatBytes(bytes: number): string {
       <div v-if="successMessage" class="message message-success">{{ successMessage }}</div>
 
       <!-- Not logged in state -->
-      <div v-if="!isLoggedIn" class="not-logged-in">
-        <p class="info-text">
-          {{ cloudAvailable ? '您尚未登录云账户。' : '云服务暂未配置。' }}
+      <div v-if="!isLoggedIn" class="empty-card">
+        <p class="empty-title">{{ cloudAvailable ? '尚未登录云账户' : '云服务暂未配置' }}</p>
+        <p class="empty-desc">
+          {{ cloudAvailable ? '登录后可使用云备份、云同步等功能。' : '请在后端配置云服务后使用账户功能。' }}
         </p>
         <button v-if="cloudAvailable" class="btn-primary" @click="openLoginDialog">
           登录 / 注册
@@ -142,11 +150,12 @@ function formatBytes(bytes: number): string {
       </div>
 
       <!-- Token expired state -->
-      <div v-else-if="tokenExpired" class="token-expired">
-        <p class="info-text">登录已过期，请重新登录。</p>
-        <div class="expired-actions">
+      <div v-else-if="tokenExpired" class="empty-card">
+        <p class="empty-title">登录已过期</p>
+        <p class="empty-desc">请重新登录以继续使用云功能。</p>
+        <div class="empty-actions">
           <button class="btn-primary" @click="openLoginDialog">重新登录</button>
-          <button class="btn-danger" @click="handleLogout">退出登录</button>
+          <button class="btn-secondary" @click="handleLogout">退出登录</button>
         </div>
       </div>
 
@@ -160,7 +169,7 @@ function formatBytes(bytes: number): string {
           />
           <div class="profile-info">
             <h2 class="display-name">{{ profile.display_name }}</h2>
-            <p class="email">{{ profile.email }}</p>
+            <p class="email">{{ accountIdentifier }}</p>
           </div>
         </section>
 
@@ -217,8 +226,8 @@ function formatBytes(bytes: number): string {
           </div>
         </section>
 
-        <section class="card logout-section">
-          <button class="btn-danger" @click="handleLogout">退出登录</button>
+        <section class="logout-section">
+          <button class="btn-secondary btn-logout" @click="handleLogout">退出登录</button>
         </section>
       </template>
     </template>
@@ -227,46 +236,55 @@ function formatBytes(bytes: number): string {
 
 <style scoped>
 .profile-page {
-  max-width: 600px;
+  max-width: 580px;
   margin: 0 auto;
-  padding: var(--zs-space-5);
+  padding: var(--zs-space-4) var(--zs-space-4) var(--zs-space-6);
 }
 
 .page-header {
-  margin-bottom: var(--zs-space-5);
+  margin-bottom: var(--zs-space-4);
 }
 
-.btn-back {
-  padding: var(--zs-space-2) 0;
-  border: none;
-  background: transparent;
-  color: var(--zs-color-text-muted);
-  font-size: 0.9rem;
-  cursor: pointer;
+.back-link {
+  display: inline-flex;
   margin-bottom: var(--zs-space-2);
+  color: var(--zs-color-text-muted);
+  font-size: 0.84rem;
+  font-weight: 600;
+  text-decoration: none;
 }
 
-.btn-back:hover {
+.back-link:hover {
   color: var(--zs-color-primary);
 }
 
 .page-title {
   margin: 0;
-  font-size: 1.5rem;
+  font-size: 1.3rem;
   font-weight: 700;
 }
 
-.loading-text {
+.loading-state {
+  display: grid;
+  place-items: center;
+  min-height: 200px;
+  border: 1px dashed var(--zs-color-border);
+  border-radius: var(--zs-radius-md);
+  background: var(--zs-color-surface);
   color: var(--zs-color-text-muted);
-  text-align: center;
-  padding: var(--zs-space-6);
+  font-size: 0.88rem;
+}
+
+.loading-state p {
+  margin: 0;
 }
 
 .message {
-  padding: var(--zs-space-3) var(--zs-space-4);
+  padding: var(--zs-space-2) var(--zs-space-3);
   border-radius: var(--zs-radius-sm);
-  margin-bottom: var(--zs-space-4);
-  font-size: 0.9rem;
+  margin-bottom: var(--zs-space-3);
+  font-size: 0.84rem;
+  font-weight: 600;
 }
 
 .message-error {
@@ -279,38 +297,44 @@ function formatBytes(bytes: number): string {
   color: var(--zs-color-success);
 }
 
-.not-logged-in {
+.empty-card {
+  display: grid;
+  gap: var(--zs-space-2);
+  place-items: center;
   text-align: center;
-  padding: var(--zs-space-6);
+  padding: var(--zs-space-8) var(--zs-space-5);
+  border: 1px solid var(--zs-color-border-soft);
+  border-radius: var(--zs-radius-md);
+  background: var(--zs-color-surface);
+  margin-bottom: var(--zs-space-3);
 }
 
-.token-expired {
-  text-align: center;
-  padding: var(--zs-space-6);
+.empty-title {
+  margin: 0;
+  color: var(--zs-color-text);
+  font-size: 1rem;
+  font-weight: 600;
 }
 
-.expired-actions {
-  display: flex;
-  gap: var(--zs-space-3);
-  justify-content: center;
-  margin-top: var(--zs-space-4);
-}
-
-.expired-actions .btn-danger {
-  width: auto;
-}
-
-.info-text {
+.empty-desc {
+  margin: 0;
   color: var(--zs-color-text-muted);
-  margin-bottom: var(--zs-space-4);
+  font-size: 0.84rem;
+  line-height: 1.6;
+}
+
+.empty-actions {
+  display: flex;
+  gap: var(--zs-space-2);
+  margin-top: var(--zs-space-2);
 }
 
 .card {
   background: var(--zs-color-surface);
   border: 1px solid var(--zs-color-border-soft);
   border-radius: var(--zs-radius-md);
-  padding: var(--zs-space-4) var(--zs-space-5);
-  margin-bottom: var(--zs-space-4);
+  padding: var(--zs-space-3) var(--zs-space-4);
+  margin-bottom: var(--zs-space-3);
 }
 
 .profile-section {
@@ -325,15 +349,15 @@ function formatBytes(bytes: number): string {
 }
 
 .display-name {
-  margin: 0 0 var(--zs-space-1);
-  font-size: 1.25rem;
+  margin: 0 0 2px;
+  font-size: 1.1rem;
   font-weight: 700;
 }
 
 .email {
   margin: 0;
   color: var(--zs-color-text-muted);
-  font-size: 0.9rem;
+  font-size: 0.84rem;
 }
 
 .info-section {
@@ -356,28 +380,37 @@ function formatBytes(bytes: number): string {
 
 .info-label {
   color: var(--zs-color-text-muted);
-  font-size: 0.9rem;
+  font-size: 0.86rem;
 }
 
 .info-value {
-  font-weight: 500;
-  font-size: 0.9rem;
+  font-weight: 600;
+  font-size: 0.86rem;
 }
 
 .btn-primary,
-.btn-secondary,
-.btn-danger {
-  padding: var(--zs-space-2) var(--zs-space-4);
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 var(--zs-space-3);
   border-radius: var(--zs-radius-sm);
-  font-size: 0.9rem;
+  font-size: 0.84rem;
   font-weight: 600;
   cursor: pointer;
   border: 1px solid transparent;
+  text-decoration: none;
+  transition: background 0.15s, border-color 0.15s;
 }
 
 .btn-primary {
   background: var(--zs-color-primary);
   color: var(--zs-color-on-primary);
+}
+
+.btn-primary:hover {
+  background: var(--zs-color-primary-hover);
 }
 
 .btn-secondary {
@@ -388,28 +421,24 @@ function formatBytes(bytes: number): string {
 
 .btn-secondary:hover {
   background: var(--zs-color-surface-soft);
-}
-
-.btn-danger {
-  background: var(--zs-color-danger);
-  color: white;
-  width: 100%;
-}
-
-.btn-danger:hover {
-  opacity: 0.9;
+  border-color: var(--zs-color-border-strong);
 }
 
 .logout-section {
-  margin-top: var(--zs-space-5);
+  margin-top: var(--zs-space-4);
+  text-align: center;
+}
+
+.btn-logout {
+  min-width: 160px;
 }
 
 .feedback-section {
-  margin-top: var(--zs-space-4);
+  margin-top: 0;
 }
 
 .security-section {
-  margin-top: var(--zs-space-4);
+  margin-top: 0;
 }
 
 .security-row {
@@ -425,14 +454,14 @@ function formatBytes(bytes: number): string {
 }
 
 .section-title {
-  margin: 0 0 var(--zs-space-1);
-  font-size: 1rem;
+  margin: 0 0 2px;
+  font-size: 0.92rem;
   font-weight: 600;
 }
 
 .section-desc {
   margin: 0;
   color: var(--zs-color-text-muted);
-  font-size: 0.85rem;
+  font-size: 0.8rem;
 }
 </style>

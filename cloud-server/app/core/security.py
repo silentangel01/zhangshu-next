@@ -22,6 +22,49 @@ def normalize_email(email: str) -> str:
     return email.strip().lower()
 
 
+def normalize_phone_number(phone: str) -> str:
+    """Normalize a mainland China mobile number to +86 format."""
+    digits = re.sub(r"\D", "", phone.strip())
+    if digits.startswith("86") and len(digits) == 13:
+        digits = digits[2:]
+    if not re.fullmatch(r"1[3-9]\d{9}", digits):
+        raise ValueError("请输入有效的中国大陆手机号。")
+    return f"+86{digits}"
+
+
+def mask_phone_number(phone: str) -> str:
+    """Mask a normalized phone number for display."""
+    try:
+        normalized = normalize_phone_number(phone)
+    except ValueError:
+        return phone
+    digits = normalized[3:]
+    return f"{digits[:3]}****{digits[-4:]}"
+
+
+def is_internal_phone_email(email: str) -> bool:
+    """Return whether an email is an internal placeholder for phone-only users."""
+    return email.endswith("@phone.zhangshu.local")
+
+
+def is_internal_auth_email(email: str) -> bool:
+    """Return whether an email is an internal placeholder for non-email users."""
+    return email.endswith("@phone.zhangshu.local") or email.endswith("@oauth.zhangshu.local")
+
+
+def build_internal_phone_email(phone_number: str) -> str:
+    """Build a stable internal placeholder email for phone-only users."""
+    digest = sha256_text(normalize_phone_number(phone_number))[:24]
+    return f"phone+{digest}@phone.zhangshu.local"
+
+
+def build_internal_oauth_email(provider: str, identifier: str) -> str:
+    """Build a stable internal placeholder email for OAuth-only users."""
+    safe_provider = re.sub(r"[^a-z0-9_]", "", provider.lower()) or "oauth"
+    digest = sha256_text(f"{safe_provider}:{identifier}")[:24]
+    return f"oauth+{safe_provider}+{digest}@oauth.zhangshu.local"
+
+
 def validate_password_strength(password: str) -> str | None:
     """Return an error message if the password is invalid, or None if OK."""
     stripped = password.strip()

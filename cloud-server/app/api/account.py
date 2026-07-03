@@ -14,6 +14,10 @@ from app.schemas.account import (
     AvatarInitRequest,
     AvatarInitResponse,
     AvatarResponse,
+    BindEmailCodeRequest,
+    BindEmailRequest,
+    BindPhoneCodeRequest,
+    BindPhoneRequest,
     ChangePasswordRequest,
     ChangePasswordResponse,
     ConfirmDeleteRequest,
@@ -28,6 +32,14 @@ from app.schemas.account import (
 )
 from app.schemas.usage import UsageResponse
 from app.services.account_service import AccountError, AccountService
+from app.services.email_verification_service import (
+    EmailVerificationError,
+    EmailVerificationService,
+)
+from app.services.phone_verification_service import (
+    PhoneVerificationError,
+    PhoneVerificationService,
+)
 from app.services.rate_limit_service import RateLimitError, RateLimitService
 from app.services.usage_service import UsageService
 from app.services.activity_service import ActivityService
@@ -77,6 +89,64 @@ def update_profile(
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
     ActivityService(db).record(current_user.id, "profile_updated", request)
+    return result
+
+
+@router.post("/bind/email-code/send")
+def send_bind_email_code(
+    body: BindEmailCodeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        return EmailVerificationService(db).send_code(body.email, "bind")
+    except EmailVerificationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.post("/bind/phone-code/send")
+def send_bind_phone_code(
+    body: BindPhoneCodeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        return PhoneVerificationService(db).send_code(body.phone_number, "bind")
+    except PhoneVerificationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.post("/bind/email", response_model=ProfileResponse)
+def bind_email(
+    body: BindEmailRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        result = AccountService(db).bind_email(
+            current_user.id, body.email, body.verification_code
+        )
+    except AccountError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    ActivityService(db).record(current_user.id, "email_bound", request)
+    return result
+
+
+@router.post("/bind/phone", response_model=ProfileResponse)
+def bind_phone(
+    body: BindPhoneRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        result = AccountService(db).bind_phone(
+            current_user.id, body.phone_number, body.verification_code
+        )
+    except AccountError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    ActivityService(db).record(current_user.id, "phone_bound", request)
     return result
 
 

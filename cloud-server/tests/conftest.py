@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import os
 import sys
+from datetime import timedelta
 from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -25,6 +27,11 @@ os.environ["OSS_ACCESS_KEY_SECRET"] = "test-key-secret"
 os.environ["OSS_BUCKET_NAME"] = "test-bucket"
 os.environ["OSS_ENDPOINT"] = "oss-cn-hangzhou.aliyuncs.com"
 os.environ["ADMIN_REQUIRE_ORIGIN_CHECK"] = "false"
+os.environ["EMAIL_DELIVERY_MODE"] = "log"
+os.environ["AUTH_EMAIL_CODE_SECRET"] = "test-email-code-secret"
+os.environ["PHONE_AUTH_ENABLED"] = "true"
+os.environ["SMS_DELIVERY_MODE"] = "log"
+os.environ["AUTH_PHONE_CODE_SECRET"] = "test-phone-code-secret"
 
 from app.db.base import Base  # noqa: E402
 from app.db.session import get_db  # noqa: E402
@@ -33,6 +40,10 @@ from app.db.session import get_db  # noqa: E402
 # the name `app` to the package module, shadowing the FastAPI instance.
 import app.models.user  # noqa: E402, F401
 import app.models.refresh_token  # noqa: E402, F401
+import app.models.email_verification_code  # noqa: E402, F401
+import app.models.phone_verification_code  # noqa: E402, F401
+import app.models.auth_identity  # noqa: E402, F401
+import app.models.oauth_login_session  # noqa: E402, F401
 import app.models.cloud_project  # noqa: E402, F401
 import app.models.cloud_backup  # noqa: E402, F401
 import app.models.rate_limit_event  # noqa: E402, F401
@@ -50,6 +61,21 @@ import app.models.cloud_sync_snapshot  # noqa: E402, F401
 import app.models.cloud_sync_conflict  # noqa: E402, F401
 
 from app.main import app  # noqa: E402 — must come AFTER model imports
+from app.core.security import normalize_email  # noqa: E402
+from app.core.security import normalize_phone_number  # noqa: E402
+from app.core.config import get_settings  # noqa: E402
+from app.models.email_verification_code import EmailVerificationCode  # noqa: E402
+from app.models.phone_verification_code import PhoneVerificationCode  # noqa: E402
+from app.models.user import utc_now  # noqa: E402
+from app.services.email_verification_service import hash_email_code  # noqa: E402
+from app.services.phone_verification_service import hash_phone_code  # noqa: E402
+
+
+def _get_db_from_override(override) -> Session:
+    db_or_generator = override()
+    if isinstance(db_or_generator, Session):
+        return db_or_generator
+    return next(db_or_generator)
 
 
 @pytest.fixture(autouse=True)
@@ -108,11 +134,89 @@ def register_user(
     password: str = "securepassword123",
     display_name: str = "Test User",
 ) -> dict:
+    verification_code = seed_email_verification_code(client, email, "register")
     response = client.post(
         "/api/auth/register",
-        json={"email": email, "password": password, "display_name": display_name},
+        json={
+            "email": email,
+            "password": password,
+            "display_name": display_name,
+            "verification_code": verification_code,
+        },
     )
     return response.json()
+
+
+def seed_email_verification_code(
+    client: TestClient,
+    email: str,
+    purpose: str,
+    code: str = "123456",
+) -> str:
+    override = app.dependency_overrides.get(get_db)
+    if override is None:
+        raise RuntimeError("get_db override is not configured for test client")
+
+    db = _get_db_from_override(override)
+    settings = get_settings()
+    normalized = normalize_email(email)
+    now = utc_now()
+    db.add(
+        EmailVerificationCode(
+            id=str(uuid4()),
+            email=normalized,
+            purpose=purpose,
+            code_hash=hash_email_code(
+                normalized,
+                purpose,
+                code,
+                settings.auth_email_code_secret or settings.jwt_secret_key,
+            ),
+            expires_at=now + timedelta(minutes=10),
+            attempt_count=0,
+            max_attempts=5,
+            last_sent_at=now,
+            created_at=now,
+        )
+    )
+    db.commit()
+    return code
+
+
+def seed_phone_verification_code(
+    client: TestClient,
+    phone_number: str,
+    purpose: str,
+    code: str = "123456",
+) -> str:
+    override = app.dependency_overrides.get(get_db)
+    if override is None:
+        raise RuntimeError("get_db override is not configured for test client")
+
+    db = _get_db_from_override(override)
+    settings = get_settings()
+    normalized = normalize_phone_number(phone_number)
+    now = utc_now()
+    db.add(
+        PhoneVerificationCode(
+            id=str(uuid4()),
+            phone_number=normalized,
+            purpose=purpose,
+            code_hash=hash_phone_code(
+                normalized,
+                purpose,
+                code,
+                settings.auth_phone_code_secret or settings.jwt_secret_key,
+            ),
+            expires_at=now + timedelta(minutes=10),
+            attempt_count=0,
+            max_attempts=5,
+            last_sent_at=now,
+            created_at=now,
+        )
+    )
+    db.commit()
+    return code
 
 
 def auth_headers(access_token: str) -> dict:

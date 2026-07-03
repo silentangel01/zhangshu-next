@@ -13,11 +13,16 @@ from sqlalchemy.orm import Session
 
 from app.core.audit import audit_event
 from app.core.security import (
+    is_internal_auth_email,
+    is_internal_phone_email,
     hash_password,
+    normalize_email,
+    normalize_phone_number,
     sha256_text,
     validate_password_strength,
     verify_password,
 )
+from app.models.auth_identity import AuthIdentity
 from app.infrastructure.oss_storage import OSSError, OSSStorage
 from app.models.account_deletion_request import AccountDeletionRequest
 from app.models.cloud_backup import CloudBackup
@@ -26,8 +31,17 @@ from app.models.feedback_ticket import FeedbackTicket
 from app.models.refresh_token import RefreshToken
 from app.models.user import User, utc_now
 from app.repositories.feedback_repo import FeedbackRepository
+from app.repositories.auth_identity_repo import AuthIdentityRepository
 from app.repositories.refresh_token_repo import RefreshTokenRepository
 from app.repositories.user_repo import UserRepository
+from app.services.email_verification_service import (
+    EmailVerificationError,
+    EmailVerificationService,
+)
+from app.services.phone_verification_service import (
+    PhoneVerificationError,
+    PhoneVerificationService,
+)
 from app.services.usage_service import UsageService
 
 logger = logging.getLogger(__name__)
@@ -55,6 +69,7 @@ class AccountService:
     def __init__(self, db: Session, oss: OSSStorage | None = None):
         self._db = db
         self._user_repo = UserRepository(db)
+        self._identity_repo = AuthIdentityRepository(db)
         self._token_repo = RefreshTokenRepository(db)
         self._feedback_repo = FeedbackRepository(db)
         self._oss = oss or OSSStorage()
@@ -74,9 +89,19 @@ class AccountService:
             except OSSError:
                 logger.warning("Failed to generate avatar URL for user %s", user_id)
 
+        identities = self._identity_repo.list_for_user(user_id)
+        phone_identity = next((i for i in identities if i.provider == "phone"), None)
+        public_identities = [
+            {"provider": i.provider, "identifier": i.identifier}
+            for i in identities
+        ]
+        public_email = None if is_internal_auth_email(user.email) else user.email
+
         return {
             "id": user.id,
-            "email": user.email,
+            "email": public_email,
+            "phone_number": phone_identity.identifier if phone_identity else None,
+            "identities": public_identities,
             "display_name": user.display_name,
             "signature": user.signature,
             "avatar_url": avatar_url,
@@ -109,6 +134,80 @@ class AccountService:
             updates["signature"] = sig or None
 
         self._user_repo.update(user, updates)
+        return self.get_profile(user_id)
+
+    def bind_email(self, user_id: str, email: str, verification_code: str) -> dict:
+        user = self._get_active_user(user_id)
+        normalized = normalize_email(email)
+        existing_identity = self._identity_repo.get_by_provider_identifier(
+            "email", normalized
+        )
+        if existing_identity and existing_identity.user_id != user_id:
+            raise AccountError("该邮箱已绑定其他账号。")
+        if self._identity_repo.get_for_user_provider(user_id, "email"):
+            raise AccountError("当前账号已绑定邮箱。")
+        existing_user = self._user_repo.get_by_email(normalized)
+        if existing_user is not None and existing_user.id != user_id:
+            raise AccountError("该邮箱已注册。")
+
+        try:
+            EmailVerificationService(self._db).verify_code(
+                normalized, "bind", verification_code
+            )
+        except EmailVerificationError as exc:
+            raise AccountError(str(exc), status_code=exc.status_code) from exc
+
+        now = utc_now()
+        self._identity_repo.create(
+            AuthIdentity(
+                id=str(uuid4()),
+                user_id=user_id,
+                provider="email",
+                identifier=normalized,
+                verified_at=now,
+                created_at=now,
+                updated_at=now,
+            ),
+            commit=False,
+        )
+        if is_internal_auth_email(user.email):
+            user.email = normalized
+        user.updated_at = now
+        self._db.commit()
+        return self.get_profile(user_id)
+
+    def bind_phone(
+        self, user_id: str, phone_number: str, verification_code: str
+    ) -> dict:
+        self._get_active_user(user_id)
+        normalized = normalize_phone_number(phone_number)
+        existing_identity = self._identity_repo.get_by_provider_identifier(
+            "phone", normalized
+        )
+        if existing_identity and existing_identity.user_id != user_id:
+            raise AccountError("该手机号已绑定其他账号。")
+        if self._identity_repo.get_for_user_provider(user_id, "phone"):
+            raise AccountError("当前账号已绑定手机号。")
+
+        try:
+            PhoneVerificationService(self._db).verify_code(
+                normalized, "bind", verification_code
+            )
+        except PhoneVerificationError as exc:
+            raise AccountError(str(exc), status_code=exc.status_code) from exc
+
+        now = utc_now()
+        self._identity_repo.create(
+            AuthIdentity(
+                id=str(uuid4()),
+                user_id=user_id,
+                provider="phone",
+                identifier=normalized,
+                verified_at=now,
+                created_at=now,
+                updated_at=now,
+            )
+        )
         return self.get_profile(user_id)
 
     # ------------------------------------------------------------------

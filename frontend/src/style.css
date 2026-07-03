@@ -92,6 +92,10 @@
   --zs-canvas-text: #111827;
   --zs-canvas-text-muted: #64748b;
 
+  /* Editor canvas surface tokens. */
+  --zs-color-canvas: #ffffff;
+  --zs-color-canvas-border: #eaecf0;
+
   /* Compatibility aliases for gradual migration from the design guideline examples. */
   --color-bg: var(--zs-color-bg);
   --color-surface: var(--zs-color-surface);
@@ -151,6 +155,8 @@
   --zs-color-border: #d8ccba;
   --zs-color-border-soft: #e5dccb;
   --zs-color-border-strong: #c2b49a;
+  --zs-color-canvas: #fffbf3;
+  --zs-color-canvas-border: #e5dccb;
   --zs-heatmap-0: #eee3d2;
   --zs-heatmap-1: #d9e1c7;
   --zs-heatmap-2: #afc58f;
@@ -184,6 +190,8 @@
   --zs-color-danger-soft: #422829;
   --zs-color-info: #8db7e3;
   --zs-color-info-soft: #22334a;
+  --zs-color-canvas: #1c2130;
+  --zs-color-canvas-border: #2a3140;
   --zs-color-backdrop: rgb(0 0 0 / 60%);
   --zs-shadow-dialog: 0 24px 80px rgb(0 0 0 / 40%);
   --zs-shadow-card-hover: 0 4px 16px rgb(0 0 0 / 30%);

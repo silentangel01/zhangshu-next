@@ -89,14 +89,9 @@ class TestRateLimitServiceWithRedis:
     def test_raises_when_limit_exceeded_via_redis(self, db_session, monkeypatch):
         from app.services.rate_limit_service import RateLimitError, RateLimitService
 
-        # Force redis backend by settings
-        monkeypatch.setattr(
-            "app.core.config.Settings.rate_limit_backend", "redis",
-            raising=False,
-        )
-        monkeypatch.setattr(
-            "app.core.config.Settings.redis_enabled", True, raising=False,
-        )
+        # Force redis backend through the same env path Settings uses at runtime.
+        monkeypatch.setenv("RATE_LIMIT_BACKEND", "redis")
+        monkeypatch.setenv("REDIS_ENABLED", "true")
 
         fake = FakeRedis()
 
@@ -116,13 +111,8 @@ class TestRateLimitServiceWithRedis:
     def test_falls_back_to_db_on_redis_failure(self, db_session, monkeypatch):
         from app.services.rate_limit_service import RateLimitService
 
-        monkeypatch.setattr(
-            "app.core.config.Settings.rate_limit_backend", "redis",
-            raising=False,
-        )
-        monkeypatch.setattr(
-            "app.core.config.Settings.redis_enabled", True, raising=False,
-        )
+        monkeypatch.setenv("RATE_LIMIT_BACKEND", "redis")
+        monkeypatch.setenv("REDIS_ENABLED", "true")
 
         fake = FakeRedis()
         fake.fail_on_next = True  # Simulate Redis down
@@ -142,10 +132,8 @@ class TestRateLimitServiceWithRedis:
     def test_uses_db_backend_when_configured(self, db_session, monkeypatch):
         from app.services.rate_limit_service import RateLimitError, RateLimitService
 
-        monkeypatch.setattr(
-            "app.core.config.Settings.rate_limit_backend", "database",
-            raising=False,
-        )
+        monkeypatch.setenv("RATE_LIMIT_BACKEND", "database")
+        monkeypatch.setenv("REDIS_ENABLED", "false")
 
         svc = RateLimitService(db_session)
         assert svc._use_redis is False

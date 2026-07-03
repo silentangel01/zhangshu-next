@@ -30,8 +30,11 @@ defineProps<{
 
 h3 {
   margin: 0;
-  color: var(--zs-color-text);
-  font-size: 0.92rem;
+  color: var(--zs-color-text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .count-pill {

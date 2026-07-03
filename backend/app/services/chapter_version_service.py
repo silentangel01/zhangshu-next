@@ -45,11 +45,13 @@ class ChapterVersionService:
         data: CreateChapterVersionRequest,
     ) -> ChapterVersion:
         chapter = self._get_active_chapter(chapter_id)
+        # Legacy callers sending "manual" should be treated as milestone
+        source = "milestone" if data.source == "manual" else data.source
         version = self.create_snapshot_for_chapter(
             chapter,
-            source=data.source,
+            source=source,
             note=data.note,
-            force=data.source in {"restore", "before_restore"},
+            force=source in {"restore", "before_restore", "milestone"},
             commit=True,
         )
         if version is None:

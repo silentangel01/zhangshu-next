@@ -1,0 +1,427 @@
+你现在需要帮我把本机已经完成的章枢官网静态网站部署到阿里云轻量应用服务器。
+
+## 一、当前情况
+
+本机网站代码目录：
+
+```text
+F:\zhangshu\website
+```
+
+这个目录下已经有完整的章枢官网静态网站代码，不需要你重新创建占位页，也不要重新设计官网。
+
+服务器信息：
+
+```text
+服务器公网 IP：121.40.247.143
+```
+
+真实 ICP 备案号：
+
+```text
+浙ICP备2026045174号
+```
+
+服务器上已有服务：
+
+```text
+/opt/zhangshu-cloud/         章枢云同步 API 后端，Docker 部署，正在运行
+/var/www/zhangshu-updates/   更新 manifest 静态服务
+/var/www/zhangshu-downloads/ 安装包下载服务
+/opt/cloud-server/           旧版云服务，已弃用，未运行
+```
+
+当前已有域名：
+
+```text
+api.emailbs.xin        → 云 API 反向代理到 127.0.0.1:9000
+updates.zhangshu.xin   → 更新 manifest 服务
+downloads.zhangshu.xin → 安装包下载服务
+```
+
+当前缺失：
+
+```text
+zhangshu.xin 官网部署
+www.zhangshu.xin 官网配置
+覆盖 zhangshu.xin 与 www.zhangshu.xin 的 HTTPS 证书
+```
+
+## 二、任务目标
+
+请完成以下工作：
+
+1. 在本机检查并构建 `F:\zhangshu\website`。
+2. 检查官网代码中是否仍存在 ICP 备案号占位符。
+3. 如果存在占位符，请只在 `F:\zhangshu\website` 目录内把 ICP 备案号替换为：
+
+   ```text
+   浙ICP备2026045174号
+   ```
+4. 不要自行添加 `-1` 或其他后缀，除非代码中已经明确使用完整备案号字段且我另行确认。
+5. 将构建产物部署到服务器：
+
+   ```text
+   /var/www/zhangshu-website/
+   ```
+6. 配置 Nginx，使以下地址正常访问：
+
+   ```text
+   http://zhangshu.xin
+   https://zhangshu.xin
+   http://www.zhangshu.xin
+   https://www.zhangshu.xin
+   ```
+7. 主站统一使用：
+
+   ```text
+   https://zhangshu.xin
+   ```
+8. `www.zhangshu.xin` 统一 301 跳转到：
+
+   ```text
+   https://zhangshu.xin
+   ```
+9. 使用 certbot / Let’s Encrypt 签发覆盖以下两个域名的证书：
+
+   ```text
+   zhangshu.xin
+   www.zhangshu.xin
+   ```
+10. 不得影响服务器上的已有服务。
+
+## 三、最重要的安全限制
+
+必须严格遵守：
+
+1. 不要改动 `/opt/zhangshu-cloud/`。
+2. 不要停止 Docker 容器。
+3. 不要改动 `api.emailbs.xin` 的 Nginx 配置。
+4. 不要改动 `updates.zhangshu.xin` 的 Nginx 配置。
+5. 不要改动 `downloads.zhangshu.xin` 的 Nginx 配置。
+6. 不要删除任何现有 Nginx 配置。
+7. 不要删除任何现有 SSL 证书。
+8. 不要改动数据库。
+9. 不要改动更新服务和下载服务目录：
+
+   ```text
+   /var/www/zhangshu-updates/
+   /var/www/zhangshu-downloads/
+   ```
+10. 不要修改 `F:\zhangshu` 项目中除 `website/` 之外的任何代码。
+11. 如果发现现有配置冲突或无法确认安全性，请停止并向我汇报，不要强行修改。
+
+## 四、本机网站构建要求
+
+请先在本机执行检查：
+
+```powershell
+cd F:\zhangshu\website
+dir
+```
+
+检查是否存在：
+
+```text
+package.json
+vite.config.*
+src/
+public/
+```
+
+然后检查备案号占位内容：
+
+```powershell
+cd F:\zhangshu\website
+Select-String -Path .\src\* -Pattern "ICP备案|备案号|浙ICP备|XXXXXXXX|备案后填写" -Recurse -ErrorAction SilentlyContinue
+Select-String -Path .\public\* -Pattern "ICP备案|备案号|浙ICP备|XXXXXXXX|备案后填写" -Recurse -ErrorAction SilentlyContinue
+```
+
+如果发现 ICP 备案号还是占位符，请替换为：
+
+```text
+浙ICP备2026045174号
+```
+
+如果发现公安联网备案号占位符，可以保留为：
+
+```text
+公安联网备案号：备案通过后填写
+```
+
+不要把公安联网备案号写成真实号码，因为目前还没有公安备案号。
+
+如果是 Vite / Vue 项目，请执行：
+
+```powershell
+cd F:\zhangshu\website
+npm install
+npm run build
+```
+
+构建成功后，确认生成目录：
+
+```text
+F:\zhangshu\website\dist
+```
+
+如果项目不是 Vite，先读取 `package.json` 的 scripts，再按项目实际构建命令执行。
+
+如果构建失败：
+
+1. 不要直接改动大量源码。
+2. 先报告构建错误。
+3. 只在原因明确且修改范围很小的情况下，才允许修复 `F:\zhangshu\website` 内的文件。
+4. 不允许修改 `F:\zhangshu` 项目中除 `website/` 之外的任何代码。
+
+## 五、部署方式
+
+构建成功后，将 `dist/` 内容上传到服务器。
+
+推荐方式一：使用 `scp`
+
+```powershell
+ssh root@121.40.247.143 "mkdir -p /tmp/zhangshu-website-dist"
+scp -r F:\zhangshu\website\dist\* root@121.40.247.143:/tmp/zhangshu-website-dist/
+```
+
+然后在服务器执行：
+
+```bash
+sudo mkdir -p /var/www/zhangshu-website
+sudo rm -rf /var/www/zhangshu-website/*
+sudo cp -r /tmp/zhangshu-website-dist/* /var/www/zhangshu-website/
+sudo chown -R www-data:www-data /var/www/zhangshu-website || sudo chown -R nginx:nginx /var/www/zhangshu-website || true
+```
+
+推荐方式二：如果 scp 在 Windows 下处理路径不方便，可以先压缩：
+
+```powershell
+cd F:\zhangshu\website
+Compress-Archive -Path .\dist\* -DestinationPath .\zhangshu-website-dist.zip -Force
+scp .\zhangshu-website-dist.zip root@121.40.247.143:/tmp/zhangshu-website-dist.zip
+```
+
+然后在服务器解压：
+
+```bash
+sudo mkdir -p /var/www/zhangshu-website
+sudo rm -rf /var/www/zhangshu-website/*
+sudo unzip -o /tmp/zhangshu-website-dist.zip -d /var/www/zhangshu-website
+sudo chown -R www-data:www-data /var/www/zhangshu-website || sudo chown -R nginx:nginx /var/www/zhangshu-website || true
+```
+
+注意：
+
+* 只允许清空 `/var/www/zhangshu-website/`。
+* 不允许清空 `/var/www/`。
+* 不允许清空其他目录。
+
+## 六、服务器执行前检查
+
+登录服务器后，先执行只读检查：
+
+```bash
+lsb_release -a || cat /etc/os-release
+systemctl status nginx --no-pager
+ls -lah /etc/nginx/
+ls -lah /etc/nginx/sites-available/ || true
+ls -lah /etc/nginx/sites-enabled/ || true
+ls -lah /etc/nginx/conf.d/ || true
+grep -R "server_name" /etc/nginx/sites-available /etc/nginx/sites-enabled /etc/nginx/conf.d 2>/dev/null || true
+which certbot || true
+certbot --version || true
+sudo certbot certificates || true
+ls -lah /etc/letsencrypt/live/ || true
+sudo ss -tulpn | grep -E ':80|:443' || true
+dig +short zhangshu.xin || true
+dig +short www.zhangshu.xin || true
+docker ps
+```
+
+如果 `zhangshu.xin` 或 `www.zhangshu.xin` 没有解析到：
+
+```text
+121.40.247.143
+```
+
+则停止申请证书，并告诉我需要先在阿里云 DNS 中配置：
+
+```text
+@    A      121.40.247.143
+www  A 或 CNAME 到 zhangshu.xin
+```
+
+## 七、Nginx 配置要求
+
+请优先遵循服务器现有 Nginx 配置风格。
+
+如果服务器使用：
+
+```text
+/etc/nginx/sites-available/
+/etc/nginx/sites-enabled/
+```
+
+则创建：
+
+```text
+/etc/nginx/sites-available/zhangshu.xin
+```
+
+并软链接到：
+
+```text
+/etc/nginx/sites-enabled/zhangshu.xin
+```
+
+如果服务器主要使用：
+
+```text
+/etc/nginx/conf.d/
+```
+
+则创建：
+
+```text
+/etc/nginx/conf.d/zhangshu.xin.conf
+```
+
+不要把配置写进其他现有域名配置文件。
+
+基础 HTTP 配置先使用：
+
+```nginx
+server {
+    listen 80;
+    listen [::]:80;
+    server_name zhangshu.xin www.zhangshu.xin;
+
+    root /var/www/zhangshu-website;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+```
+
+配置后执行：
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+只有 `nginx -t` 成功后，才允许 reload。
+
+## 八、SSL 证书配置要求
+
+如果 DNS 已经正确解析到本服务器，请使用 certbot 申请证书：
+
+```bash
+sudo certbot --nginx -d zhangshu.xin -d www.zhangshu.xin
+```
+
+如果 certbot 询问是否将 HTTP 重定向到 HTTPS，选择启用重定向。
+
+证书必须覆盖：
+
+```text
+zhangshu.xin
+www.zhangshu.xin
+```
+
+签发成功后，检查：
+
+```bash
+sudo certbot certificates
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+最终访问策略应为：
+
+```text
+http://zhangshu.xin        → https://zhangshu.xin
+http://www.zhangshu.xin    → https://zhangshu.xin
+https://www.zhangshu.xin   → https://zhangshu.xin
+https://zhangshu.xin       → 展示官网
+```
+
+注意：即使 `www.zhangshu.xin` 只是跳转，也必须有有效证书，否则浏览器会先报证书错误。
+
+## 九、验证要求
+
+部署完成后，执行：
+
+```bash
+sudo nginx -t
+systemctl status nginx --no-pager
+curl -I http://zhangshu.xin
+curl -I https://zhangshu.xin
+curl -I http://www.zhangshu.xin
+curl -I https://www.zhangshu.xin
+sudo certbot certificates
+```
+
+确认现有服务未受影响：
+
+```bash
+curl -I https://updates.zhangshu.xin
+curl -I https://downloads.zhangshu.xin
+curl -I https://api.emailbs.xin || true
+docker ps
+```
+
+如果 `api.emailbs.xin` 的接口路径不是首页，`curl -I` 返回 404 也不一定代表服务坏了，重点确认 Nginx 和 Docker 容器未受影响。
+
+## 十、公安联网备案相关提醒
+
+部署完成后，我需要在公安联网备案系统中填写：
+
+```text
+网站访问地址：https://zhangshu.xin
+网站开通日期：实际公网可访问日期
+IP：121.40.247.143
+网络接入服务商：阿里云计算有限公司
+工信部备案号：浙ICP备2026045174号
+```
+
+所以请确保 `https://zhangshu.xin` 能够在公网正常打开。
+
+官网页面中必须显示真实 ICP 备案号：
+
+```text
+浙ICP备2026045174号
+```
+
+公安联网备案号当前可以显示：
+
+```text
+公安联网备案号：备案通过后填写
+```
+
+## 十一、最终报告要求
+
+完成后请给我报告：
+
+1. 本机 `F:\zhangshu\website` 是否构建成功。
+2. 是否已将官网中的 ICP 备案号替换为 `浙ICP备2026045174号`。
+3. 是否仍保留公安联网备案号为“备案通过后填写”。
+4. 构建产物目录是什么。
+5. 上传到了服务器哪个目录。
+6. 新增或修改了哪些 Nginx 配置文件。
+7. 是否成功签发 `zhangshu.xin` 和 `www.zhangshu.xin` 的证书。
+8. `https://zhangshu.xin` 是否可访问。
+9. `https://www.zhangshu.xin` 是否正确跳转。
+10. 现有服务是否仍然正常：
+
+    * `api.emailbs.xin`
+    * `updates.zhangshu.xin`
+    * `downloads.zhangshu.xin`
+11. `nginx -t` 的结果。
+12. `certbot certificates` 中与 `zhangshu.xin` 相关的结果。
+13. 如果有未完成项，请明确说明原因和下一步需要我做什么。
+
+请现在先执行本机网站构建检查和服务器只读检查，确认安全后再部署。

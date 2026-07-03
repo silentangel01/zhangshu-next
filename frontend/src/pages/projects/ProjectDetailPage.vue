@@ -43,6 +43,7 @@ import EditVolumeDialog from '@/features/volumes/EditVolumeDialog.vue'
 import WritingAidPanel from '@/features/writing/WritingAidPanel.vue'
 import CloudSyncStatusIndicator from '@/features/cloud/CloudSyncStatusIndicator.vue'
 import { cloudSyncManager } from '@/features/cloud/cloudSyncManager'
+import { formatApiErrorMessage } from '@/shared/api/client'
 import { safeReadJson, safeWriteJson } from '@/shared/storage/localWorkspaceState'
 import { formatDateTime } from '@/shared/utils/formatDateTime'
 
@@ -458,14 +459,14 @@ async function handleCreateVersionSnapshot() {
 
   try {
     await createChapterVersion(chapter.id, {
-      source: 'manual',
-      note: '用户手动创建版本',
+      source: 'milestone',
+      note: '用户手动创建里程碑版本',
     })
     await loadChapterVersions(chapter.id)
-    versionMessage.value = '版本快照已创建。'
+    versionMessage.value = '里程碑版本已创建。'
     cloudSyncManager.notifyDirty(projectId.value)
   } catch (error) {
-    versionErrorMessage.value = getErrorMessage(error, '创建版本快照失败。')
+    versionErrorMessage.value = getErrorMessage(error, '创建里程碑版本失败。')
   } finally {
     isVersionBusy.value = false
   }
@@ -552,8 +553,7 @@ const projectCoverUrl = computed<string | null>(() => {
 })
 
 function getErrorMessage(error: unknown, fallback: string): string {
-  void error
-  return fallback
+  return formatApiErrorMessage(error, fallback)
 }
 
 </script>
@@ -566,12 +566,13 @@ function getErrorMessage(error: unknown, fallback: string): string {
       </div>
       <div class="header-actions">
         <CloudSyncStatusIndicator />
-        <RouterLink class="toolbar-link" :to="`/projects/${projectId}/search`">搜索</RouterLink>
-        <RouterLink class="toolbar-link" :to="`/projects/${projectId}/review`">检查</RouterLink>
-        <RouterLink class="toolbar-link" :to="`/projects/${projectId}/stats`">统计</RouterLink>
         <details class="more-menu">
           <summary>更多</summary>
           <div class="more-menu-list">
+            <RouterLink :to="`/projects/${projectId}/search`">搜索</RouterLink>
+            <RouterLink :to="`/projects/${projectId}/review`">检查</RouterLink>
+            <RouterLink :to="`/projects/${projectId}/stats`">统计</RouterLink>
+            <div class="menu-divider"></div>
             <RouterLink :to="`/projects/${projectId}/outlines`">完整大纲</RouterLink>
             <RouterLink :to="`/projects/${projectId}/graph`">关系图</RouterLink>
             <RouterLink :to="`/projects/${projectId}/timeline`">时间轴</RouterLink>
@@ -607,7 +608,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
           :aria-label="isLeftPanelCollapsed ? '展开章节栏' : '收起章节栏'"
           @click="toggleLeftPanel"
         >
-          {{ isLeftPanelCollapsed ? '展开章节' : '收起' }}
+          {{ isLeftPanelCollapsed ? '›' : '‹' }}
         </button>
         <div class="panel-content sidebar-content" :class="{ hidden: isLeftPanelCollapsed }" :aria-hidden="isLeftPanelCollapsed">
           <ChapterTree
@@ -706,7 +707,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
           :aria-label="isRightPanelCollapsed ? '展开资料栏' : '收起资料栏'"
           @click="toggleRightPanel"
         >
-          {{ isRightPanelCollapsed ? '展开资料' : '收起' }}
+          {{ isRightPanelCollapsed ? '‹' : '›' }}
         </button>
         <div class="panel-content aid-content" :class="{ hidden: isRightPanelCollapsed }" :aria-hidden="isRightPanelCollapsed">
           <WritingAidPanel
@@ -775,7 +776,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
   min-height: 100vh;
   box-sizing: border-box;
   overflow-x: hidden;
-  padding: var(--top-bar-clearance, var(--zs-space-4)) var(--zs-space-4) var(--zs-space-4);
+  padding: var(--top-bar-clearance, var(--zs-space-3)) var(--zs-space-3) var(--zs-space-3);
   background: var(--zs-color-bg);
   color: var(--zs-color-text);
 }
@@ -784,9 +785,10 @@ function getErrorMessage(error: unknown, fallback: string): string {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--zs-space-3);
+  gap: var(--zs-space-2);
   max-width: 1600px;
-  margin: 0 auto var(--zs-space-3);
+  margin: 0 auto var(--zs-space-2);
+  min-height: 36px;
 }
 
 .back-link {
@@ -816,23 +818,22 @@ h2 {
   gap: var(--zs-space-2);
 }
 
-.toolbar-link,
 .more-menu > summary {
   display: inline-flex;
   align-items: center;
-  min-height: 30px;
+  min-height: 28px;
   box-sizing: border-box;
   border: 1px solid var(--zs-color-border);
   border-radius: var(--zs-radius-sm);
   padding: 0 var(--zs-space-2);
   background: var(--zs-color-surface);
   color: var(--zs-color-text-muted);
-  font-size: 0.84rem;
+  font-size: 0.82rem;
   font-weight: 600;
   text-decoration: none;
+  cursor: pointer;
 }
 
-.toolbar-link:hover,
 .more-menu > summary:hover {
   color: var(--zs-color-primary);
   border-color: var(--zs-color-border-strong);
@@ -893,6 +894,12 @@ h2 {
   outline: none;
 }
 
+.menu-divider {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--zs-color-border-soft);
+}
+
 .panel-badges {
   display: flex;
   flex-wrap: wrap;
@@ -932,16 +939,16 @@ h2 {
 .workspace-layout {
   --left-panel-width: minmax(240px, 280px);
   --left-panel-collapsed-width: var(--zs-sidebar-collapsed-width);
-  --right-panel-width: minmax(300px, 340px);
+  --right-panel-width: minmax(280px, 320px);
   --right-panel-collapsed-width: var(--zs-sidebar-collapsed-width);
   --workspace-transition-duration: var(--zs-duration-normal);
   --workspace-transition-easing: var(--zs-ease-standard);
   display: grid;
   grid-template-columns: var(--left-panel-width) minmax(var(--zs-writing-width-min), 1fr) var(--right-panel-width);
-  gap: var(--zs-space-4);
-  align-items: start;
-  height: calc(100vh - 112px);
-  min-height: 560px;
+  gap: var(--zs-space-3);
+  align-items: stretch;
+  height: calc(100vh - 80px);
+  min-height: 480px;
   min-width: 0;
 }
 
@@ -965,7 +972,10 @@ h2 {
 .detail-panel,
 .aid-sidebar {
   min-width: 0;
-  max-height: 100%;
+  overflow: hidden;
+}
+
+.detail-panel {
   overflow: auto;
 }
 
@@ -984,11 +994,25 @@ h2 {
 .sidebar,
 .aid-sidebar {
   position: relative;
-  overflow: hidden;
   width: 100%;
+  border-radius: var(--zs-radius-md);
+  background: var(--zs-color-surface);
+  border: 1px solid var(--zs-color-border-soft);
   transition:
     opacity var(--workspace-transition-duration) var(--workspace-transition-easing),
     transform var(--workspace-transition-duration) var(--workspace-transition-easing);
+}
+
+.sidebar {
+  border-right: none;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.aid-sidebar {
+  border-left: none;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
 }
 
 .sidebar.collapsed,
@@ -998,36 +1022,50 @@ h2 {
 }
 
 .collapse-tab {
-  justify-self: start;
-  min-height: 28px;
-  border: 1px solid var(--zs-color-border);
-  border-radius: var(--zs-radius-sm);
-  padding: 0 var(--zs-space-2);
-  background: var(--zs-color-surface);
-  color: var(--zs-color-text-muted);
-  font-size: 0.78rem;
-  font-weight: 600;
-  box-shadow: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 24px;
+  border: none;
+  border-bottom: 1px solid var(--zs-color-border-soft);
+  border-radius: 0;
+  padding: 2px var(--zs-space-2);
+  background: transparent;
+  color: var(--zs-color-text-faint);
+  font-size: 0.84rem;
+  font-weight: 400;
+  cursor: pointer;
   transition:
-    min-height var(--workspace-transition-duration) var(--workspace-transition-easing),
-    padding var(--workspace-transition-duration) var(--workspace-transition-easing),
     background-color 160ms ease,
     color 160ms ease;
-  white-space: nowrap;
+}
+
+.collapse-tab:hover {
+  color: var(--zs-color-text-muted);
+  background: var(--zs-color-surface-soft);
+}
+
+.collapse-tab.right {
+  justify-content: flex-start;
 }
 
 .sidebar.collapsed .collapse-tab,
 .aid-sidebar.collapsed .collapse-tab {
   justify-self: center;
-  min-height: 112px;
+  min-height: 100px;
   padding: 10px 3px;
   writing-mode: vertical-rl;
   text-orientation: mixed;
+  border-bottom: none;
+  border-radius: 0;
+  font-size: 1rem;
 }
 
 .panel-content {
   min-width: 0;
   overflow: hidden;
+  padding: var(--zs-space-2) var(--zs-space-3);
+  box-sizing: border-box;
   opacity: 1;
   transform: translateX(0);
   transition:
@@ -1074,10 +1112,17 @@ h2 {
 .detail-panel > article {
   min-height: 100%;
   box-sizing: border-box;
-  border: 1px solid var(--zs-color-border);
-  border-radius: var(--zs-radius-md);
   padding: var(--zs-space-3);
   background: var(--zs-color-surface);
+}
+
+.detail-panel > .chapter-preview {
+  border-radius: 0;
+}
+
+.detail-panel > .project-summary {
+  border-radius: 0;
+  border: 1px solid var(--zs-color-border-soft);
 }
 
 .detail-panel > .chapter-preview {
@@ -1265,16 +1310,16 @@ button:disabled {
 
 @media (max-width: 1439px) {
   .project-detail-page {
-    padding: var(--zs-space-4);
+    padding: var(--zs-space-3);
   }
 
   .workspace-layout {
-    --left-panel-width: minmax(240px, 260px);
-    --right-panel-width: minmax(300px, 320px);
-    gap: var(--zs-space-3);
+    --left-panel-width: minmax(220px, 260px);
+    --right-panel-width: minmax(260px, 300px);
+    gap: var(--zs-space-2);
+    height: calc(100vh - 76px);
   }
 
-  .toolbar-link,
   .more-menu > summary {
     padding: 0 var(--zs-space-1);
     font-size: 0.8rem;
@@ -1293,11 +1338,11 @@ button:disabled {
   }
 
   .workspace-layout {
-    --left-panel-width: minmax(220px, 240px);
+    --left-panel-width: minmax(200px, 240px);
     grid-template-columns: var(--left-panel-width) minmax(0, 1fr) var(--right-panel-collapsed-width);
     gap: var(--zs-space-2);
-    height: calc(100vh - 160px);
-    min-height: 520px;
+    height: calc(100vh - 120px);
+    min-height: 440px;
     overflow-x: hidden;
   }
 
@@ -1316,12 +1361,11 @@ button:disabled {
 
   .aid-sidebar {
     place-items: start center;
-    overflow: hidden;
   }
 
   .aid-sidebar .collapse-tab {
     justify-self: center;
-    min-height: 112px;
+    min-height: 100px;
     padding: 10px 3px;
     writing-mode: vertical-rl;
     text-orientation: mixed;

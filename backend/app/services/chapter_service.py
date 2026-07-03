@@ -16,6 +16,8 @@ from app.services.writing_stats_service import WritingStatsService
 
 AUTOSAVE_VERSION_INTERVAL_SECONDS = 5 * 60
 AUTOSAVE_CONTENT_DELTA_THRESHOLD = 200
+MANUAL_SAVE_VERSION_INTERVAL_SECONDS = 10 * 60
+MANUAL_SAVE_CONTENT_DELTA_THRESHOLD = 500
 
 
 class ChapterNotFoundError(Exception):
@@ -217,14 +219,26 @@ class ChapterService:
         except Exception:
             pass
 
+    @staticmethod
+    def _normalize_content_version_source(source: str) -> str:
+        if source == "manual":
+            return "manual_save"
+        if source == "autosave":
+            return "autosave"
+        return "manual_save"
+
     def _create_content_version_if_needed(self, chapter: Chapter, source: str) -> None:
+        normalized = self._normalize_content_version_source(source)
         latest = self.version_repo.get_latest_by_chapter(chapter.id)
         if latest is not None and latest.content == chapter.content:
             return
 
-        if source == "autosave" and not self._should_create_autosave_version(chapter, latest):
+        if normalized in {"autosave", "manual_save"} and not self._should_create_routine_version(
+            chapter, latest, normalized
+        ):
             return
 
+        note_map = {"manual_save": "手动保存快照", "autosave": "自动保存"}
         version = ChapterVersion(
             id=str(uuid4()),
             chapter_id=chapter.id,
@@ -232,18 +246,26 @@ class ChapterService:
             title=chapter.title,
             content=chapter.content,
             word_count=chapter.word_count,
-            source=source,
-            note="手动保存" if source == "manual" else "自动保存",
+            source=normalized,
+            note=note_map.get(normalized, ""),
         )
         self.version_repo.create(version, commit=False)
 
-    def _should_create_autosave_version(
+    def _should_create_routine_version(
         self,
         chapter: Chapter,
         latest: ChapterVersion | None,
+        normalized_source: str,
     ) -> bool:
         if latest is None:
             return True
+
+        if normalized_source == "autosave":
+            interval = AUTOSAVE_VERSION_INTERVAL_SECONDS
+            threshold = AUTOSAVE_CONTENT_DELTA_THRESHOLD
+        else:
+            interval = MANUAL_SAVE_VERSION_INTERVAL_SECONDS
+            threshold = MANUAL_SAVE_CONTENT_DELTA_THRESHOLD
 
         latest_created_at = latest.created_at
         if latest_created_at.tzinfo is None:
@@ -253,7 +275,4 @@ class ChapterService:
         content_delta = abs(
             calculate_word_count(chapter.content) - calculate_word_count(latest.content)
         )
-        return (
-            age_seconds >= AUTOSAVE_VERSION_INTERVAL_SECONDS
-            or content_delta >= AUTOSAVE_CONTENT_DELTA_THRESHOLD
-        )
+        return age_seconds >= interval or content_delta >= threshold

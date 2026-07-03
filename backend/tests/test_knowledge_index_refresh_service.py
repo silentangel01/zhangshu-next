@@ -196,7 +196,7 @@ class TestProviderIntegration:
         profile = service.profile_repo.get_by_project(project.id)
         assert profile is not None
         assert profile.provider_id == "local_basic_hash"
-        assert profile.model_name == "bigram-hash-v1"
+        assert profile.model_name == "bigram-hash-v2"
         assert profile.vector_dim == 256
 
     def test_refresh_project_returns_provider_id(self, db_session, project, service):
@@ -256,7 +256,7 @@ class TestProviderIntegration:
         assert profile.provider_id == "local_basic_hash"
         assert profile.provider_type == "compat"
         assert profile.display_name == "本地基础索引"
-        assert profile.model_name == "bigram-hash-v1"
+        assert profile.model_name == "bigram-hash-v2"
         assert profile.vector_dim == 256
         assert profile.chunk_size == "large"
         assert profile.status == "ready"

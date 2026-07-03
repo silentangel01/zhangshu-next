@@ -4,6 +4,7 @@ version = "0.8.1"
 description = "章枢 - 本地优先的网络小说写作应用"
 authors = ["Zhangshu Team"]
 edition = "2021"
+default-run = "zhangshu-desktop"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

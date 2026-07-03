@@ -685,30 +685,16 @@ function getErrorMessage(error: unknown, fallback: string): string {
                 <ul v-if="!isGroupCollapsed(group.role)" class="character-list">
                   <li v-for="character in group.characters" :key="character.id">
                     <button
-                      class="character-card"
+                      class="character-card character-card-v2"
                       type="button"
                       :class="{ active: selectedCharacter?.id === character.id }"
                       @click="handleSelectCharacter(character)"
                     >
                       <div class="card-top">
                         <span class="name">{{ character.name }}</span>
-                        <span class="card-tags">
-                          <span class="tag tag-role">{{ characterRoleLabels[character.role] }}</span>
-                          <span class="tag tag-importance">{{ characterImportanceLabels[character.importance] }}</span>
-                          <span class="tag tag-status">{{ characterStatusLabels[character.status] }}</span>
-                        </span>
+                        <span class="card-role">{{ characterRoleLabels[character.role] }}</span>
                       </div>
-                      <div v-if="character.faction" class="card-faction">
-                        <span
-                          v-for="tag in getCharacterFactionDisplay(character).visible"
-                          :key="tag"
-                          class="faction-chip"
-                        >{{ tag }}</span>
-                        <span v-if="getCharacterFactionDisplay(character).overflow > 0" class="faction-chip faction-overflow">
-                          +{{ getCharacterFactionDisplay(character).overflow }}
-                        </span>
-                      </div>
-                      <span class="summary">{{ character.summary || '暂无简介' }}</span>
+                      <span class="card-summary">{{ character.summary || '暂无简介' }}</span>
                     </button>
                   </li>
                 </ul>
@@ -725,44 +711,42 @@ function getErrorMessage(error: unknown, fallback: string): string {
       </Transition>
 
       <!-- Center: editor -->
-      <form class="editor-panel material-editor-panel" @submit.prevent="handleSaveCharacter">
-        <header class="editor-header">
-          <div>
-            <p class="eyebrow">{{ isCreating ? '新建人物' : '人物卡' }}</p>
-            <h2>{{ form.name || '未命名人物' }}</h2>
+      <form class="editor-panel" @submit.prevent="handleSaveCharacter">
+        <section class="identity-section">
+          <input
+            v-model.trim="form.name"
+            type="text"
+            class="name-input"
+            placeholder="人物姓名"
+            required
+          />
+          <div class="identity-meta">
+            <span class="eyebrow">{{ isCreating ? '新建人物' : '人物卡' }}</span>
+            <span class="metadata-divider" />
+            <label class="metadata-select">
+              <span>定位</span>
+              <select v-model="form.role">
+                <option v-for="role in roles" :key="role" :value="role">{{ characterRoleLabels[role] }}</option>
+              </select>
+            </label>
+            <span class="metadata-divider" />
+            <label class="metadata-select">
+              <span>重要度</span>
+              <select v-model="form.importance">
+                <option v-for="imp in importances" :key="imp" :value="imp">{{ characterImportanceLabels[imp] }}</option>
+              </select>
+            </label>
+            <span class="metadata-divider" />
+            <label class="metadata-select">
+              <span>状态</span>
+              <select v-model="form.status">
+                <option v-for="st in statuses" :key="st" :value="st">{{ characterStatusLabels[st] }}</option>
+              </select>
+            </label>
+            <span v-if="selectedCharacter" class="version">v{{ selectedCharacter.version }}</span>
           </div>
-          <span v-if="selectedCharacter" class="version">v{{ selectedCharacter.version }}</span>
-        </header>
-
-        <div class="basic-fields">
-          <label class="field-compact">
-            <span>姓名</span>
-            <input v-model.trim="form.name" type="text" required />
-          </label>
-          <label class="field-compact">
-            <span>角色定位</span>
-            <select v-model="form.role">
-              <option v-for="role in roles" :key="role" :value="role">{{ characterRoleLabels[role] }}</option>
-            </select>
-          </label>
-          <label class="field-compact">
-            <span>重要程度</span>
-            <select v-model="form.importance">
-              <option v-for="importance in importances" :key="importance" :value="importance">
-                {{ characterImportanceLabels[importance] }}
-              </option>
-            </select>
-          </label>
-          <label class="field-compact">
-            <span>状态</span>
-            <select v-model="form.status">
-              <option v-for="status in statuses" :key="status" :value="status">
-                {{ characterStatusLabels[status] }}
-              </option>
-            </select>
-          </label>
           <div class="field-faction">
-            <span class="field-label">所属势力/组织</span>
+            <span class="field-label">所属势力</span>
             <div class="faction-input-container" @click="factionInputRef?.focus()">
               <span
                 v-for="(tag, idx) in factionTags"
@@ -789,17 +773,25 @@ function getErrorMessage(error: unknown, fallback: string): string {
               />
             </div>
           </div>
-        </div>
+          <input
+            v-model="form.summary"
+            type="text"
+            class="summary-input"
+            placeholder="一句话简介"
+          />
+        </section>
 
-        <label class="field-summary">
-          <span>简介</span>
-          <input v-model="form.summary" type="text" placeholder="一句话简介" />
-        </label>
+        <div class="section-divider" />
 
-        <label class="field-biography">
-          <span>人物记录</span>
-          <textarea v-model="form.biography" rows="4" placeholder="自由记录人物备忘、经历、想法等……" />
-        </label>
+        <section class="narrative-section">
+          <span class="narrative-label">人物记录</span>
+          <textarea
+            v-model="form.biography"
+            class="narrative-textarea"
+            rows="5"
+            placeholder="自由记录人物经历、性格、想法……"
+          />
+        </section>
 
         <CharacterProfileSections
           v-model="form.profile_sections"
@@ -810,6 +802,18 @@ function getErrorMessage(error: unknown, fallback: string): string {
           v-model="form.profile_dimensions"
           :disabled="isSaving"
         />
+
+        <div class="section-divider" />
+
+        <section class="notes-section">
+          <span class="notes-label">备注</span>
+          <textarea
+            v-model="form.notes"
+            class="notes-textarea"
+            rows="3"
+            placeholder="备忘、写作提醒……"
+          />
+        </section>
 
         <footer class="editor-actions">
           <span v-if="!isCreating && autosaveStatusText" class="autosave-status">{{ autosaveStatusText }}</span>
@@ -862,6 +866,274 @@ function getErrorMessage(error: unknown, fallback: string): string {
 </template>
 
 <style scoped>
+/* =========================================================================
+   Character Page v2 — Writing-tool visual hierarchy
+   ========================================================================= */
+
+/* --- Left panel card (v2 override) --- */
+
+.character-card-v2 {
+  display: flex !important;
+  flex-direction: column;
+  gap: 6px !important;
+  padding: 10px 12px !important;
+  border: 1px solid var(--zs-color-border-soft) !important;
+  border-radius: var(--zs-radius-md) !important;
+  background: var(--zs-color-surface) !important;
+  box-shadow: none !important;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.character-card-v2:hover {
+  border-color: var(--zs-color-border-strong) !important;
+  background: var(--zs-color-surface-soft) !important;
+}
+
+.character-card-v2.active {
+  border-color: var(--zs-color-primary) !important;
+  background: var(--zs-color-primary-soft) !important;
+}
+
+.character-card-v2 .card-top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.character-card-v2 .name {
+  font-size: 0.92rem;
+  font-weight: 700;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-role {
+  flex-shrink: 0;
+  color: var(--zs-color-text-faint);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.card-summary {
+  color: var(--zs-color-text-muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* --- Editor panel (v2 overrides) --- */
+
+.editor-panel {
+  display: flex !important;
+  flex-direction: column;
+  gap: 0 !important;
+  padding: var(--zs-space-6) var(--zs-space-8) !important;
+  border: none !important;
+  border-radius: 0 !important;
+  background: var(--zs-color-surface) !important;
+  box-shadow: none !important;
+}
+
+/* --- Identity section --- */
+
+.identity-section {
+  display: grid;
+  gap: 12px;
+  padding-bottom: var(--zs-space-5);
+}
+
+.name-input {
+  width: 100%;
+  border: none !important;
+  border-bottom: 2px solid transparent !important;
+  border-radius: 0 !important;
+  padding: 4px 0 !important;
+  background: transparent !important;
+  color: var(--zs-color-text);
+  font-size: 1.65rem !important;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  transition: border-color 0.15s;
+}
+
+.name-input:hover {
+  border-bottom-color: var(--zs-color-border-soft) !important;
+}
+
+.name-input:focus {
+  border-bottom-color: var(--zs-color-primary) !important;
+  outline: none;
+  box-shadow: none !important;
+}
+
+.name-input::placeholder {
+  color: var(--zs-color-text-faint);
+  font-weight: 400;
+}
+
+.identity-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--zs-space-3);
+  flex-wrap: wrap;
+}
+
+.identity-meta .eyebrow {
+  color: var(--zs-color-text-faint);
+  font-size: 0.78rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.metadata-divider {
+  width: 1px;
+  height: 14px;
+  background: var(--zs-color-border-soft);
+  flex-shrink: 0;
+}
+
+.metadata-select {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600 !important;
+}
+
+.metadata-select > span {
+  color: var(--zs-color-text-faint);
+  font-size: 0.78rem;
+}
+
+.metadata-select select {
+  width: auto !important;
+  min-width: 0;
+  border: none !important;
+  border-radius: 0 !important;
+  padding: 2px 0 !important;
+  background: transparent !important;
+  color: var(--zs-color-primary);
+  font-size: 0.82rem !important;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: none !important;
+}
+
+.metadata-select select:focus {
+  border-bottom: 1px solid var(--zs-color-primary) !important;
+  outline: none;
+}
+
+.identity-meta .version {
+  margin-left: auto;
+}
+
+.summary-input {
+  width: 100%;
+  border: none !important;
+  border-bottom: 1px solid transparent !important;
+  border-radius: 0 !important;
+  padding: 2px 0 !important;
+  background: transparent !important;
+  color: var(--zs-color-text-muted);
+  font-size: 0.92rem !important;
+  font-style: italic;
+  line-height: 1.5;
+  transition: border-color 0.15s;
+}
+
+.summary-input:hover {
+  border-bottom-color: var(--zs-color-border-soft) !important;
+}
+
+.summary-input:focus {
+  border-bottom-color: var(--zs-color-primary) !important;
+  outline: none;
+  box-shadow: none !important;
+}
+
+.summary-input::placeholder {
+  color: var(--zs-color-text-faint);
+  font-style: italic;
+}
+
+/* --- Section dividers --- */
+
+.section-divider {
+  height: 1px;
+  margin: var(--zs-space-5) 0;
+  background: var(--zs-color-border-soft);
+}
+
+/* --- Narrative (biography) section --- */
+
+.narrative-section {
+  display: grid;
+  gap: var(--zs-space-2);
+}
+
+.narrative-label {
+  color: var(--zs-color-text-faint);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.narrative-textarea {
+  min-height: 100px !important;
+  border: 1px solid var(--zs-color-border-soft) !important;
+  border-radius: var(--zs-radius-md) !important;
+  padding: var(--zs-space-3) var(--zs-space-4) !important;
+  background: var(--zs-color-bg) !important;
+  font-family: var(--zs-font-writing);
+  font-size: 0.92rem !important;
+  line-height: 1.8 !important;
+}
+
+.narrative-textarea:focus {
+  border-color: var(--zs-color-primary) !important;
+  box-shadow: none !important;
+}
+
+/* --- Notes section --- */
+
+.notes-section {
+  display: grid;
+  gap: var(--zs-space-2);
+}
+
+.notes-label {
+  color: var(--zs-color-text-faint);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.notes-textarea {
+  min-height: 64px !important;
+  border: 1px solid var(--zs-color-border-soft) !important;
+  border-radius: var(--zs-radius-md) !important;
+  padding: var(--zs-space-2) var(--zs-space-3) !important;
+  background: var(--zs-color-bg) !important;
+  font-size: 0.86rem !important;
+  line-height: 1.7 !important;
+}
+
+.notes-textarea:focus {
+  border-color: var(--zs-color-primary) !important;
+  box-shadow: none !important;
+}
+
+/* =========================================================================
+   Original styles (preserved)
+   ========================================================================= */
+
 .characters-page {
   min-height: 100vh;
   box-sizing: border-box;
@@ -1173,14 +1445,17 @@ h2 {
 
 /* --- Left list panel (task #31) --- */
 
-.list-panel,
-.editor-panel {
+.list-panel {
   min-width: 0;
   border: 1px solid var(--zs-color-border);
   border-radius: var(--zs-radius-md);
   padding: var(--zs-space-4);
   background: var(--zs-color-surface);
   box-shadow: var(--zs-shadow-sm);
+}
+
+.editor-panel {
+  min-width: 0;
 }
 
 .character-tree-scroll {

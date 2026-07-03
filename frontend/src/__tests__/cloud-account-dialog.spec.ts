@@ -7,9 +7,18 @@ import { flushPromises, mount } from '@vue/test-utils'
 // Mock the cloud API module
 vi.mock('@/entities/cloud/api', () => ({
   getCloudAccountStatus: vi.fn(),
+  checkCloudEmail: vi.fn(),
+  checkCloudPhone: vi.fn(),
   cloudLogin: vi.fn(),
+  cloudLoginWithEmailCode: vi.fn(),
+  cloudLoginWithPhoneCode: vi.fn(),
   cloudRegister: vi.fn(),
+  cloudRegisterWithPhone: vi.fn(),
   cloudLogout: vi.fn(),
+  startCloudOAuthLogin: vi.fn(),
+  pollCloudOAuthLogin: vi.fn(),
+  sendCloudEmailCode: vi.fn(),
+  sendCloudPhoneCode: vi.fn(),
   getCloudNetworkSettings: vi.fn(),
   setCloudNetworkSettings: vi.fn(),
   runCloudNetworkDiagnostics: vi.fn(),
@@ -38,16 +47,36 @@ vi.mock('@/shared/api/client', () => {
 
 import { ApiError } from '@/shared/api/client'
 import {
+  checkCloudEmail,
+  checkCloudPhone,
   cloudLogin,
+  cloudLoginWithEmailCode,
+  cloudLoginWithPhoneCode,
+  cloudRegister,
+  cloudRegisterWithPhone,
   getCloudAccountStatus,
   getCloudNetworkSettings,
+  pollCloudOAuthLogin,
   runCloudNetworkDiagnostics,
+  sendCloudEmailCode,
+  sendCloudPhoneCode,
   setCloudNetworkSettings,
+  startCloudOAuthLogin,
 } from '@/entities/cloud/api'
 import CloudAccountDialog from '@/features/cloud/CloudAccountDialog.vue'
 
 const mockGetCloudAccountStatus = vi.mocked(getCloudAccountStatus)
+const mockCheckCloudEmail = vi.mocked(checkCloudEmail)
+const mockCheckCloudPhone = vi.mocked(checkCloudPhone)
 const mockCloudLogin = vi.mocked(cloudLogin)
+const mockCloudLoginWithEmailCode = vi.mocked(cloudLoginWithEmailCode)
+const mockCloudLoginWithPhoneCode = vi.mocked(cloudLoginWithPhoneCode)
+const mockCloudRegister = vi.mocked(cloudRegister)
+const mockCloudRegisterWithPhone = vi.mocked(cloudRegisterWithPhone)
+const mockStartCloudOAuthLogin = vi.mocked(startCloudOAuthLogin)
+const mockPollCloudOAuthLogin = vi.mocked(pollCloudOAuthLogin)
+const mockSendCloudEmailCode = vi.mocked(sendCloudEmailCode)
+const mockSendCloudPhoneCode = vi.mocked(sendCloudPhoneCode)
 const mockGetCloudNetworkSettings = vi.mocked(getCloudNetworkSettings)
 const mockRunCloudNetworkDiagnostics = vi.mocked(runCloudNetworkDiagnostics)
 const mockSetCloudNetworkSettings = vi.mocked(setCloudNetworkSettings)
@@ -55,11 +84,67 @@ const mockSetCloudNetworkSettings = vi.mocked(setCloudNetworkSettings)
 describe('CloudAccountDialog — diagnostic mode switch', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.spyOn(window, 'open').mockImplementation(() => null)
     mockGetCloudAccountStatus.mockResolvedValue({
       logged_in: false,
       cloud_available: true,
       email: null,
       display_name: null,
+    })
+    mockCheckCloudEmail.mockResolvedValue({
+      email: 'test@example.com',
+      available: true,
+    })
+    mockCheckCloudPhone.mockResolvedValue({
+      phone_number: '+8613800138000',
+      available: true,
+    })
+    mockSendCloudEmailCode.mockResolvedValue({
+      ok: true,
+      expires_in_seconds: 600,
+      cooldown_seconds: 60,
+    })
+    mockSendCloudPhoneCode.mockResolvedValue({
+      ok: true,
+      expires_in_seconds: 600,
+      cooldown_seconds: 60,
+    })
+    mockCloudLoginWithEmailCode.mockResolvedValue({
+      logged_in: true,
+      cloud_available: true,
+      email: 'test@example.com',
+      display_name: 'test@example.com',
+    })
+    mockCloudLoginWithPhoneCode.mockResolvedValue({
+      logged_in: true,
+      cloud_available: true,
+      email: null,
+      phone_number: '+8613800138000',
+      display_name: '138****8000',
+    })
+    mockCloudRegister.mockResolvedValue({
+      logged_in: true,
+      cloud_available: true,
+      email: 'test@example.com',
+      display_name: 'test@example.com',
+    })
+    mockCloudRegisterWithPhone.mockResolvedValue({
+      logged_in: true,
+      cloud_available: true,
+      email: null,
+      phone_number: '+8613800138000',
+      display_name: '138****8000',
+    })
+    mockStartCloudOAuthLogin.mockResolvedValue({
+      provider: 'wechat',
+      authorization_url: 'https://open.weixin.qq.com/connect/qrconnect',
+      session_id: 'session-1',
+      poll_token: 'poll-1',
+      expires_in_seconds: 600,
+    })
+    mockPollCloudOAuthLogin.mockResolvedValue({
+      status: 'pending',
+      provider: 'wechat',
     })
   })
 
@@ -224,5 +309,163 @@ describe('CloudAccountDialog — diagnostic mode switch', () => {
 
     // No mode switch when recommended matches current
     expect(wrapper.find('.mode-switch').exists()).toBe(false)
+  })
+
+  it('sends login email code and logs in with verification code', async () => {
+    const wrapper = mount(CloudAccountDialog)
+    await flushPromises()
+
+    const emailInput = wrapper.find('input[type="email"]')
+    await emailInput.setValue('test@example.com')
+
+    await wrapper.find('.mode-link').trigger('click')
+    await flushPromises()
+
+    await wrapper.find('.code-button').trigger('click')
+    await flushPromises()
+
+    expect(mockSendCloudEmailCode).toHaveBeenCalledWith('test@example.com', 'login')
+
+    const codeInput = wrapper.find('input[inputmode="numeric"]')
+    await codeInput.setValue('123456')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(mockCloudLoginWithEmailCode).toHaveBeenCalledWith('test@example.com', '123456')
+  })
+
+  it('sends login phone code and logs in with verification code', async () => {
+    const wrapper = mount(CloudAccountDialog)
+    await flushPromises()
+
+    await wrapper.find('.mode-link').trigger('click')
+    await flushPromises()
+
+    await wrapper.findAll('.target-chip')[1]!.trigger('click')
+    await flushPromises()
+
+    const phoneInput = wrapper.find('input[inputmode="tel"]')
+    await phoneInput.setValue('13800138000')
+
+    await wrapper.find('.code-button').trigger('click')
+    await flushPromises()
+
+    expect(mockSendCloudPhoneCode).toHaveBeenCalledWith('13800138000', 'login')
+
+    const codeInput = wrapper.find('input[inputmode="numeric"]')
+    await codeInput.setValue('123456')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(mockCloudLoginWithPhoneCode).toHaveBeenCalledWith('13800138000', '123456')
+  })
+
+  it('starts wechat oauth login and opens authorization url', async () => {
+    const wrapper = mount(CloudAccountDialog)
+    await flushPromises()
+
+    await wrapper.find('.oauth-button.wechat').trigger('click')
+    await flushPromises()
+
+    expect(mockStartCloudOAuthLogin).toHaveBeenCalledWith('wechat')
+    expect(window.open).toHaveBeenCalledWith(
+      'https://open.weixin.qq.com/connect/qrconnect',
+      '_blank',
+      'noopener',
+    )
+    expect(mockPollCloudOAuthLogin).toHaveBeenCalledWith('session-1', 'poll-1')
+
+    wrapper.unmount()
+  })
+
+  it('checks email before sending register code', async () => {
+    const wrapper = mount(CloudAccountDialog)
+    await flushPromises()
+
+    await wrapper.findAll('.tab-button')[1]!.trigger('click')
+    await flushPromises()
+
+    const emailInput = wrapper.find('input[type="email"]')
+    await emailInput.setValue('test@example.com')
+
+    await wrapper.find('.code-button').trigger('click')
+    await flushPromises()
+
+    expect(mockCheckCloudEmail).toHaveBeenCalledWith('test@example.com')
+    expect(mockSendCloudEmailCode).toHaveBeenCalledWith('test@example.com', 'register')
+  })
+
+  it('does not send register code when email is unavailable', async () => {
+    mockCheckCloudEmail.mockResolvedValueOnce({
+      email: 'taken@example.com',
+      available: false,
+    })
+
+    const wrapper = mount(CloudAccountDialog)
+    await flushPromises()
+
+    await wrapper.findAll('.tab-button')[1]!.trigger('click')
+    await flushPromises()
+
+    const emailInput = wrapper.find('input[type="email"]')
+    await emailInput.setValue('taken@example.com')
+
+    await wrapper.find('.code-button').trigger('click')
+    await flushPromises()
+
+    expect(mockSendCloudEmailCode).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('该邮箱已注册')
+  })
+
+  it('registers with verification code', async () => {
+    const wrapper = mount(CloudAccountDialog)
+    await flushPromises()
+
+    await wrapper.findAll('.tab-button')[1]!.trigger('click')
+    await flushPromises()
+
+    const emailInput = wrapper.find('input[type="email"]')
+    await emailInput.setValue('test@example.com')
+    const passwordInput = wrapper.find('input[type="password"]')
+    await passwordInput.setValue('password123abc')
+    const codeInput = wrapper.find('input[inputmode="numeric"]')
+    await codeInput.setValue('123456')
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(mockCloudRegister).toHaveBeenCalledWith(
+      'test@example.com',
+      'password123abc',
+      '',
+      '123456',
+    )
+  })
+
+  it('registers with phone verification code', async () => {
+    const wrapper = mount(CloudAccountDialog)
+    await flushPromises()
+
+    await wrapper.findAll('.tab-button')[1]!.trigger('click')
+    await flushPromises()
+
+    await wrapper.find('.mode-link').trigger('click')
+    await flushPromises()
+
+    const phoneInput = wrapper.find('input[inputmode="tel"]')
+    await phoneInput.setValue('13800138000')
+
+    await wrapper.find('.code-button').trigger('click')
+    await flushPromises()
+
+    expect(mockCheckCloudPhone).toHaveBeenCalledWith('13800138000')
+    expect(mockSendCloudPhoneCode).toHaveBeenCalledWith('13800138000', 'register')
+
+    const codeInput = wrapper.find('input[inputmode="numeric"]')
+    await codeInput.setValue('123456')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(mockCloudRegisterWithPhone).toHaveBeenCalledWith('13800138000', '123456', '')
   })
 })

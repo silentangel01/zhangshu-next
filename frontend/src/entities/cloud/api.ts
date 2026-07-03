@@ -9,13 +9,21 @@ import type {
   CloudBackupRecord,
   CloudDeletionConfirmRequest,
   CloudDeletionRequest,
+  CloudEmailCheckResponse,
+  CloudEmailCodePurpose,
+  CloudPhoneCheckResponse,
+  CloudPhoneCodePurpose,
   CloudNetworkDiagnosticReport,
   CloudNetworkMode,
   CloudNetworkSettings,
+  CloudOAuthPollResponse,
+  CloudOAuthProvider,
+  CloudOAuthStartResponse,
   CloudProjectImportResult,
   CloudProjectStatus,
   CloudRemoteProject,
   CloudRestoreReport,
+  CloudSendEmailCodeResponse,
   CloudSessionList,
   CloudSyncConflict,
   CloudSyncRunResult,
@@ -35,15 +43,99 @@ export function cloudLogin(email: string, password: string): Promise<CloudAccoun
   })
 }
 
+export function cloudLoginWithEmailCode(
+  email: string,
+  verificationCode: string,
+): Promise<CloudAccountStatus> {
+  return apiRequest<CloudAccountStatus>('/api/cloud/auth/login/email-code', {
+    method: 'POST',
+    body: { email, verification_code: verificationCode },
+  })
+}
+
+export function cloudLoginWithPhoneCode(
+  phoneNumber: string,
+  verificationCode: string,
+): Promise<CloudAccountStatus> {
+  return apiRequest<CloudAccountStatus>('/api/cloud/auth/login/phone-code', {
+    method: 'POST',
+    body: { phone_number: phoneNumber, verification_code: verificationCode },
+  })
+}
+
+export function checkCloudEmail(email: string): Promise<CloudEmailCheckResponse> {
+  return apiRequest<CloudEmailCheckResponse>('/api/cloud/auth/email/check', {
+    method: 'POST',
+    body: { email },
+  })
+}
+
+export function checkCloudPhone(phoneNumber: string): Promise<CloudPhoneCheckResponse> {
+  return apiRequest<CloudPhoneCheckResponse>('/api/cloud/auth/phone/check', {
+    method: 'POST',
+    body: { phone_number: phoneNumber },
+  })
+}
+
+export function sendCloudEmailCode(
+  email: string,
+  purpose: CloudEmailCodePurpose,
+): Promise<CloudSendEmailCodeResponse> {
+  return apiRequest<CloudSendEmailCodeResponse>('/api/cloud/auth/email-code/send', {
+    method: 'POST',
+    body: { email, purpose },
+  })
+}
+
+export function sendCloudPhoneCode(
+  phoneNumber: string,
+  purpose: CloudPhoneCodePurpose,
+): Promise<CloudSendEmailCodeResponse> {
+  return apiRequest<CloudSendEmailCodeResponse>('/api/cloud/auth/phone-code/send', {
+    method: 'POST',
+    body: { phone_number: phoneNumber, purpose },
+  })
+}
+
 export function cloudRegister(
   email: string,
   password: string,
   displayName: string,
+  verificationCode: string,
 ): Promise<CloudAccountStatus> {
   return apiRequest<CloudAccountStatus>('/api/cloud/auth/register', {
     method: 'POST',
-    body: { email, password, display_name: displayName },
+    body: { email, password, display_name: displayName, verification_code: verificationCode },
   })
+}
+
+export function cloudRegisterWithPhone(
+  phoneNumber: string,
+  verificationCode: string,
+  displayName: string,
+): Promise<CloudAccountStatus> {
+  return apiRequest<CloudAccountStatus>('/api/cloud/auth/register/phone', {
+    method: 'POST',
+    body: { phone_number: phoneNumber, verification_code: verificationCode, display_name: displayName },
+  })
+}
+
+export function startCloudOAuthLogin(
+  provider: CloudOAuthProvider,
+): Promise<CloudOAuthStartResponse> {
+  return apiRequest<CloudOAuthStartResponse>(`/api/cloud/auth/oauth/${provider}/start`, {
+    method: 'POST',
+    body: {},
+  })
+}
+
+export function pollCloudOAuthLogin(
+  sessionId: string,
+  pollToken: string,
+): Promise<CloudOAuthPollResponse> {
+  return apiRequest<CloudOAuthPollResponse>(
+    `/api/cloud/auth/oauth/session/${encodeURIComponent(sessionId)}?poll_token=${encodeURIComponent(pollToken)}`,
+  )
 }
 
 export function cloudLogout(): Promise<void> {
@@ -123,6 +215,40 @@ export function updateCloudAccountProfile(params: {
   return apiRequest<CloudAccountProfile>('/api/cloud/account/profile', {
     method: 'PATCH',
     body: params,
+  })
+}
+
+export function sendCloudBindEmailCode(email: string): Promise<CloudSendEmailCodeResponse> {
+  return apiRequest<CloudSendEmailCodeResponse>('/api/cloud/account/bind/email-code/send', {
+    method: 'POST',
+    body: { email },
+  })
+}
+
+export function sendCloudBindPhoneCode(phoneNumber: string): Promise<CloudSendEmailCodeResponse> {
+  return apiRequest<CloudSendEmailCodeResponse>('/api/cloud/account/bind/phone-code/send', {
+    method: 'POST',
+    body: { phone_number: phoneNumber },
+  })
+}
+
+export function bindCloudEmail(
+  email: string,
+  verificationCode: string,
+): Promise<CloudAccountProfile> {
+  return apiRequest<CloudAccountProfile>('/api/cloud/account/bind/email', {
+    method: 'POST',
+    body: { email, verification_code: verificationCode },
+  })
+}
+
+export function bindCloudPhone(
+  phoneNumber: string,
+  verificationCode: string,
+): Promise<CloudAccountProfile> {
+  return apiRequest<CloudAccountProfile>('/api/cloud/account/bind/phone', {
+    method: 'POST',
+    body: { phone_number: phoneNumber, verification_code: verificationCode },
   })
 }
 
