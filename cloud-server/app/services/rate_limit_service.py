@@ -43,6 +43,11 @@ class RateLimitService:
     # Predefined scopes
     AUTH_LOGIN = "auth_login"
     AUTH_REGISTER = "auth_register"
+    AUTH_EMAIL_CHECK = "auth_email_check"
+    AUTH_EMAIL_CODE_SEND = "auth_email_code_send"
+    AUTH_EMAIL_CODE_VERIFY = "auth_email_code_verify"
+    AUTH_PHONE_CODE_SEND = "auth_phone_code_send"
+    AUTH_PHONE_CODE_VERIFY = "auth_phone_code_verify"
     BACKUP_INIT = "backup_init"
     ACCOUNT_DELETE = "account_delete"
     FEEDBACK_CREATE = "feedback_create"
@@ -153,6 +158,71 @@ class RateLimitService:
         key = self._make_key(client_ip, domain)
         self.check_and_record(
             self.AUTH_REGISTER, key, limit, window_seconds, client_ip=client_ip
+        )
+
+    def check_email_check(
+        self, client_ip: str, email: str, limit: int, window_seconds: int
+    ) -> None:
+        """Rate limit for register email availability checks."""
+        key = self._make_key(client_ip, sha256_text(email.lower().strip()))
+        self.check_and_record(
+            self.AUTH_EMAIL_CHECK, key, limit, window_seconds, client_ip=client_ip
+        )
+
+    def check_email_code_send(
+        self,
+        client_ip: str,
+        email: str,
+        purpose: str,
+        limit: int,
+        window_seconds: int,
+    ) -> None:
+        """Rate limit for auth email-code sends."""
+        key = self._make_key(client_ip, purpose, sha256_text(email.lower().strip()))
+        self.check_and_record(
+            self.AUTH_EMAIL_CODE_SEND, key, limit, window_seconds, client_ip=client_ip
+        )
+
+    def check_email_code_verify(
+        self,
+        client_ip: str,
+        email: str,
+        purpose: str,
+        limit: int,
+        window_seconds: int,
+    ) -> None:
+        """Rate limit for auth email-code verification attempts."""
+        key = self._make_key(client_ip, purpose, sha256_text(email.lower().strip()))
+        self.check_and_record(
+            self.AUTH_EMAIL_CODE_VERIFY, key, limit, window_seconds, client_ip=client_ip
+        )
+
+    def check_phone_code_send(
+        self,
+        client_ip: str,
+        phone_number: str,
+        purpose: str,
+        limit: int,
+        window_seconds: int,
+    ) -> None:
+        """Rate limit for phone-code sends."""
+        key = self._make_key(client_ip, purpose, sha256_text(phone_number.strip()))
+        self.check_and_record(
+            self.AUTH_PHONE_CODE_SEND, key, limit, window_seconds, client_ip=client_ip
+        )
+
+    def check_phone_code_verify(
+        self,
+        client_ip: str,
+        phone_number: str,
+        purpose: str,
+        limit: int,
+        window_seconds: int,
+    ) -> None:
+        """Rate limit for phone-code verification attempts."""
+        key = self._make_key(client_ip, purpose, sha256_text(phone_number.strip()))
+        self.check_and_record(
+            self.AUTH_PHONE_CODE_VERIFY, key, limit, window_seconds, client_ip=client_ip
         )
 
     def check_backup_init(

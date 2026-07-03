@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from tests.conftest import register_user
+from tests.conftest import register_user, seed_email_verification_code
 
 
 class TestSecurityHeaders:
@@ -23,12 +23,14 @@ class TestSecurityHeaders:
         assert "camera=()" in response.headers.get("Permissions-Policy", "")
 
     def test_auth_response_no_cache(self, client):
+        code = seed_email_verification_code(client, "cache@example.com", "register")
         response = client.post(
             "/api/auth/register",
             json={
                 "email": "cache@example.com",
                 "password": "securepassword123",
                 "display_name": "Test",
+                "verification_code": code,
             },
         )
         assert response.status_code == 200

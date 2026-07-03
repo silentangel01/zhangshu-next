@@ -15,12 +15,25 @@ from app.schemas.cloud import (
     CloudConfirmDeleteRequest,
     CloudDeleteAccountRequest,
     CloudDiagnosticRunRequest,
+    CloudBindEmailCodeRequest,
+    CloudBindEmailRequest,
+    CloudBindPhoneCodeRequest,
+    CloudBindPhoneRequest,
+    CloudEmailCheckRequest,
+    CloudEmailCodeLoginRequest,
+    CloudPhoneCheckRequest,
+    CloudPhoneCodeLoginRequest,
+    CloudPhoneRegisterRequest,
     CloudEnableRequest,
     CloudLoginRequest,
     CloudNetworkSettingsRequest,
     CloudNetworkSettingsResponse,
+    CloudOAuthPollResponse,
+    CloudOAuthStartResponse,
     CloudProjectStatus,
     CloudRegisterRequest,
+    CloudSendEmailCodeRequest,
+    CloudSendPhoneCodeRequest,
     CloudUpdateProfileRequest,
 )
 from app.services.cloud_announcement_service import CloudAnnouncementService
@@ -110,7 +123,97 @@ def cloud_login(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except CloudAuthError as exc:
         raise HTTPException(
-            status_code=401, detail=_build_error_detail(exc)
+            status_code=exc.status_code or 401, detail=_build_error_detail(exc)
+        ) from exc
+
+
+@router.post("/api/cloud/auth/login/email-code")
+def cloud_login_with_email_code(
+    body: CloudEmailCodeLoginRequest,
+    service: CloudAuthService = Depends(get_auth_service),
+):
+    try:
+        return service.login_with_email_code(body.email, body.verification_code)
+    except CloudApiNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except CloudAuthError as exc:
+        raise HTTPException(
+            status_code=exc.status_code or 401, detail=_build_error_detail(exc)
+        ) from exc
+
+
+@router.post("/api/cloud/auth/login/phone-code")
+def cloud_login_with_phone_code(
+    body: CloudPhoneCodeLoginRequest,
+    service: CloudAuthService = Depends(get_auth_service),
+):
+    try:
+        return service.login_with_phone_code(body.phone_number, body.verification_code)
+    except CloudApiNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except CloudAuthError as exc:
+        raise HTTPException(
+            status_code=exc.status_code or 401, detail=_build_error_detail(exc)
+        ) from exc
+
+
+@router.post("/api/cloud/auth/email/check")
+def cloud_check_email(
+    body: CloudEmailCheckRequest,
+    service: CloudAuthService = Depends(get_auth_service),
+):
+    try:
+        return service.check_email_available(body.email)
+    except CloudApiNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except CloudAuthError as exc:
+        raise HTTPException(
+            status_code=exc.status_code or 400, detail=_build_error_detail(exc)
+        ) from exc
+
+
+@router.post("/api/cloud/auth/phone/check")
+def cloud_check_phone(
+    body: CloudPhoneCheckRequest,
+    service: CloudAuthService = Depends(get_auth_service),
+):
+    try:
+        return service.check_phone_available(body.phone_number)
+    except CloudApiNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except CloudAuthError as exc:
+        raise HTTPException(
+            status_code=exc.status_code or 400, detail=_build_error_detail(exc)
+        ) from exc
+
+
+@router.post("/api/cloud/auth/email-code/send")
+def cloud_send_email_code(
+    body: CloudSendEmailCodeRequest,
+    service: CloudAuthService = Depends(get_auth_service),
+):
+    try:
+        return service.send_email_code(body.email, body.purpose)
+    except CloudApiNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except CloudAuthError as exc:
+        raise HTTPException(
+            status_code=exc.status_code or 400, detail=_build_error_detail(exc)
+        ) from exc
+
+
+@router.post("/api/cloud/auth/phone-code/send")
+def cloud_send_phone_code(
+    body: CloudSendPhoneCodeRequest,
+    service: CloudAuthService = Depends(get_auth_service),
+):
+    try:
+        return service.send_phone_code(body.phone_number, body.purpose)
+    except CloudApiNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except CloudAuthError as exc:
+        raise HTTPException(
+            status_code=exc.status_code or 400, detail=_build_error_detail(exc)
         ) from exc
 
 
@@ -120,12 +223,67 @@ def cloud_register(
     service: CloudAuthService = Depends(get_auth_service),
 ):
     try:
-        return service.register(body.email, body.password, body.display_name)
+        return service.register(
+            body.email,
+            body.password,
+            body.display_name,
+            body.verification_code,
+        )
     except CloudApiNotConfiguredError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except CloudAuthError as exc:
         raise HTTPException(
-            status_code=400, detail=_build_error_detail(exc)
+            status_code=exc.status_code or 400, detail=_build_error_detail(exc)
+        ) from exc
+
+
+@router.post("/api/cloud/auth/register/phone")
+def cloud_register_with_phone(
+    body: CloudPhoneRegisterRequest,
+    service: CloudAuthService = Depends(get_auth_service),
+):
+    try:
+        return service.register_with_phone(
+            body.phone_number,
+            body.verification_code,
+            body.display_name,
+        )
+    except CloudApiNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except CloudAuthError as exc:
+        raise HTTPException(
+            status_code=exc.status_code or 400, detail=_build_error_detail(exc)
+        ) from exc
+
+
+@router.post("/api/cloud/auth/oauth/{provider}/start", response_model=CloudOAuthStartResponse)
+def cloud_oauth_start(
+    provider: str,
+    service: CloudAuthService = Depends(get_auth_service),
+):
+    try:
+        return service.start_oauth_login(provider)
+    except CloudApiNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except CloudAuthError as exc:
+        raise HTTPException(
+            status_code=exc.status_code or 400, detail=_build_error_detail(exc)
+        ) from exc
+
+
+@router.get("/api/cloud/auth/oauth/session/{session_id}", response_model=CloudOAuthPollResponse)
+def cloud_oauth_poll(
+    session_id: str,
+    poll_token: str,
+    service: CloudAuthService = Depends(get_auth_service),
+):
+    try:
+        return service.poll_oauth_login(session_id, poll_token)
+    except CloudApiNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except CloudAuthError as exc:
+        raise HTTPException(
+            status_code=exc.status_code or 400, detail=_build_error_detail(exc)
         ) from exc
 
 
@@ -296,6 +454,66 @@ def cloud_update_profile(
     except (CloudAuthError, CloudProfileError) as exc:
         raise HTTPException(
             status_code=400, detail=_build_error_detail(exc)
+        ) from exc
+
+
+@router.post("/api/cloud/account/bind/email-code/send")
+def cloud_send_bind_email_code(
+    body: CloudBindEmailCodeRequest,
+    service: CloudAuthService = Depends(get_auth_service),
+):
+    try:
+        return service.send_bind_email_code(body.email)
+    except CloudApiNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except CloudAuthError as exc:
+        raise HTTPException(
+            status_code=exc.status_code or 400, detail=_build_error_detail(exc)
+        ) from exc
+
+
+@router.post("/api/cloud/account/bind/phone-code/send")
+def cloud_send_bind_phone_code(
+    body: CloudBindPhoneCodeRequest,
+    service: CloudAuthService = Depends(get_auth_service),
+):
+    try:
+        return service.send_bind_phone_code(body.phone_number)
+    except CloudApiNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except CloudAuthError as exc:
+        raise HTTPException(
+            status_code=exc.status_code or 400, detail=_build_error_detail(exc)
+        ) from exc
+
+
+@router.post("/api/cloud/account/bind/email")
+def cloud_bind_email(
+    body: CloudBindEmailRequest,
+    service: CloudAuthService = Depends(get_auth_service),
+):
+    try:
+        return service.bind_email(body.email, body.verification_code)
+    except CloudApiNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except CloudAuthError as exc:
+        raise HTTPException(
+            status_code=exc.status_code or 400, detail=_build_error_detail(exc)
+        ) from exc
+
+
+@router.post("/api/cloud/account/bind/phone")
+def cloud_bind_phone(
+    body: CloudBindPhoneRequest,
+    service: CloudAuthService = Depends(get_auth_service),
+):
+    try:
+        return service.bind_phone(body.phone_number, body.verification_code)
+    except CloudApiNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except CloudAuthError as exc:
+        raise HTTPException(
+            status_code=exc.status_code or 400, detail=_build_error_detail(exc)
         ) from exc
 
 

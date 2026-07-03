@@ -122,6 +122,219 @@ def test_login_not_configured(client, mock_auth_service):
     assert response.status_code == 503
 
 
+def test_email_code_login_success(client, mock_auth_service):
+    mock_auth_service.login_with_email_code.return_value = {
+        "logged_in": True,
+        "cloud_available": True,
+        "email": "test@example.com",
+        "display_name": "test@example.com",
+    }
+
+    response = client.post(
+        "/api/cloud/auth/login/email-code",
+        json={"email": "test@example.com", "verification_code": "123456"},
+    )
+
+    assert response.status_code == 200
+    mock_auth_service.login_with_email_code.assert_called_once_with(
+        "test@example.com", "123456"
+    )
+
+
+def test_phone_code_login_success(client, mock_auth_service):
+    mock_auth_service.login_with_phone_code.return_value = {
+        "logged_in": True,
+        "cloud_available": True,
+        "email": None,
+        "phone_number": "+8613800138000",
+        "display_name": "138****8000",
+    }
+
+    response = client.post(
+        "/api/cloud/auth/login/phone-code",
+        json={"phone_number": "13800138000", "verification_code": "123456"},
+    )
+
+    assert response.status_code == 200
+    mock_auth_service.login_with_phone_code.assert_called_once_with(
+        "13800138000", "123456"
+    )
+
+
+def test_email_check_success(client, mock_auth_service):
+    mock_auth_service.check_email_available.return_value = {
+        "email": "test@example.com",
+        "available": True,
+    }
+
+    response = client.post(
+        "/api/cloud/auth/email/check",
+        json={"email": "test@example.com"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["available"] is True
+    mock_auth_service.check_email_available.assert_called_once_with("test@example.com")
+
+
+def test_phone_check_success(client, mock_auth_service):
+    mock_auth_service.check_phone_available.return_value = {
+        "phone_number": "+8613800138000",
+        "available": True,
+    }
+
+    response = client.post(
+        "/api/cloud/auth/phone/check",
+        json={"phone_number": "13800138000"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["available"] is True
+    mock_auth_service.check_phone_available.assert_called_once_with("13800138000")
+
+
+def test_send_email_code_success(client, mock_auth_service):
+    mock_auth_service.send_email_code.return_value = {
+        "ok": True,
+        "expires_in_seconds": 600,
+        "cooldown_seconds": 60,
+    }
+
+    response = client.post(
+        "/api/cloud/auth/email-code/send",
+        json={"email": "test@example.com", "purpose": "register"},
+    )
+
+    assert response.status_code == 200
+    mock_auth_service.send_email_code.assert_called_once_with(
+        "test@example.com", "register"
+    )
+
+
+def test_send_phone_code_success(client, mock_auth_service):
+    mock_auth_service.send_phone_code.return_value = {
+        "ok": True,
+        "expires_in_seconds": 600,
+        "cooldown_seconds": 60,
+    }
+
+    response = client.post(
+        "/api/cloud/auth/phone-code/send",
+        json={"phone_number": "13800138000", "purpose": "register"},
+    )
+
+    assert response.status_code == 200
+    mock_auth_service.send_phone_code.assert_called_once_with(
+        "13800138000", "register"
+    )
+
+
+def test_register_passes_verification_code(client, mock_auth_service):
+    mock_auth_service.register.return_value = {
+        "logged_in": True,
+        "cloud_available": True,
+        "email": "test@example.com",
+        "display_name": "Test",
+    }
+
+    response = client.post(
+        "/api/cloud/auth/register",
+        json={
+            "email": "test@example.com",
+            "password": "securepassword123",
+            "display_name": "Test",
+            "verification_code": "123456",
+        },
+    )
+
+    assert response.status_code == 200
+    mock_auth_service.register.assert_called_once_with(
+        "test@example.com", "securepassword123", "Test", "123456"
+    )
+
+
+def test_register_phone_passes_verification_code(client, mock_auth_service):
+    mock_auth_service.register_with_phone.return_value = {
+        "logged_in": True,
+        "cloud_available": True,
+        "email": None,
+        "phone_number": "+8613800138000",
+        "display_name": "Test",
+    }
+
+    response = client.post(
+        "/api/cloud/auth/register/phone",
+        json={
+            "phone_number": "13800138000",
+            "display_name": "Test",
+            "verification_code": "123456",
+        },
+    )
+
+    assert response.status_code == 200
+    mock_auth_service.register_with_phone.assert_called_once_with(
+        "13800138000", "123456", "Test"
+    )
+
+
+def test_oauth_start_success(client, mock_auth_service):
+    mock_auth_service.start_oauth_login.return_value = {
+        "provider": "wechat",
+        "authorization_url": "https://open.weixin.qq.com/connect/qrconnect",
+        "session_id": "session-1",
+        "poll_token": "poll-1",
+        "expires_in_seconds": 600,
+    }
+
+    response = client.post("/api/cloud/auth/oauth/wechat/start")
+
+    assert response.status_code == 200
+    assert response.json()["session_id"] == "session-1"
+    mock_auth_service.start_oauth_login.assert_called_once_with("wechat")
+
+
+def test_oauth_poll_success(client, mock_auth_service):
+    mock_auth_service.poll_oauth_login.return_value = {
+        "status": "completed",
+        "logged_in": True,
+        "cloud_available": True,
+        "email": None,
+        "display_name": "微信用户",
+        "phone_number": None,
+    }
+
+    response = client.get(
+        "/api/cloud/auth/oauth/session/session-1",
+        params={"poll_token": "poll-1"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "completed"
+    mock_auth_service.poll_oauth_login.assert_called_once_with("session-1", "poll-1")
+
+
+def test_bind_phone_success(client, mock_auth_service):
+    mock_auth_service.bind_phone.return_value = {
+        "id": "user-1",
+        "email": "test@example.com",
+        "phone_number": "+8613800138000",
+        "display_name": "Test",
+        "signature": None,
+        "avatar_url": None,
+        "avatar_updated_at": None,
+        "password_changed_at": None,
+        "created_at": "2026-01-01T00:00:00Z",
+    }
+
+    response = client.post(
+        "/api/cloud/account/bind/phone",
+        json={"phone_number": "13800138000", "verification_code": "123456"},
+    )
+
+    assert response.status_code == 200
+    mock_auth_service.bind_phone.assert_called_once_with("13800138000", "123456")
+
+
 # ── Logout ────────────────────────────────────────────────────────
 
 

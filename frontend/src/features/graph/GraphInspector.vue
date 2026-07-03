@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { reactive } from 'vue'
+
 import type {
   GraphEdge,
   GraphEdgeDirection,
@@ -83,6 +85,26 @@ const reverseCreationLabels: Partial<Record<GraphNodeType, string>> = {
   clue: '创建对应伏笔',
 }
 
+// ---------------------------------------------------------------------------
+// Section collapse state (style & position collapsed by default)
+// ---------------------------------------------------------------------------
+
+const sectionOpen = reactive({
+  description: true,
+  binding: true,
+  style: false,
+  endpoints: true,
+  relation: true,
+})
+
+function toggleSection(key: keyof typeof sectionOpen) {
+  sectionOpen[key] = !sectionOpen[key]
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
 function getBindingList(
   options: Record<'character' | 'setting' | 'clue' | 'timeline_event', BindingOption[]>,
   boundType: GraphNodeBoundType | null,
@@ -104,126 +126,181 @@ function handleCreateFromBinding(boundType: Exclude<GraphNodeBoundType, 'custom'
 
 <template>
   <aside class="graph-inspector" data-graph-inspector="true">
+    <!-- ================================================================ -->
+    <!-- NODE EDITING                                                     -->
+    <!-- ================================================================ -->
     <template v-if="selectedNode">
       <header class="inspector-header">
-        <p>节点详情</p>
-        <h2>{{ selectedNode.title }}</h2>
+        <div class="header-row">
+          <span class="type-badge">{{ graphNodeTypeLabels[nodeDraft.node_type] }}</span>
+        </div>
+        <h2 class="node-title">{{ selectedNode.title }}</h2>
+        <p v-if="nodeDraft.summary" class="node-summary">{{ nodeDraft.summary }}</p>
       </header>
 
-      <section class="field-section">
-        <h3>基础信息</h3>
-        <div class="form-grid">
-          <label class="wide"><span>标题</span><input v-model.trim="nodeDraft.title" type="text" /></label>
-          <label><span>类型</span><select v-model="nodeDraft.node_type"><option v-for="type in nodeTypes" :key="type" :value="type">{{ graphNodeTypeLabels[type] }}</option></select></label>
-          <label><span>可见性</span><select v-model="nodeDraft.visibility"><option v-for="item in visibilityOptions" :key="item" :value="item">{{ graphVisibilityLabels[item] }}</option></select></label>
-          <label class="wide"><span>简介</span><textarea v-model="nodeDraft.summary" rows="4" /></label>
-        </div>
+      <!-- Description -->
+      <section class="inspector-section">
+        <button type="button" class="section-header" @click="toggleSection('description')">
+          <span class="chevron" :class="{ open: sectionOpen.description }">▾</span>
+          <span class="section-name">描述</span>
+        </button>
+        <Transition name="section-body">
+          <div v-if="sectionOpen.description" class="section-body">
+            <div class="form-grid">
+              <label><span>类型</span><select v-model="nodeDraft.node_type"><option v-for="type in nodeTypes" :key="type" :value="type">{{ graphNodeTypeLabels[type] }}</option></select></label>
+              <label><span>可见性</span><select v-model="nodeDraft.visibility"><option v-for="item in visibilityOptions" :key="item" :value="item">{{ graphVisibilityLabels[item] }}</option></select></label>
+              <label class="wide"><span>简介</span><textarea v-model="nodeDraft.summary" rows="4" /></label>
+            </div>
+          </div>
+        </Transition>
       </section>
 
-      <section class="field-section">
-        <h3>绑定资料</h3>
-        <div class="form-grid">
-          <label>
-            <span>绑定对象类型</span>
-            <select v-model="nodeDraft.bound_type" @change="emit('boundTypeChanged')">
-              <option v-for="type in boundTypes" :key="type || 'none'" :value="type || null">
-                {{ type ? graphNodeBoundTypeLabels[type] : '未绑定' }}
-              </option>
-            </select>
-          </label>
-          <label v-if="nodeDraft.bound_type && nodeDraft.bound_type !== 'custom'" class="wide">
-            <span>绑定对象</span>
-            <select v-model="nodeDraft.bound_id" @change="emit('boundSelectionChanged')">
-              <option value="">请选择绑定对象</option>
-              <option v-for="item in getBindingList(bindingOptions, nodeDraft.bound_type)" :key="item.id" :value="item.id">{{ item.label }}</option>
-            </select>
-          </label>
-          <label v-else class="wide"><span>绑定对象</span><input v-model.trim="nodeDraft.bound_id" type="text" placeholder="可选" /></label>
-          <p v-if="nodeDraft.bound_type && nodeDraft.bound_type !== 'custom' && !nodeDraft.bound_id" class="hint wide">请选择绑定对象</p>
-          <button
-            v-if="nodeDraft.bound_type && nodeDraft.bound_type !== 'custom' && nodeDraft.bound_id"
-            type="button"
-            class="wide"
-            :disabled="isSaving"
-            @click="emit('syncFromBound')"
-          >
-            从绑定资料同步
-          </button>
-          <button
-            v-if="canCreateMaterialFromNode(selectedNode)"
-            type="button"
-            class="wide"
-            :disabled="isSaving || !nodeDraft.title.trim()"
-            @click="emit('createMaterialFromNode')"
-          >
-            {{ reverseCreationLabels[selectedNode.node_type] }}
-          </button>
-        </div>
+      <!-- Binding -->
+      <section class="inspector-section">
+        <button type="button" class="section-header" @click="toggleSection('binding')">
+          <span class="chevron" :class="{ open: sectionOpen.binding }">▾</span>
+          <span class="section-name">绑定资料</span>
+          <span v-if="nodeDraft.bound_type" class="section-count">已绑定</span>
+        </button>
+        <Transition name="section-body">
+          <div v-if="sectionOpen.binding" class="section-body">
+            <div class="form-grid">
+              <label>
+                <span>绑定类型</span>
+                <select v-model="nodeDraft.bound_type" @change="emit('boundTypeChanged')">
+                  <option v-for="type in boundTypes" :key="type || 'none'" :value="type || null">
+                    {{ type ? graphNodeBoundTypeLabels[type] : '未绑定' }}
+                  </option>
+                </select>
+              </label>
+              <label v-if="nodeDraft.bound_type && nodeDraft.bound_type !== 'custom'" class="wide">
+                <span>绑定对象</span>
+                <select v-model="nodeDraft.bound_id" @change="emit('boundSelectionChanged')">
+                  <option value="">请选择绑定对象</option>
+                  <option v-for="item in getBindingList(bindingOptions, nodeDraft.bound_type)" :key="item.id" :value="item.id">{{ item.label }}</option>
+                </select>
+              </label>
+              <label v-else class="wide"><span>绑定对象</span><input v-model.trim="nodeDraft.bound_id" type="text" placeholder="可选" /></label>
+              <p v-if="nodeDraft.bound_type && nodeDraft.bound_type !== 'custom' && !nodeDraft.bound_id" class="hint wide">请选择绑定对象</p>
+              <button
+                v-if="nodeDraft.bound_type && nodeDraft.bound_type !== 'custom' && nodeDraft.bound_id"
+                type="button"
+                class="wide action-button"
+                :disabled="isSaving"
+                @click="emit('syncFromBound')"
+              >
+                从绑定资料同步
+              </button>
+              <button
+                v-if="canCreateMaterialFromNode(selectedNode)"
+                type="button"
+                class="wide action-button"
+                :disabled="isSaving || !nodeDraft.title.trim()"
+                @click="emit('createMaterialFromNode')"
+              >
+                {{ reverseCreationLabels[selectedNode.node_type] }}
+              </button>
+            </div>
+          </div>
+        </Transition>
       </section>
 
-      <section class="field-section">
-        <h3>样式与位置</h3>
-        <div class="form-grid">
-          <label><span>颜色</span><input v-model.trim="nodeDraft.color" type="text" placeholder="#4f7cff" /></label>
-          <label><span>大小预设</span><select v-model.number="nodeDraft.size" @change="emit('sizePresetChanged')"><option :value="1">1</option><option :value="2">2</option><option :value="3">3</option></select></label>
-          <label><span>宽度</span><input v-model.number="nodeDraft.width" min="80" max="420" type="number" /></label>
-          <label><span>高度</span><input v-model.number="nodeDraft.height" min="40" max="260" type="number" /></label>
-          <label><span>x</span><input v-model.number="nodeDraft.x" type="number" /></label>
-          <label><span>y</span><input v-model.number="nodeDraft.y" type="number" /></label>
-        </div>
+      <!-- Style & Position (collapsed by default) -->
+      <section class="inspector-section">
+        <button type="button" class="section-header" @click="toggleSection('style')">
+          <span class="chevron" :class="{ open: sectionOpen.style }">▾</span>
+          <span class="section-name">样式与位置</span>
+        </button>
+        <Transition name="section-body">
+          <div v-if="sectionOpen.style" class="section-body">
+            <div class="form-grid">
+              <label><span>颜色</span><input v-model.trim="nodeDraft.color" type="text" placeholder="#4f7cff" /></label>
+              <label><span>大小预设</span><select v-model.number="nodeDraft.size" @change="emit('sizePresetChanged')"><option :value="1">1</option><option :value="2">2</option><option :value="3">3</option></select></label>
+              <label><span>宽度</span><input v-model.number="nodeDraft.width" min="80" max="420" type="number" /></label>
+              <label><span>高度</span><input v-model.number="nodeDraft.height" min="40" max="260" type="number" /></label>
+              <label><span>X</span><input v-model.number="nodeDraft.x" type="number" /></label>
+              <label><span>Y</span><input v-model.number="nodeDraft.y" type="number" /></label>
+            </div>
+          </div>
+        </Transition>
       </section>
 
-      <div class="actions">
-        <button type="button" class="primary" :disabled="isSaving || !nodeDraft.title.trim()" @click="emit('saveNode')">保存</button>
-        <button type="button" :disabled="!selectedNode.bound_type || !selectedNode.bound_id" @click="emit('openBound')">打开绑定资料</button>
-        <button type="button" class="danger" :disabled="isSaving" @click="emit('deleteNode')">删除</button>
+      <div class="inspector-actions">
+        <button type="button" class="action-primary" :disabled="isSaving || !nodeDraft.title.trim()" @click="emit('saveNode')">保存</button>
+        <button type="button" class="action-secondary" :disabled="!selectedNode.bound_type || !selectedNode.bound_id" @click="emit('openBound')">打开绑定资料</button>
+        <button type="button" class="action-danger" :disabled="isSaving" @click="emit('deleteNode')">删除</button>
       </div>
     </template>
 
+    <!-- ================================================================ -->
+    <!-- EDGE EDITING                                                     -->
+    <!-- ================================================================ -->
     <template v-else-if="selectedEdge">
       <header class="inspector-header">
-        <p>关系详情</p>
-        <h2>{{ selectedEdge.label || graphEdgeRelationLabels[selectedEdge.relation_type] }}</h2>
+        <div class="header-row">
+          <span class="type-badge edge-badge">关系</span>
+        </div>
+        <h2 class="node-title">{{ selectedEdge.label || graphEdgeRelationLabels[selectedEdge.relation_type] }}</h2>
       </header>
 
-      <section class="field-section">
-        <h3>端点</h3>
-        <div class="form-grid">
-          <label class="wide"><span>起点节点</span><select v-model="edgeDraft.from_node_id"><option v-for="node in nodes" :key="node.id" :value="node.id">{{ node.title }}</option></select></label>
-          <label class="wide"><span>终点节点</span><select v-model="edgeDraft.to_node_id"><option v-for="node in nodes" :key="node.id" :value="node.id">{{ node.title }}</option></select></label>
-        </div>
+      <!-- Endpoints -->
+      <section class="inspector-section">
+        <button type="button" class="section-header" @click="toggleSection('endpoints')">
+          <span class="chevron" :class="{ open: sectionOpen.endpoints }">▾</span>
+          <span class="section-name">端点</span>
+        </button>
+        <Transition name="section-body">
+          <div v-if="sectionOpen.endpoints" class="section-body">
+            <div class="form-grid">
+              <label class="wide"><span>起点节点</span><select v-model="edgeDraft.from_node_id"><option v-for="node in nodes" :key="node.id" :value="node.id">{{ node.title }}</option></select></label>
+              <label class="wide"><span>终点节点</span><select v-model="edgeDraft.to_node_id"><option v-for="node in nodes" :key="node.id" :value="node.id">{{ node.title }}</option></select></label>
+            </div>
+          </div>
+        </Transition>
       </section>
 
-      <section class="field-section">
-        <h3>关系属性</h3>
-        <div class="form-grid">
-          <label><span>关系类型</span><select v-model="edgeDraft.relation_type"><option v-for="type in relationTypes" :key="type" :value="type">{{ graphEdgeRelationLabels[type] }}</option></select></label>
-          <label><span>方向</span><select v-model="edgeDraft.direction"><option v-for="item in directions" :key="item" :value="item">{{ graphEdgeDirectionLabels[item] }}</option></select></label>
-          <label><span>强度</span><input v-model.number="edgeDraft.strength" min="1" max="5" type="number" /></label>
-          <label><span>线条样式</span><select v-model="edgeDraft.line_style"><option v-for="item in lineStyles" :key="item" :value="item">{{ graphEdgeLineStyleLabels[item] }}</option></select></label>
-          <label class="wide"><span>标签</span><input v-model.trim="edgeDraft.label" type="text" /></label>
-          <label><span>可见性</span><select v-model="edgeDraft.visibility"><option v-for="item in visibilityOptions" :key="item" :value="item">{{ graphVisibilityLabels[item] }}</option></select></label>
-          <label class="wide"><span>批注</span><textarea v-model="edgeDraft.note" rows="4" /></label>
-        </div>
+      <!-- Relation Properties -->
+      <section class="inspector-section">
+        <button type="button" class="section-header" @click="toggleSection('relation')">
+          <span class="chevron" :class="{ open: sectionOpen.relation }">▾</span>
+          <span class="section-name">关系属性</span>
+        </button>
+        <Transition name="section-body">
+          <div v-if="sectionOpen.relation" class="section-body">
+            <div class="form-grid">
+              <label><span>关系类型</span><select v-model="edgeDraft.relation_type"><option v-for="type in relationTypes" :key="type" :value="type">{{ graphEdgeRelationLabels[type] }}</option></select></label>
+              <label><span>方向</span><select v-model="edgeDraft.direction"><option v-for="item in directions" :key="item" :value="item">{{ graphEdgeDirectionLabels[item] }}</option></select></label>
+              <label><span>强度</span><input v-model.number="edgeDraft.strength" min="1" max="5" type="number" /></label>
+              <label><span>线条样式</span><select v-model="edgeDraft.line_style"><option v-for="item in lineStyles" :key="item" :value="item">{{ graphEdgeLineStyleLabels[item] }}</option></select></label>
+              <label class="wide"><span>标签</span><input v-model.trim="edgeDraft.label" type="text" /></label>
+              <label><span>可见性</span><select v-model="edgeDraft.visibility"><option v-for="item in visibilityOptions" :key="item" :value="item">{{ graphVisibilityLabels[item] }}</option></select></label>
+              <label class="wide"><span>批注</span><textarea v-model="edgeDraft.note" rows="4" /></label>
+            </div>
+          </div>
+        </Transition>
       </section>
 
-      <div class="actions">
-        <button type="button" class="primary" :disabled="isSaving || edgeDraft.from_node_id === edgeDraft.to_node_id" @click="emit('saveEdge')">保存</button>
-        <button type="button" class="danger" :disabled="isSaving" @click="emit('deleteEdge')">删除</button>
+      <div class="inspector-actions">
+        <button type="button" class="action-primary" :disabled="isSaving || edgeDraft.from_node_id === edgeDraft.to_node_id" @click="emit('saveEdge')">保存</button>
+        <button type="button" class="action-danger" :disabled="isSaving" @click="emit('deleteEdge')">删除</button>
       </div>
     </template>
 
+    <!-- ================================================================ -->
+    <!-- EMPTY STATE                                                      -->
+    <!-- ================================================================ -->
     <template v-else>
-      <section class="placeholder">
-        <h2>请选择节点或关系。</h2>
-        <p>可从资料创建节点。</p>
-      </section>
+      <p class="empty-hint">选择画布上的节点或关系以编辑属性。</p>
       <GraphBindingPanel :options="bindingOptions" @create-from-binding="handleCreateFromBinding" />
     </template>
   </aside>
 </template>
 
 <style scoped>
+/* =========================================================================
+   Graph Inspector v2 — Professional writing-tool inspector
+   ========================================================================= */
+
 .graph-inspector {
   display: grid;
   align-content: start;
@@ -236,48 +313,126 @@ function handleCreateFromBinding(boundType: Exclude<GraphNodeBoundType, 'custom'
   overflow: auto;
 }
 
-.inspector-header,
-.field-section {
-  display: grid;
-  gap: 8px;
-}
+/* --- Header --- */
 
 .inspector-header {
+  display: grid;
+  gap: 6px;
+  padding-bottom: var(--zs-space-3);
   border-bottom: 1px solid var(--zs-color-border-soft);
-  padding-bottom: 10px;
 }
 
-.inspector-header p,
-.inspector-header h2,
-.field-section h3,
-.placeholder h2,
-.placeholder p,
-.hint {
+.header-row {
+  display: flex;
+  align-items: center;
+  gap: var(--zs-space-2);
+}
+
+.type-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--zs-radius-sm);
+  padding: 2px 8px;
+  background: var(--zs-color-primary-soft);
+  color: var(--zs-color-primary);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.edge-badge {
+  background: var(--zs-module-graph);
+  color: #fff;
+}
+
+.node-title {
   margin: 0;
-}
-
-.inspector-header p {
-  color: var(--zs-color-text-muted);
-  font-size: 0.76rem;
-  font-weight: 900;
-}
-
-.inspector-header h2,
-.placeholder h2 {
   color: var(--zs-color-text);
-  font-size: 1rem;
+  font-size: 1.3rem;
+  font-weight: 700;
+  line-height: 1.3;
+  word-break: break-word;
 }
 
-.field-section {
+.node-summary {
+  margin: 0;
+  color: var(--zs-color-text-muted);
+  font-size: 0.84rem;
+  font-style: italic;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* --- Collapsible sections --- */
+
+.inspector-section {
   border: 1px solid var(--zs-color-border-soft);
   border-radius: var(--zs-radius-md);
-  padding: 10px;
-  background: var(--zs-color-surface-soft);
+  overflow: hidden;
 }
 
-.field-section h3 {
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 36px;
+  border: none;
+  border-radius: 0;
+  padding: 6px 10px;
+  background: var(--zs-color-surface-soft);
   color: var(--zs-color-text);
-  font-size: 0.84rem;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--zs-duration-fast) var(--zs-ease-standard);
+}
+
+.section-header:hover {
+  background: var(--zs-color-surface-muted);
+}
+
+.chevron {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 14px;
+  color: var(--zs-color-text-faint);
+  font-size: 0.7rem;
+  text-align: center;
+  transition: transform 0.2s ease;
+}
+
+.chevron.open {
+  transform: rotate(0deg);
+}
+
+.chevron:not(.open) {
+  transform: rotate(-90deg);
+}
+
+.section-name {
+  color: var(--zs-color-text);
+  font-weight: 700;
+}
+
+.section-count {
+  margin-left: auto;
+  border-radius: var(--zs-radius-sm);
+  padding: 1px 6px;
+  background: var(--zs-color-primary-soft);
+  color: var(--zs-color-primary);
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+
+/* Section body + form grid */
+
+.section-body {
+  padding: 10px;
 }
 
 .form-grid {
@@ -286,31 +441,32 @@ function handleCreateFromBinding(boundType: Exclude<GraphNodeBoundType, 'custom'
   gap: 10px;
 }
 
+/* --- Form fields --- */
+
 label {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
+}
+
+label > span {
+  color: var(--zs-color-text-faint);
+  font-size: 0.74rem;
+  font-weight: 700;
 }
 
 .wide {
   grid-column: 1 / -1;
 }
 
-span {
-  color: var(--zs-color-text-muted);
-  font-size: 0.78rem;
-  font-weight: 800;
-}
-
 input,
 select,
-textarea,
-button {
+textarea {
   width: 100%;
   box-sizing: border-box;
   border: 1px solid var(--zs-color-border);
   border-radius: var(--zs-radius-sm);
-  padding: 8px 10px;
+  padding: 7px 10px;
   background: var(--zs-color-surface);
   color: var(--zs-color-text);
   font: inherit;
@@ -318,56 +474,134 @@ button {
 }
 
 textarea {
-  line-height: 1.6;
+  line-height: 1.7;
   resize: vertical;
 }
 
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--zs-color-primary);
+  outline: none;
+}
+
 .hint {
+  margin: 0;
   color: var(--zs-color-warning);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
 }
 
-.actions {
+/* --- Action buttons within sections (sync, reverse create) --- */
+
+.action-button {
+  min-height: 32px;
+  border-color: var(--zs-color-border) !important;
+  background: var(--zs-color-surface) !important;
+  color: var(--zs-color-primary) !important;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color var(--zs-duration-fast) var(--zs-ease-standard),
+    background var(--zs-duration-fast) var(--zs-ease-standard);
+}
+
+.action-button:hover:not(:disabled) {
+  border-color: var(--zs-color-primary) !important;
+  background: var(--zs-color-primary-soft) !important;
+}
+
+/* --- Sticky action bar --- */
+
+.inspector-actions {
   display: flex;
-  flex-wrap: wrap;
   gap: 8px;
+  padding-top: var(--zs-space-3);
+  border-top: 1px solid var(--zs-color-border-soft);
+  position: sticky;
+  bottom: 0;
+  background: var(--zs-color-surface);
+  z-index: 2;
 }
 
-button {
-  width: auto;
-  font-weight: 800;
+.inspector-actions button {
+  min-height: 34px;
+  border-radius: var(--zs-radius-sm);
+  padding: 0 12px;
+  font-size: 0.82rem;
+  font-weight: 700;
   cursor: pointer;
 }
 
-button.primary {
-  border-color: var(--zs-color-primary);
+.action-primary {
+  border: 1px solid var(--zs-color-primary);
   background: var(--zs-color-primary);
   color: var(--zs-color-on-primary);
 }
 
-button.danger {
-  border-color: var(--zs-color-danger);
+.action-primary:hover:not(:disabled) {
+  background: var(--zs-color-primary-hover);
+  border-color: var(--zs-color-primary-hover);
+}
+
+.action-secondary {
+  border: 1px solid var(--zs-color-border);
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
+}
+
+.action-secondary:hover:not(:disabled) {
+  border-color: var(--zs-color-border-strong);
+  background: var(--zs-color-surface-soft);
+}
+
+.action-danger {
+  border: 1px solid var(--zs-color-danger);
   background: var(--zs-color-danger-soft);
   color: var(--zs-color-danger);
 }
 
-button:disabled {
+.action-danger:hover:not(:disabled) {
+  background: var(--zs-color-danger);
+  color: var(--zs-color-on-primary);
+}
+
+.inspector-actions button:disabled {
   cursor: not-allowed;
-  opacity: 0.55;
+  opacity: 0.5;
 }
 
-.placeholder {
-  display: grid;
-  gap: 8px;
-  border: 1px dashed var(--zs-color-border);
-  border-radius: var(--zs-radius-md);
-  padding: 14px;
-  background: var(--zs-color-surface-soft);
-}
+/* --- Empty state --- */
 
-.placeholder p {
-  color: var(--zs-color-text-muted);
+.empty-hint {
+  margin: 0;
+  padding: var(--zs-space-3) var(--zs-space-2);
+  color: var(--zs-color-text-faint);
   font-size: 0.84rem;
-  font-weight: 800;
+  text-align: center;
+}
+
+/* --- Section body transition --- */
+
+.section-body-expand-enter-active,
+.section-body-expand-leave-active {
+  transition:
+    max-height 0.2s ease,
+    opacity 0.15s ease,
+    padding 0.2s ease;
+  overflow: hidden;
+}
+
+.section-body-expand-enter-from,
+.section-body-expand-leave-to {
+  max-height: 0;
+  opacity: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.section-body-expand-enter-to,
+.section-body-expand-leave-from {
+  max-height: 600px;
+  opacity: 1;
 }
 </style>

@@ -70,6 +70,27 @@ export function parseApiErrorPayload(
   return { message, suggestion, errorKind }
 }
 
+/**
+ * Format an unknown error value into a user-readable message string.
+ *
+ * - `ApiError` → use `error.message`; append `suggestion` if present.
+ * - Plain `Error` → use `error.message`.
+ * - Anything else → return the provided `fallback`.
+ *
+ * This is a shared utility so every page does not need its own
+ * error-formatting helper.
+ */
+export function formatApiErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof ApiError) {
+    const message = error.message || fallback
+    return error.suggestion ? `${message} ${error.suggestion}` : message
+  }
+  if (error instanceof Error && error.message) {
+    return error.message
+  }
+  return fallback
+}
+
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const headers = new Headers(options.headers)
 

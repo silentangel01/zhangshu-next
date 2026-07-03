@@ -179,6 +179,13 @@ const saveStatusText = computed(() => {
   }
   return statusText[saveStatus.value]
 })
+const saveStatusIndicator = computed(() => {
+  if (isManualSaving.value || isAutosaving.value) return 'saving'
+  if (saveStatus.value === 'autosave-failed' || saveStatus.value === 'manual-save-failed') return 'error'
+  if (saveStatus.value === 'offline') return 'offline'
+  if (hasUnsavedChanges.value) return 'dirty'
+  return 'saved'
+})
 const editorStyle = computed(() => ({
   fontFamily: getEditorFontFamily(appearanceSettings.value),
   fontSize: `${appearanceSettings.value.fontSize}px`,
@@ -767,7 +774,7 @@ function getEditorMaxWidth(width: EditorWidth) {
   const widths: Record<EditorWidth, string> = {
     standard: '760px',
     wide: '920px',
-    full: 'min(100%, 920px)',
+    full: '100%',
   }
   return widths[width]
 }
@@ -852,23 +859,24 @@ function clearFormattingUndo() {
 <template>
   <section class="chapter-editor" aria-label="章节编辑器">
     <header class="editor-toolbar">
-      <div class="editor-title">
-        <h2>{{ chapter.title }}</h2>
-        <div class="writing-status-line" aria-label="写作状态">
-          <span>当前字数 {{ localWordCount }}</span>
-          <span aria-hidden="true">｜</span>
-          <span>今日字数 --</span>
-          <span aria-hidden="true">｜</span>
-          <span>本小时 --</span>
-          <span aria-hidden="true">｜</span>
-          <span>本次写作 {{ sessionWritingMinutes }} 分钟</span>
-          <span aria-hidden="true">｜</span>
-          <span>速度 {{ sessionSpeedText }}<template v-if="sessionSpeedText !== '--'"> 字/小时</template></span>
-          <span aria-hidden="true">｜</span>
-          <span>上次保存 {{ formattedLastSavedAt }}</span>
-          <span aria-hidden="true">｜</span>
-          <span :class="{ warning: hasUnsavedChanges || errorMessage }">{{ saveStatusText }}</span>
+      <div class="editor-title-row">
+        <div class="editor-title">
+          <h2>{{ chapter.title }}</h2>
         </div>
+        <div class="save-indicator" :class="saveStatusIndicator">
+          <span class="save-dot"></span>
+          <span class="save-text">{{ saveStatusText }}</span>
+        </div>
+      </div>
+      <div class="writing-stats" aria-label="写作统计">
+        <span>{{ localWordCount }} 字</span>
+        <span class="stats-sep">·</span>
+        <span>{{ sessionWritingMinutes }} 分钟</span>
+        <span class="stats-sep">·</span>
+        <span v-if="sessionSpeedText !== '--'">{{ sessionSpeedText }} 字/时</span>
+        <span v-else>-- 字/时</span>
+        <span class="stats-sep">·</span>
+        <span>保存于 {{ formattedLastSavedAt }}</span>
       </div>
     </header>
 
@@ -1078,36 +1086,80 @@ function clearFormattingUndo() {
 }
 
 .editor-toolbar {
-  display: block;
+  display: grid;
+  gap: var(--zs-space-1);
+  margin-bottom: var(--zs-space-1);
+}
+
+.editor-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--zs-space-3);
 }
 
 .editor-title {
-  display: grid;
-  gap: var(--zs-space-1);
+  min-width: 0;
 }
 
 .editor-title h2 {
   margin: 0;
   color: var(--zs-color-text);
-  font-size: 1rem;
+  font-size: 1.12rem;
   font-weight: 700;
-  line-height: 1.35;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.writing-status-line {
-  margin: 0;
-  color: var(--zs-color-text-muted);
+.save-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
   font-size: 0.78rem;
+  color: var(--zs-color-text-muted);
+}
+
+.save-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background-color 0.3s;
+}
+
+.save-indicator.saved .save-dot { background: var(--zs-color-success); }
+.save-indicator.dirty .save-dot { background: var(--zs-color-warning); }
+.save-indicator.saving .save-dot { background: var(--zs-color-info); animation: pulse 1s infinite; }
+.save-indicator.error .save-dot { background: var(--zs-color-danger); }
+.save-indicator.offline .save-dot { background: var(--zs-color-text-faint); }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.save-indicator.error .save-text {
+  color: var(--zs-color-danger);
+  font-weight: 600;
+}
+
+.writing-stats {
   display: flex;
   flex-wrap: wrap;
-  gap: 2px var(--zs-space-2);
+  gap: var(--zs-space-1);
   align-items: center;
-  line-height: 1.45;
+  color: var(--zs-color-text-faint);
+  font-size: 0.76rem;
+  line-height: 1.4;
 }
 
-.writing-status-line .warning {
-  color: var(--zs-color-warning);
-  font-weight: 700;
+.stats-sep {
+  color: var(--zs-color-border);
+  user-select: none;
 }
 
 .recovery-banner {
@@ -1199,10 +1251,18 @@ function clearFormattingUndo() {
   gap: var(--zs-space-1) var(--zs-space-2);
   align-items: center;
   margin-bottom: var(--zs-space-2);
-  padding-bottom: var(--zs-space-2);
-  border-bottom: 1px solid var(--zs-color-border-soft);
+  padding: var(--zs-space-1) var(--zs-space-2);
+  border-radius: var(--zs-radius-sm);
+  background: var(--zs-color-surface-soft);
   color: var(--zs-color-text-faint);
   font-size: 0.78rem;
+  opacity: 0.85;
+  transition: opacity 0.2s;
+}
+
+.writing-toolbar:hover,
+.writing-toolbar:focus-within {
+  opacity: 1;
 }
 
 .writing-toolbar label {
@@ -1313,22 +1373,23 @@ function clearFormattingUndo() {
 
 .editor-textarea {
   width: 100%;
-  min-height: clamp(420px, calc(100vh - 270px), 760px);
+  min-height: clamp(420px, calc(100vh - 220px), 760px);
   box-sizing: border-box;
-  border: 1px solid var(--zs-color-border-soft);
-  border-radius: var(--zs-radius-sm);
-  padding: 24px 28px;
+  border: none;
+  border-radius: 0;
+  padding: 32px 40px;
   resize: vertical;
-  background: var(--zs-color-surface);
+  background: var(--zs-color-canvas);
   color: var(--zs-color-text);
   font: inherit;
   white-space: pre-wrap;
   line-height: 1.8;
+  box-shadow: inset 0 -1px 0 var(--zs-color-canvas-border);
 }
 
 .editor-textarea:focus {
-  border-color: var(--zs-color-border-strong);
   outline: none;
+  box-shadow: inset 0 -1px 0 var(--zs-color-canvas-border), 0 0 0 1px var(--zs-color-border-soft);
 }
 
 .editor-messages {
@@ -1378,13 +1439,17 @@ function clearFormattingUndo() {
     align-items: center;
   }
 
-  .writing-status-line {
+  .writing-stats {
     font-size: 0.72rem;
   }
 
   .editor-textarea {
-    min-height: clamp(380px, calc(100vh - 280px), 680px);
-    padding: 20px 22px;
+    min-height: clamp(360px, calc(100vh - 240px), 680px);
+    padding: 24px 28px;
+  }
+
+  .editor-title h2 {
+    font-size: 1rem;
   }
 }
 

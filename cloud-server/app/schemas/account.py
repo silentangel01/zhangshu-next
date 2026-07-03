@@ -4,12 +4,19 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
+
+
+class BoundIdentityResponse(BaseModel):
+    provider: str
+    identifier: str
 
 
 class ProfileResponse(BaseModel):
     id: str
-    email: str
+    email: str | None
+    phone_number: str | None = None
+    identities: list[BoundIdentityResponse] = []
     display_name: str
     signature: str | None = None
     avatar_url: str | None = None
@@ -21,6 +28,24 @@ class ProfileResponse(BaseModel):
 class UpdateProfileRequest(BaseModel):
     display_name: str | None = None
     signature: str | None = None
+
+
+class BindEmailCodeRequest(BaseModel):
+    email: EmailStr
+
+
+class BindPhoneCodeRequest(BaseModel):
+    phone_number: str
+
+
+class BindEmailRequest(BaseModel):
+    email: EmailStr
+    verification_code: str = Field(min_length=4, max_length=10)
+
+
+class BindPhoneRequest(BaseModel):
+    phone_number: str
+    verification_code: str = Field(min_length=4, max_length=10)
 
 
 # --- Avatar ---

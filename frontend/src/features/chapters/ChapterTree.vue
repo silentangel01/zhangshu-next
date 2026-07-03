@@ -483,6 +483,7 @@ function isVolumeDropTarget(volumeId: string | null) {
       >
         <span class="disclosure">{{ isVolumeExpanded(volume.id) ? '▾' : '▸' }}</span>
         <span class="tree-label">{{ volume.title }}</span>
+        <span class="chapter-count">{{ chaptersForVolume(volume.id).length }}</span>
       </button>
 
       <div v-if="isVolumeExpanded(volume.id)" class="tree-children">
@@ -689,11 +690,22 @@ function isVolumeDropTarget(volumeId: string | null) {
 }
 
 .volume-row {
-  min-height: 30px;
+  min-height: 32px;
   color: var(--zs-color-text);
   font-weight: 700;
   font-size: 0.86rem;
   border-bottom: 1px solid var(--zs-color-border-soft);
+}
+
+.chapter-count {
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: var(--zs-radius-pill);
+  background: var(--zs-color-surface-soft);
+  color: var(--zs-color-text-faint);
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.6;
 }
 
 .volume-row.drop-target {

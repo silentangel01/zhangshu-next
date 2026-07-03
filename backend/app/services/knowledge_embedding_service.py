@@ -208,6 +208,55 @@ class KnowledgeEmbeddingService:
         indexed_chunks = self.db.scalar(indexed_stmt) or 0
 
         if profile is not None:
+            # Detect stale profile: provider model/dim has changed since last index.
+            # This happens when the embedding algorithm is upgraded (e.g. v1 -> v2)
+            # but the user has not yet refreshed the index.
+            stale_info = self._detect_stale_profile(profile)
+
+            if stale_info is not None:
+                # Re-count indexed chunks by current provider's model/dim
+                current_model, current_dim = stale_info
+                current_indexed_stmt = select(
+                    func.count(KnowledgeEmbedding.id)
+                ).where(
+                    KnowledgeEmbedding.project_id == project_id
+                ).where(
+                    KnowledgeEmbedding.model_name == current_model
+                ).where(
+                    KnowledgeEmbedding.vector_dim == current_dim
+                )
+                current_indexed = self.db.scalar(current_indexed_stmt) or 0
+
+                last_refreshed_str = None
+                if profile.last_refreshed_at is not None:
+                    last_refreshed_str = profile.last_refreshed_at.isoformat()
+
+                # Build error note without writing to DB
+                stale_note = (
+                    f"索引模型已升级（{profile.model_name} → {current_model}），"
+                    "请刷新知识库索引以使用新模型。"
+                )
+                last_error = profile.last_error
+                if last_error:
+                    last_error = f"{last_error}\n{stale_note}"
+                else:
+                    last_error = stale_note
+
+                return IndexStatus(
+                    total_chunks=total_chunks,
+                    indexed_chunks=current_indexed,
+                    unindexed_chunks=max(0, total_chunks - current_indexed),
+                    model_name=current_model,
+                    provider_id=profile.provider_id,
+                    provider_type=profile.provider_type,
+                    display_name=profile.display_name,
+                    vector_dim=current_dim,
+                    chunk_size=profile.chunk_size,
+                    profile_status="stale",
+                    last_refreshed_at=last_refreshed_str,
+                    last_error=last_error,
+                )
+
             last_refreshed_str = None
             if profile.last_refreshed_at is not None:
                 last_refreshed_str = profile.last_refreshed_at.isoformat()
@@ -262,6 +311,31 @@ class KnowledgeEmbeddingService:
         return provider, pid
 
     # --- Private helpers ---
+
+    def _detect_stale_profile(
+        self, profile
+    ) -> tuple[str, int] | None:
+        """Check if the profile's model/dim mismatches the current provider.
+
+        Returns ``(current_model_name, current_vector_dim)`` when the profile
+        is stale, or ``None`` when the profile matches the current provider.
+
+        If the provider cannot be created (e.g. missing API key), returns
+        ``None`` to avoid falsely reporting staleness.
+        """
+        try:
+            current_provider = create_provider(profile.provider_id)
+        except Exception:
+            # Provider unavailable — cannot determine staleness, keep existing path
+            return None
+
+        if (
+            profile.model_name != current_provider.model_name
+            or profile.vector_dim != current_provider.vector_dim
+        ):
+            return (current_provider.model_name, current_provider.vector_dim)
+
+        return None
 
     def _ensure_project_exists(self, project_id: str) -> None:
         project = self.project_repo.get_active(project_id)

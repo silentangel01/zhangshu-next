@@ -15,10 +15,83 @@ class CloudLoginRequest(BaseModel):
     password: str
 
 
+class CloudEmailCodeLoginRequest(BaseModel):
+    email: str
+    verification_code: str
+
+
+class CloudPhoneCodeLoginRequest(BaseModel):
+    phone_number: str
+    verification_code: str
+
+
 class CloudRegisterRequest(BaseModel):
     email: str
     password: str
     display_name: str = ""
+    verification_code: str
+
+
+class CloudEmailCheckRequest(BaseModel):
+    email: str
+
+
+class CloudEmailCheckResponse(BaseModel):
+    email: str
+    available: bool
+
+
+class CloudPhoneCheckRequest(BaseModel):
+    phone_number: str
+
+
+class CloudPhoneCheckResponse(BaseModel):
+    phone_number: str
+    available: bool
+
+
+class CloudSendEmailCodeRequest(BaseModel):
+    email: str
+    purpose: str
+
+
+class CloudSendPhoneCodeRequest(BaseModel):
+    phone_number: str
+    purpose: str
+
+
+class CloudSendEmailCodeResponse(BaseModel):
+    ok: bool
+    expires_in_seconds: int
+    cooldown_seconds: int
+
+
+class CloudPhoneRegisterRequest(BaseModel):
+    phone_number: str
+    verification_code: str
+    display_name: str = ""
+
+
+class CloudOAuthStartResponse(BaseModel):
+    provider: str
+    authorization_url: str
+    session_id: str
+    poll_token: str
+    expires_in_seconds: int
+
+
+class CloudOAuthPollResponse(BaseModel):
+    status: str
+    provider: str | None = None
+    logged_in: bool | None = None
+    cloud_available: bool | None = None
+    email: str | None = None
+    access_token: str | None = None
+    refresh_token: str | None = None
+    user_id: str | None = None
+    display_name: str | None = None
+    phone_number: str | None = None
+    error_message: str | None = None
 
 
 class CloudAccountStatus(BaseModel):
@@ -26,6 +99,7 @@ class CloudAccountStatus(BaseModel):
     cloud_available: bool
     email: str | None = None
     display_name: str | None = None
+    phone_number: str | None = None
 
 
 class CloudAuthToken(BaseModel):
@@ -121,6 +195,24 @@ class CloudChangePasswordRequest(BaseModel):
 class CloudUpdateProfileRequest(BaseModel):
     display_name: str | None = None
     signature: str | None = None
+
+
+class CloudBindEmailCodeRequest(BaseModel):
+    email: str
+
+
+class CloudBindPhoneCodeRequest(BaseModel):
+    phone_number: str
+
+
+class CloudBindEmailRequest(BaseModel):
+    email: str
+    verification_code: str
+
+
+class CloudBindPhoneRequest(BaseModel):
+    phone_number: str
+    verification_code: str
 
 
 class CloudDeleteAccountRequest(BaseModel):

@@ -10,6 +10,8 @@ import type {
   VersionDetail,
   VersionListItem,
   VersionListResponse,
+  VersionSnapshotTargetsResponse,
+  VersionSummaryResponse,
 } from './types'
 
 export function listVersions(
@@ -109,11 +111,38 @@ export function restoreVersion(
 export function cleanupVersions(
   projectId: string,
   keepDays?: number,
+  source?: string,
 ): Promise<CleanupVersionsResponse> {
   const qs = new URLSearchParams()
   if (keepDays != null) qs.set('keep_days', String(keepDays))
+  if (source) qs.set('source', source)
   return apiRequest<CleanupVersionsResponse>(
     `/api/projects/${projectId}/versions/cleanup?${qs.toString()}`,
     { method: 'POST' },
+  )
+}
+
+export function getVersionSummary(
+  projectId: string,
+): Promise<VersionSummaryResponse> {
+  return apiRequest<VersionSummaryResponse>(
+    `/api/projects/${projectId}/versions/summary`,
+  )
+}
+
+export function listVersionSnapshotTargets(
+  projectId: string,
+  params?: {
+    entity_type?: string
+    keyword?: string
+    limit?: number
+  },
+): Promise<VersionSnapshotTargetsResponse> {
+  const qs = new URLSearchParams()
+  if (params?.entity_type) qs.set('entity_type', params.entity_type)
+  if (params?.keyword) qs.set('keyword', params.keyword)
+  if (params?.limit != null) qs.set('limit', String(params.limit))
+  return apiRequest<VersionSnapshotTargetsResponse>(
+    `/api/projects/${projectId}/versions/snapshot-targets?${qs.toString()}`,
   )
 }

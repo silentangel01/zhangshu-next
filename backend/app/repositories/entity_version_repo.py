@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
@@ -94,8 +96,36 @@ class EntityVersionRepository:
         return version
 
     def soft_delete(self, version: EntityVersion, *, commit: bool = True) -> None:
-        from datetime import datetime, timezone
+        from datetime import timezone
 
         version.deleted_at = datetime.now(timezone.utc)
         if commit:
             self.db.commit()
+
+    def count_by_source(self, project_id: str) -> dict[str, int]:
+        rows = self.db.execute(
+            select(EntityVersion.source, func.count())
+            .where(
+                EntityVersion.project_id == project_id,
+                EntityVersion.deleted_at.is_(None),
+            )
+            .group_by(EntityVersion.source)
+        ).all()
+        return {row[0]: row[1] for row in rows}
+
+    def count_pinned(self, project_id: str) -> int:
+        return self.db.scalar(
+            select(func.count()).where(
+                EntityVersion.project_id == project_id,
+                EntityVersion.is_pinned == True,  # noqa: E712
+                EntityVersion.deleted_at.is_(None),
+            )
+        ) or 0
+
+    def get_latest_created_at(self, project_id: str) -> datetime | None:
+        return self.db.scalar(
+            select(func.max(EntityVersion.created_at)).where(
+                EntityVersion.project_id == project_id,
+                EntityVersion.deleted_at.is_(None),
+            )
+        )

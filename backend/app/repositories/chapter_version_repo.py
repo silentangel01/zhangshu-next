@@ -108,17 +108,21 @@ class ChapterVersionRepository:
         project_id: str,
         *,
         keep_days: int = 30,
+        sources: list[str] | None = None,
         commit: bool = True,
     ) -> int:
-        """Soft-delete old autosave versions that are not pinned."""
+        """Soft-delete old routine versions that are not pinned."""
         from datetime import timedelta
+
+        if sources is None:
+            sources = ["autosave"]
 
         cutoff = datetime.now(timezone.utc) - timedelta(days=keep_days)
         old_versions = list(
             self.db.scalars(
                 select(ChapterVersion).where(
                     ChapterVersion.project_id == project_id,
-                    ChapterVersion.source == "autosave",
+                    ChapterVersion.source.in_(sources),
                     ChapterVersion.is_pinned == False,  # noqa: E712
                     ChapterVersion.deleted_at.is_(None),
                     ChapterVersion.created_at < cutoff,
@@ -131,3 +135,31 @@ class ChapterVersionRepository:
         if commit:
             self.db.commit()
         return len(old_versions)
+
+    def count_by_source(self, project_id: str) -> dict[str, int]:
+        rows = self.db.execute(
+            select(ChapterVersion.source, func.count())
+            .where(
+                ChapterVersion.project_id == project_id,
+                ChapterVersion.deleted_at.is_(None),
+            )
+            .group_by(ChapterVersion.source)
+        ).all()
+        return {row[0]: row[1] for row in rows}
+
+    def count_pinned(self, project_id: str) -> int:
+        return self.db.scalar(
+            select(func.count()).where(
+                ChapterVersion.project_id == project_id,
+                ChapterVersion.is_pinned == True,  # noqa: E712
+                ChapterVersion.deleted_at.is_(None),
+            )
+        ) or 0
+
+    def get_latest_created_at(self, project_id: str) -> datetime | None:
+        return self.db.scalar(
+            select(func.max(ChapterVersion.created_at)).where(
+                ChapterVersion.project_id == project_id,
+                ChapterVersion.deleted_at.is_(None),
+            )
+        )

@@ -232,3 +232,38 @@ class TestSemanticFilters:
 
         for r in result.results:
             assert r.source_type == "note"
+
+
+# ---------- v1 / v2 Isolation ----------
+
+
+class TestV1V2Isolation:
+    """Old v1 embeddings must not be returned when the provider has upgraded to v2."""
+
+    def test_old_v1_embeddings_not_returned_by_v2_query(
+        self, db_session, project, service
+    ):
+        """Semantic search with v2 provider should not find v1 embeddings."""
+        source, chunk = _create_source_with_chunks(
+            db_session, project.id, "魔法资料", "这是关于魔法体系的详细说明"
+        )
+
+        # Insert a stale v1 embedding directly into the DB
+        from app.models.knowledge_embedding import KnowledgeEmbedding
+
+        old_embedding = KnowledgeEmbedding(
+            id=str(uuid4()),
+            chunk_id=chunk.id,
+            source_id=source.id,
+            project_id=project.id,
+            model_name="bigram-hash-v1",
+            vector_dim=256,
+            vector_json="[0.1] * 256",
+        )
+        db_session.add(old_embedding)
+        db_session.commit()
+
+        # v2 provider should not find the v1 embedding
+        result = service.search(project.id, "魔法体系", mode="semantic")
+        assert result.total == 0
+        assert result.mode == "semantic"

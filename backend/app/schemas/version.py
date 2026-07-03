@@ -8,7 +8,9 @@ VersionEntityType = Literal[
     "chapter", "setting", "character", "clue", "outline", "knowledge_source"
 ]
 
-VersionSource = Literal["manual", "autosave", "restore", "before_restore"]
+VersionSource = Literal[
+    "manual", "milestone", "manual_save", "autosave", "restore", "before_restore"
+]
 
 
 class VersionListItem(BaseModel):
@@ -43,6 +45,7 @@ class CreateVersionSnapshotRequest(BaseModel):
     entity_id: str
     label: str | None = None
     note: str | None = None
+    source: Literal["milestone"] | None = "milestone"
 
 
 class UpdateVersionRequest(BaseModel):
@@ -81,3 +84,29 @@ class RestoreVersionResponse(BaseModel):
 class CleanupVersionsResponse(BaseModel):
     deleted_count: int
     message: str
+
+
+class VersionSummaryResponse(BaseModel):
+    project_id: str
+    total: int
+    milestone_count: int = 0
+    pinned_count: int = 0
+    autosave_count: int = 0
+    manual_save_count: int = 0
+    restore_count: int = 0
+    before_restore_count: int = 0
+    legacy_manual_count: int = 0
+    latest_version_at: datetime | None = None
+
+
+class VersionSnapshotTarget(BaseModel):
+    entity_type: str
+    entity_id: str
+    title: str
+    subtitle: str = ""
+    updated_at: datetime | None = None
+
+
+class VersionSnapshotTargetsResponse(BaseModel):
+    project_id: str
+    targets: list[VersionSnapshotTarget]

@@ -105,3 +105,6 @@ cloud-admin/dist/
 
 # TypeScript build info
 *.tsbuildinfo
+
+# Zhangshu official website - local only for now
+website/

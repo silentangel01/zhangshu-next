@@ -346,7 +346,6 @@ function graphEdgeRelationLabel(value: string) {
   <section class="chapter-context-summary">
     <header class="context-header">
       <div>
-        <p class="eyebrow">写作辅助</p>
         <h2>{{ titleMap[kind] }}</h2>
       </div>
       <RouterLink v-if="chapterId" class="context-link" :to="actionMap[kind].to">
@@ -359,8 +358,6 @@ function graphEdgeRelationLabel(value: string) {
     <p v-else-if="errorMessage" class="error-message">{{ errorMessage }}</p>
 
     <template v-else>
-      <p class="subtle-note">当前写作辅助基于手动绑定资料生成。</p>
-
       <ChapterContextSection
         :title="kind === 'outline' ? '本章细纲' : kind === 'timeline' ? '本章时间轴事件' : kind === 'graph' ? '本章核心关系摘要' : `本章${titleMap[kind]}`"
         :count="directItems.length"
@@ -416,17 +413,10 @@ function graphEdgeRelationLabel(value: string) {
   gap: 12px;
 }
 
-.eyebrow,
 h2,
 h4,
 p {
   margin: 0;
-}
-
-.eyebrow {
-  color: var(--zs-color-text-muted);
-  font-size: 0.75rem;
-  font-weight: 800;
 }
 
 h2 {
@@ -442,7 +432,6 @@ h2 {
   white-space: nowrap;
 }
 
-.subtle-note,
 .maintenance-hint {
   color: var(--zs-color-text-muted);
   font-size: 0.78rem;
@@ -456,16 +445,18 @@ h2 {
 
 .context-card {
   display: grid;
-  gap: 6px;
-  border: 1px solid var(--zs-color-border);
-  border-radius: 8px;
-  padding: 11px;
-  background: var(--zs-color-surface);
+  gap: 5px;
+  border: none;
+  border-left: 3px solid var(--zs-color-border);
+  border-radius: 0;
+  padding: 8px 10px 8px 12px;
+  background: transparent;
 }
 
 .context-card h4 {
   color: var(--zs-color-text);
-  font-size: 0.9rem;
+  font-size: 0.88rem;
+  font-weight: 600;
 }
 
 .meta {

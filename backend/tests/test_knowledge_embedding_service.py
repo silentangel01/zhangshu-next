@@ -149,7 +149,7 @@ class TestIndexChunk:
             chunk_id=chunks[0].id
         ).first()
         assert embedding is not None
-        assert embedding.model_name == "bigram-hash-v1"
+        assert embedding.model_name == "bigram-hash-v2"
         assert embedding.vector_dim == 256
 
     def test_index_chunk_not_found(self, service):
@@ -223,7 +223,7 @@ class TestGetIndexStatus:
         assert status.total_chunks == 3
         assert status.indexed_chunks == 0
         assert status.unindexed_chunks == 3
-        assert status.model_name == "bigram-hash-v1"
+        assert status.model_name == "bigram-hash-v2"
 
     def test_status_partial_index(self, db_session, project, service):
         source, chunks = _create_source_with_chunks(
@@ -334,16 +334,16 @@ class TestIndexStatusFiltering:
         """When profile exists, indexed count should only count matching model."""
         self._create_source_with_embedding(
             db_session, project.id, "资料1", "内容1",
-            model_name="bigram-hash-v1", vector_dim=256,
+            model_name="bigram-hash-v2", vector_dim=256,
         )
         self._create_source_with_embedding(
             db_session, project.id, "资料2", "内容2",
             model_name="text-embedding-v4", vector_dim=1024,
         )
 
-        # Create profile pointing to bigram-hash-v1
+        # Create profile pointing to bigram-hash-v2
         service.profile_repo.upsert(
-            project.id, "local_basic_hash", "bigram-hash-v1", 256
+            project.id, "local_basic_hash", "bigram-hash-v2", 256
         )
 
         status = service.get_index_status(project.id)
@@ -366,12 +366,12 @@ class TestIndexStatusFiltering:
         """Status should include full profile fields when profile exists."""
         self._create_source_with_embedding(
             db_session, project.id, "资料", "内容",
-            model_name="bigram-hash-v1", vector_dim=256,
+            model_name="bigram-hash-v2", vector_dim=256,
         )
         service.profile_repo.upsert(
             project.id,
             "local_basic_hash",
-            "bigram-hash-v1",
+            "bigram-hash-v2",
             256,
             provider_type="compat",
             display_name="本地基础索引",
@@ -384,3 +384,63 @@ class TestIndexStatusFiltering:
         assert status.display_name == "本地基础索引"
         assert status.chunk_size == "medium"
         assert status.profile_status == "ready"
+
+    def test_stale_profile_detected_when_model_mismatch(
+        self, db_session, project, service
+    ):
+        """Old v1 profile should be reported as stale when provider has upgraded to v2."""
+        # Create a source with a chunk and an old v1 embedding
+        self._create_source_with_embedding(
+            db_session, project.id, "资料", "内容",
+            model_name="bigram-hash-v1", vector_dim=256,
+        )
+
+        # Create profile pointing to old v1 model
+        service.profile_repo.upsert(
+            project.id,
+            "local_basic_hash",
+            "bigram-hash-v1",
+            256,
+            provider_type="compat",
+            display_name="本地基础索引",
+            chunk_size="medium",
+            status="ready",
+        )
+
+        status = service.get_index_status(project.id)
+
+        # Should be stale because current provider is v2
+        assert status.profile_status == "stale"
+        assert status.model_name == "bigram-hash-v2"
+        assert status.vector_dim == 256
+        assert status.provider_id == "local_basic_hash"
+
+        # Old v1 embeddings should not count as current indexed
+        assert status.indexed_chunks == 0
+        assert status.unindexed_chunks == 1
+
+        # last_error should contain a stale note
+        assert status.last_error is not None
+        assert "bigram-hash-v1" in status.last_error
+        assert "bigram-hash-v2" in status.last_error
+
+    def test_stale_profile_does_not_write_to_db(
+        self, db_session, project, service
+    ):
+        """get_index_status() should not modify the database when reporting stale."""
+        self._create_source_with_embedding(
+            db_session, project.id, "资料", "内容",
+            model_name="bigram-hash-v1", vector_dim=256,
+        )
+        service.profile_repo.upsert(
+            project.id, "local_basic_hash", "bigram-hash-v1", 256,
+            status="ready",
+        )
+
+        # Call get_index_status — must be read-only
+        service.get_index_status(project.id)
+
+        # Profile should remain unchanged in DB
+        profile = service.profile_repo.get_by_project(project.id)
+        assert profile.model_name == "bigram-hash-v1"
+        assert profile.status == "ready"

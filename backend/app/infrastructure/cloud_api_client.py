@@ -17,7 +17,7 @@ import os
 import socket
 import ssl
 from typing import Any, Literal
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 import httpx
 
@@ -311,14 +311,17 @@ class CloudApiClient:
         path: str,
         *,
         json: Any = None,
+        params: dict[str, Any] | None = None,
         timeout: float = _DEFAULT_TIMEOUT,
     ) -> Any:
         """Execute a single request using the specified connection strategy.
 
         Returns parsed JSON, None for empty responses, or raises on error.
         """
+        query = f"?{urlencode(params)}" if params else ""
+
         if mode == "compat_no_sni":
-            url = f"{self._get_ip_base_url()}{path}"
+            url = f"{self._get_ip_base_url()}{path}{query}"
             headers = self._base_headers(include_host=True, method=method)
             client_kwargs: dict[str, Any] = dict(
                 timeout=timeout,
@@ -326,12 +329,12 @@ class CloudApiClient:
                 trust_env=False,
             )
         elif mode == "system_proxy":
-            url = f"{self._original_base_url}{path}"
+            url = f"{self._original_base_url}{path}{query}"
             headers = self._base_headers(include_host=False, method=method)
             client_kwargs = dict(timeout=timeout, verify=True, trust_env=True)
         else:
             # secure_direct (and any unknown mode falls back to secure)
-            url = f"{self._original_base_url}{path}"
+            url = f"{self._original_base_url}{path}{query}"
             headers = self._base_headers(include_host=False, method=method)
             client_kwargs = dict(timeout=timeout, verify=True, trust_env=False)
 
@@ -377,6 +380,7 @@ class CloudApiClient:
         path: str,
         *,
         json: Any = None,
+        params: dict[str, Any] | None = None,
         timeout: float = _DEFAULT_TIMEOUT,
     ) -> Any:
         self._ensure_configured()
@@ -384,7 +388,7 @@ class CloudApiClient:
 
         if self._mode != "auto":
             return self._request_with_mode(
-                self._mode, method, path, json=json, timeout=timeout
+                self._mode, method, path, json=json, params=params, timeout=timeout
             )
 
         # ── Auto strategy chain ──────────────────────────────────────
@@ -401,7 +405,7 @@ class CloudApiClient:
         for mode in strategies:
             try:
                 result = self._request_with_mode(
-                    mode, method, path, json=json, timeout=auto_timeout
+                    mode, method, path, json=json, params=params, timeout=auto_timeout
                 )
                 self._last_working_mode = mode
                 return result
@@ -443,8 +447,58 @@ class CloudApiClient:
             json={"email": email, "password": password},
         )
 
+    def login_with_email_code(
+        self, email: str, verification_code: str
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            "/api/auth/login/email-code",
+            json={"email": email, "verification_code": verification_code},
+        )
+
+    def login_with_phone_code(
+        self, phone_number: str, verification_code: str
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            "/api/auth/login/phone-code",
+            json={"phone_number": phone_number, "verification_code": verification_code},
+        )
+
+    def check_email(self, email: str) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            "/api/auth/email/check",
+            json={"email": email},
+        )
+
+    def check_phone(self, phone_number: str) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            "/api/auth/phone/check",
+            json={"phone_number": phone_number},
+        )
+
+    def send_email_code(self, email: str, purpose: str) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            "/api/auth/email-code/send",
+            json={"email": email, "purpose": purpose},
+        )
+
+    def send_phone_code(self, phone_number: str, purpose: str) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            "/api/auth/phone-code/send",
+            json={"phone_number": phone_number, "purpose": purpose},
+        )
+
     def register(
-        self, email: str, password: str, display_name: str
+        self,
+        email: str,
+        password: str,
+        display_name: str,
+        verification_code: str,
     ) -> dict[str, Any]:
         return self._request(
             "POST",
@@ -453,7 +507,31 @@ class CloudApiClient:
                 "email": email,
                 "password": password,
                 "display_name": display_name,
+                "verification_code": verification_code,
             },
+        )
+
+    def register_with_phone(
+        self, phone_number: str, verification_code: str, display_name: str
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            "/api/auth/register/phone",
+            json={
+                "phone_number": phone_number,
+                "verification_code": verification_code,
+                "display_name": display_name,
+            },
+        )
+
+    def start_oauth_login(self, provider: str) -> dict[str, Any]:
+        return self._request("POST", f"/api/auth/oauth/{provider}/start", json={})
+
+    def poll_oauth_login(self, session_id: str, poll_token: str) -> dict[str, Any]:
+        return self._request(
+            "GET",
+            f"/api/auth/oauth/session/{session_id}",
+            params={"poll_token": poll_token},
         )
 
     def refresh(self, refresh_token: str) -> dict[str, Any]:
@@ -583,6 +661,32 @@ class CloudApiClient:
         if signature is not None:
             payload["signature"] = signature
         return self._request("PATCH", "/api/account/profile", json=payload)
+
+    def send_bind_email_code(self, email: str) -> dict[str, Any]:
+        return self._request(
+            "POST", "/api/account/bind/email-code/send", json={"email": email}
+        )
+
+    def send_bind_phone_code(self, phone_number: str) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            "/api/account/bind/phone-code/send",
+            json={"phone_number": phone_number},
+        )
+
+    def bind_email(self, email: str, verification_code: str) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            "/api/account/bind/email",
+            json={"email": email, "verification_code": verification_code},
+        )
+
+    def bind_phone(self, phone_number: str, verification_code: str) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            "/api/account/bind/phone",
+            json={"phone_number": phone_number, "verification_code": verification_code},
+        )
 
     def change_password(
         self, old_password: str, new_password: str

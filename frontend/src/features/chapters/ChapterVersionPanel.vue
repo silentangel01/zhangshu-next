@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import type { ChapterVersionListItem, ChapterVersionSource } from '@/entities/chapter-version/types'
+import type { ChapterVersionListItem } from '@/entities/chapter-version/types'
+import { CHAPTER_VERSION_SOURCE_LABELS } from '@/entities/chapter-version/types'
 import { formatDateTimeFull } from '@/shared/utils/formatDateTime'
 
 defineProps<{
@@ -15,15 +16,15 @@ const emit = defineEmits<{
   restoreVersion: [versionId: string]
 }>()
 
-function getSourceLabel(source: ChapterVersionSource): string {
-  const labels: Record<ChapterVersionSource, string> = {
-    manual: '手动保存',
-    autosave: '自动保存',
-    restore: '恢复版本',
-    before_restore: '恢复前备份',
-  }
+function getSourceLabel(source: string): string {
+  return CHAPTER_VERSION_SOURCE_LABELS[source] ?? source
+}
 
-  return labels[source]
+function getSourceClass(source: string): string {
+  if (source === 'milestone' || source === 'manual') return 'source-milestone'
+  if (source === 'autosave' || source === 'manual_save') return 'source-routine'
+  if (source === 'before_restore' || source === 'restore') return 'source-restore'
+  return ''
 }
 </script>
 
@@ -35,7 +36,7 @@ function getSourceLabel(source: ChapterVersionSource): string {
         <h3>版本</h3>
       </div>
       <button class="primary-button" type="button" :disabled="isBusy" @click="emit('createSnapshot')">
-        创建版本快照
+        创建里程碑
       </button>
     </header>
 
@@ -44,9 +45,17 @@ function getSourceLabel(source: ChapterVersionSource): string {
     <p v-else-if="!versions.length" class="state-message">暂无版本历史</p>
 
     <ul v-else class="version-list">
-      <li v-for="version in versions" :key="version.id" class="version-item">
+      <li
+        v-for="version in versions"
+        :key="version.id"
+        class="version-item"
+        :class="getSourceClass(version.source)"
+      >
         <div class="version-main">
-          <strong>{{ getSourceLabel(version.source) }}</strong>
+          <strong>
+            {{ getSourceLabel(version.source) }}
+            <span v-if="version.is_pinned" class="pin-indicator">★</span>
+          </strong>
           <span>字数：{{ version.word_count }}</span>
           <span>创建时间：{{ formatDateTimeFull(version.created_at) }}</span>
           <p v-if="version.note">{{ version.note }}</p>
@@ -117,6 +126,19 @@ h3 {
   border-radius: 8px;
   padding: 12px;
   background: var(--zs-color-bg);
+}
+
+.version-item.source-routine {
+  opacity: 0.7;
+}
+
+.version-item.source-restore {
+  border-left: 3px solid var(--zs-color-info, #3b82f6);
+}
+
+.pin-indicator {
+  color: var(--zs-color-warning);
+  font-size: 0.85em;
 }
 
 .version-main {

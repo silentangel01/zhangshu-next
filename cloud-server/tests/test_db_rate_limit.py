@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from tests.conftest import auth_headers, register_user
+from tests.conftest import auth_headers, register_user, seed_email_verification_code
 
 
 class TestLoginRateLimit:
@@ -47,11 +47,14 @@ class TestRegisterRateLimit:
         """Multiple registrations from the same IP should be rate-limited."""
         # Register several accounts
         for i in range(5):
+            email = f"rl-reg-{i}@example.com"
+            code = seed_email_verification_code(client, email, "register")
             resp = client.post(
                 "/api/auth/register",
                 json={
-                    "email": f"rl-reg-{i}@example.com",
+                    "email": email,
                     "password": "password12345",
+                    "verification_code": code,
                 },
             )
             # Some may succeed, but eventually rate limit kicks in
@@ -59,9 +62,16 @@ class TestRegisterRateLimit:
                 break
 
         # Verify at least one was rate limited
+        final_code = seed_email_verification_code(
+            client, "rl-reg-final@example.com", "register"
+        )
         final_resp = client.post(
             "/api/auth/register",
-            json={"email": "rl-reg-final@example.com", "password": "password12345"},
+            json={
+                "email": "rl-reg-final@example.com",
+                "password": "password12345",
+                "verification_code": final_code,
+            },
         )
         # Either 200 (if limit not yet reached) or 429
         assert final_resp.status_code in (200, 429)

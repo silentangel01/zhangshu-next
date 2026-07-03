@@ -8,7 +8,9 @@ import {
   createSnapshot,
   deleteVersion,
   getVersion,
+  getVersionSummary,
   listVersions,
+  listVersionSnapshotTargets,
   restoreVersion,
   updateVersion,
 } from '@/entities/version/api'
@@ -18,6 +20,8 @@ import type {
   VersionCompareResponse,
   VersionDetail,
   VersionListItem,
+  VersionSnapshotTarget,
+  VersionSummaryResponse,
 } from '@/entities/version/types'
 import {
   VERSION_ENTITY_TYPE_LABELS,
@@ -32,12 +36,31 @@ const projectId = computed<string>(() => {
   return (Array.isArray(v) ? v[0] : v) ?? ''
 })
 
+// -- segment
+type Segment = 'important' | 'routine' | 'restore' | 'all'
+
+const segmentDefs: Array<{ id: Segment; label: string }> = [
+  { id: 'important', label: '重要版本' },
+  { id: 'routine', label: '自动快照' },
+  { id: 'restore', label: '恢复记录' },
+  { id: 'all', label: '全部' },
+]
+
+const activeSegment = ref<Segment>('important')
+
+const segmentSources: Record<Segment, Set<string>> = {
+  important: new Set(['milestone', 'manual']),
+  routine: new Set(['autosave', 'manual_save']),
+  restore: new Set(['before_restore', 'restore']),
+  all: new Set(), // empty = show all
+}
+
 // -- state
-const versions = ref<VersionListItem[]>([])
-const totalCount = ref(0)
+const allVersions = ref<VersionListItem[]>([])
 const isLoading = ref(false)
 const errorMessage = ref('')
 const statusMessage = ref('')
+const summary = ref<VersionSummaryResponse | null>(null)
 
 const selectedVersion = ref<VersionDetail | null>(null)
 const isDetailLoading = ref(false)
@@ -49,6 +72,8 @@ const showRestoreDialog = ref(false)
 const isRestoring = ref(false)
 
 const showSnapshotDialog = ref(false)
+const snapshotTargets = ref<VersionSnapshotTarget[]>([])
+const isLoadingTargets = ref(false)
 const snapshotForm = ref({
   entity_type: 'chapter' as string,
   entity_id: '',
@@ -58,11 +83,10 @@ const snapshotForm = ref({
 
 // -- filters
 const filterEntityType = ref('')
-const filterSource = ref('')
 const filterPinned = ref<boolean | null>(null)
 const filterKeyword = ref('')
 
-const PAGE_SIZE = 30
+const PAGE_SIZE = 100
 const currentOffset = ref(0)
 
 // -- computed
@@ -76,15 +100,21 @@ const entityTypeOptions = [
   { value: 'knowledge_source', label: '知识库' },
 ]
 
-const sourceOptions = [
-  { value: '', label: '全部来源' },
-  { value: 'manual', label: '手动快照' },
-  { value: 'autosave', label: '自动保存' },
-  { value: 'before_restore', label: '恢复前备份' },
-  { value: 'restore', label: '恢复记录' },
-]
+function matchesSegment(v: VersionListItem): boolean {
+  const sources = segmentSources[activeSegment.value]
+  if (sources.size === 0) return true
+  // Important segment also includes pinned versions regardless of source
+  if (activeSegment.value === 'important' && v.is_pinned) return true
+  return sources.has(v.source)
+}
 
-const hasMore = computed(() => currentOffset.value + PAGE_SIZE < totalCount.value)
+const displayedVersions = computed(() =>
+  allVersions.value.filter(matchesSegment),
+)
+
+const hasMore = computed(
+  () => currentOffset.value + PAGE_SIZE < allVersions.value.length,
+)
 
 // -- load
 async function loadVersions() {
@@ -93,14 +123,22 @@ async function loadVersions() {
   try {
     const resp = await listVersions(projectId.value, {
       entity_type: filterEntityType.value || undefined,
-      source: filterSource.value || undefined,
       pinned: filterPinned.value ?? undefined,
       keyword: filterKeyword.value || undefined,
       limit: PAGE_SIZE,
       offset: currentOffset.value,
     })
-    versions.value = resp.versions
-    totalCount.value = resp.total
+    if (currentOffset.value === 0) {
+      allVersions.value = resp.versions
+    } else {
+      // Append for load-more, avoiding duplicates
+      const existing = new Set(allVersions.value.map((v) => v.version_ref))
+      for (const v of resp.versions) {
+        if (!existing.has(v.version_ref)) {
+          allVersions.value.push(v)
+        }
+      }
+    }
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '加载版本列表失败'
   } finally {
@@ -108,9 +146,21 @@ async function loadVersions() {
   }
 }
 
+async function loadSummary() {
+  try {
+    summary.value = await getVersionSummary(projectId.value)
+  } catch {
+    // Non-critical, silently fail
+  }
+}
+
 function handleFilterChange() {
   currentOffset.value = 0
   void loadVersions()
+}
+
+function handleSegmentChange(segment: Segment) {
+  activeSegment.value = segment
 }
 
 function handleLoadMore() {
@@ -165,6 +215,7 @@ async function handleRestore() {
     selectedVersion.value = null
     compareResult.value = null
     await loadVersions()
+    await loadSummary()
   } catch (error) {
     statusMessage.value =
       error instanceof Error ? error.message : '恢复失败'
@@ -180,6 +231,7 @@ async function handleTogglePin(version: VersionListItem) {
       is_pinned: !version.is_pinned,
     })
     await loadVersions()
+    await loadSummary()
   } catch {
     statusMessage.value = '更新标记失败'
   }
@@ -199,6 +251,7 @@ async function handleDelete(version: VersionListItem) {
       compareResult.value = null
     }
     await loadVersions()
+    await loadSummary()
   } catch (error) {
     statusMessage.value =
       error instanceof Error ? error.message : '删除失败'
@@ -206,27 +259,49 @@ async function handleDelete(version: VersionListItem) {
 }
 
 // -- snapshot
-function openSnapshotDialog() {
+async function openSnapshotDialog() {
   snapshotForm.value = { entity_type: 'chapter', entity_id: '', label: '', note: '' }
   showSnapshotDialog.value = true
+  await loadSnapshotTargets()
+}
+
+async function loadSnapshotTargets() {
+  isLoadingTargets.value = true
+  try {
+    const resp = await listVersionSnapshotTargets(projectId.value, {
+      entity_type: snapshotForm.value.entity_type,
+      limit: 100,
+    })
+    snapshotTargets.value = resp.targets
+    snapshotForm.value.entity_id = ''
+  } catch {
+    snapshotTargets.value = []
+  } finally {
+    isLoadingTargets.value = false
+  }
+}
+
+function handleSnapshotTypeChange() {
+  void loadSnapshotTargets()
 }
 
 async function handleCreateSnapshot() {
-  if (!snapshotForm.value.entity_id.trim()) {
-    statusMessage.value = '请输入实体 ID'
+  if (!snapshotForm.value.entity_id) {
+    statusMessage.value = '请选择要创建里程碑的实体'
     return
   }
   try {
     const req: CreateVersionSnapshotRequest = {
       entity_type: snapshotForm.value.entity_type as CreateVersionSnapshotRequest['entity_type'],
-      entity_id: snapshotForm.value.entity_id.trim(),
+      entity_id: snapshotForm.value.entity_id,
       label: snapshotForm.value.label || null,
       note: snapshotForm.value.note || null,
     }
     await createSnapshot(projectId.value, req)
     showSnapshotDialog.value = false
-    statusMessage.value = '快照已创建'
+    statusMessage.value = '里程碑版本已创建'
     await loadVersions()
+    await loadSummary()
   } catch (error) {
     statusMessage.value =
       error instanceof Error ? error.message : '创建快照失败'
@@ -235,11 +310,12 @@ async function handleCreateSnapshot() {
 
 // -- cleanup
 async function handleCleanup() {
-  if (!confirm('确定清理 30 天前的未标记自动保存版本？')) return
+  if (!confirm('确定清理 30 天前的旧自动快照和手动保存？不会删除里程碑、已标记或恢复记录。')) return
   try {
-    const resp = await cleanupVersions(projectId.value, 30)
+    const resp = await cleanupVersions(projectId.value, 30, 'routine')
     statusMessage.value = resp.message
     await loadVersions()
+    await loadSummary()
   } catch {
     statusMessage.value = '清理失败'
   }
@@ -252,6 +328,13 @@ function getTypeLabel(type: string): string {
 
 function getSourceLabel(source: string): string {
   return VERSION_SOURCE_LABELS[source] ?? source
+}
+
+function getSourceClass(source: string): string {
+  if (source === 'milestone' || source === 'manual') return 'source-milestone'
+  if (source === 'autosave' || source === 'manual_save') return 'source-routine'
+  if (source === 'before_restore' || source === 'restore') return 'source-restore'
+  return ''
 }
 
 function getDiffClass(tag: DiffLine['tag']): string {
@@ -272,6 +355,7 @@ watch(statusMessage, (v) => {
 
 onMounted(() => {
   void loadVersions()
+  void loadSummary()
 })
 </script>
 
@@ -282,10 +366,15 @@ onMounted(() => {
         <RouterLink class="back-link" :to="`/projects/${projectId}`">返回写作页</RouterLink>
         <p class="eyebrow">版本中心</p>
         <h1>版本管理</h1>
+        <p class="page-desc">管理重要创作节点、自动快照和恢复保护记录。</p>
       </div>
       <div class="header-actions">
-        <button class="secondary-button" type="button" @click="openSnapshotDialog">创建快照</button>
-        <button class="ghost-button" type="button" @click="handleCleanup">清理旧版本</button>
+        <button class="secondary-button" type="button" @click="openSnapshotDialog">
+          创建里程碑版本
+        </button>
+        <button class="ghost-button" type="button" @click="handleCleanup">
+          清理旧自动快照
+        </button>
         <RouterLink class="secondary-link" to="/projects">项目列表</RouterLink>
       </div>
     </header>
@@ -293,15 +382,44 @@ onMounted(() => {
     <p v-if="statusMessage" class="status-banner" role="status">{{ statusMessage }}</p>
     <p v-if="errorMessage" class="error-banner" role="alert">{{ errorMessage }}</p>
 
+    <!-- Summary overview -->
+    <section v-if="summary" class="summary-bar">
+      <div class="summary-item">
+        <span class="summary-value">{{ summary.milestone_count + summary.legacy_manual_count }}</span>
+        <span class="summary-label">重要版本</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-value">{{ summary.autosave_count + summary.manual_save_count }}</span>
+        <span class="summary-label">自动快照</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-value">{{ summary.before_restore_count + summary.restore_count }}</span>
+        <span class="summary-label">恢复记录</span>
+      </div>
+      <div class="summary-item">
+        <span class="summary-value">
+          {{ summary.latest_version_at ? formatDateTime(summary.latest_version_at) : '—' }}
+        </span>
+        <span class="summary-label">最近版本</span>
+      </div>
+    </section>
+
+    <!-- Segment tabs -->
+    <nav class="segment-tabs" aria-label="版本分类">
+      <button
+        v-for="seg in segmentDefs"
+        :key="seg.id"
+        type="button"
+        :class="{ active: activeSegment === seg.id }"
+        @click="handleSegmentChange(seg.id)"
+      >
+        {{ seg.label }}
+      </button>
+    </nav>
+
     <section class="filters-bar">
       <select v-model="filterEntityType" @change="handleFilterChange">
         <option v-for="opt in entityTypeOptions" :key="opt.value" :value="opt.value">
-          {{ opt.label }}
-        </option>
-      </select>
-
-      <select v-model="filterSource" @change="handleFilterChange">
-        <option v-for="opt in sourceOptions" :key="opt.value" :value="opt.value">
           {{ opt.label }}
         </option>
       </select>
@@ -323,24 +441,30 @@ onMounted(() => {
     <div class="versions-layout">
       <section class="version-list-panel">
         <p class="list-header">
-          共 {{ totalCount }} 个版本
+          {{ displayedVersions.length }} 个版本
           <span v-if="isLoading" class="loading-indicator">加载中…</span>
         </p>
 
-        <div v-if="versions.length === 0 && !isLoading" class="empty-state">
+        <div v-if="displayedVersions.length === 0 && !isLoading" class="empty-state">
           暂无版本记录
         </div>
 
         <article
-          v-for="v in versions"
+          v-for="v in displayedVersions"
           :key="v.version_ref"
           class="version-card"
-          :class="{ active: selectedVersion?.version_ref === v.version_ref }"
+          :class="[
+            { active: selectedVersion?.version_ref === v.version_ref },
+            getSourceClass(v.source),
+          ]"
           @click="selectVersion(v)"
         >
           <div class="version-card-header">
             <span class="type-pill">{{ getTypeLabel(v.entity_type) }}</span>
-            <span class="source-pill">{{ getSourceLabel(v.source) }}</span>
+            <span class="source-pill" :class="getSourceClass(v.source)">
+              {{ getSourceLabel(v.source) }}
+            </span>
+            <span v-if="v.is_pinned" class="pinned-pill">★ 已标记</span>
           </div>
           <h3 class="version-title">{{ v.entity_title || '(无标题)' }}</h3>
           <p class="version-meta">
@@ -464,7 +588,7 @@ onMounted(() => {
       </div>
     </Teleport>
 
-    <!-- Snapshot dialog -->
+    <!-- Snapshot / Milestone dialog -->
     <Teleport to="body">
       <div
         v-if="showSnapshotDialog"
@@ -472,11 +596,11 @@ onMounted(() => {
         @click.self="showSnapshotDialog = false"
       >
         <div class="dialog-card">
-          <h2>创建版本快照</h2>
+          <h2>创建里程碑版本</h2>
           <form @submit.prevent="handleCreateSnapshot">
             <label class="field-group">
               <span>实体类型</span>
-              <select v-model="snapshotForm.entity_type">
+              <select v-model="snapshotForm.entity_type" @change="handleSnapshotTypeChange">
                 <option value="chapter">正文</option>
                 <option value="setting">设定</option>
                 <option value="character">人物</option>
@@ -486,8 +610,19 @@ onMounted(() => {
               </select>
             </label>
             <label class="field-group">
-              <span>实体 ID</span>
-              <input v-model="snapshotForm.entity_id" type="text" placeholder="粘贴实体 ID" />
+              <span>选择实体</span>
+              <select v-model="snapshotForm.entity_id" :disabled="isLoadingTargets">
+                <option value="" disabled>
+                  {{ isLoadingTargets ? '加载中…' : '请选择' }}
+                </option>
+                <option
+                  v-for="target in snapshotTargets"
+                  :key="target.entity_id"
+                  :value="target.entity_id"
+                >
+                  {{ target.title }}{{ target.subtitle ? ` — ${target.subtitle}` : '' }}
+                </option>
+              </select>
             </label>
             <label class="field-group">
               <span>标签（可选）</span>
@@ -505,7 +640,7 @@ onMounted(() => {
               >
                 取消
               </button>
-              <button class="primary-button" type="submit">创建</button>
+              <button class="primary-button" type="submit">创建里程碑</button>
             </div>
           </form>
         </div>
@@ -524,6 +659,8 @@ onMounted(() => {
 }
 
 .page-header,
+.summary-bar,
+.segment-tabs,
 .filters-bar,
 .versions-layout,
 .status-banner,
@@ -538,7 +675,7 @@ onMounted(() => {
   justify-content: space-between;
   align-items: flex-end;
   gap: var(--zs-space-4);
-  margin-bottom: var(--zs-space-6);
+  margin-bottom: var(--zs-space-5);
 }
 
 .header-actions {
@@ -557,6 +694,12 @@ onMounted(() => {
 h1 {
   margin: 0;
   font-size: 1.8rem;
+}
+
+.page-desc {
+  margin: 6px 0 0;
+  color: var(--zs-color-text-muted);
+  font-size: 0.88rem;
 }
 
 .back-link {
@@ -578,6 +721,69 @@ h1 {
   color: var(--zs-color-text);
   font-weight: 800;
   text-decoration: none;
+}
+
+/* Summary overview */
+.summary-bar {
+  display: flex;
+  gap: var(--zs-space-5);
+  flex-wrap: wrap;
+  margin-bottom: var(--zs-space-5);
+  padding: var(--zs-space-4) var(--zs-space-5);
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-md);
+  background: var(--zs-color-surface);
+}
+
+.summary-item {
+  display: grid;
+  gap: 4px;
+}
+
+.summary-value {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: var(--zs-color-text);
+}
+
+.summary-label {
+  font-size: 0.78rem;
+  color: var(--zs-color-text-muted);
+  font-weight: 600;
+}
+
+/* Segment tabs */
+.segment-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--zs-color-border-soft);
+  margin-bottom: var(--zs-space-4);
+}
+
+.segment-tabs button {
+  min-height: 38px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 0 var(--zs-space-4);
+  background: transparent;
+  color: var(--zs-color-text-muted);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  margin-bottom: -1px;
+}
+
+.segment-tabs button:hover {
+  color: var(--zs-color-text);
+}
+
+.segment-tabs button.active {
+  color: var(--zs-color-primary);
+  border-bottom-color: var(--zs-color-primary);
+  font-weight: 800;
 }
 
 .filters-bar {
@@ -648,13 +854,29 @@ h1 {
   background: var(--zs-color-primary-soft);
 }
 
+/* Source-based card variants */
+.version-card.source-routine {
+  opacity: 0.75;
+}
+
+.version-card.source-routine:hover {
+  opacity: 1;
+}
+
+.version-card.source-restore {
+  border-left: 3px solid var(--zs-color-info, #3b82f6);
+}
+
 .version-card-header {
   display: flex;
   gap: var(--zs-space-2);
+  flex-wrap: wrap;
+  align-items: center;
 }
 
 .type-pill,
-.source-pill {
+.source-pill,
+.pinned-pill {
   font-size: 0.72rem;
   font-weight: 800;
   border-radius: 999px;
@@ -669,6 +891,26 @@ h1 {
 .source-pill {
   background: var(--zs-color-info-soft, rgba(59, 130, 246, 0.1));
   color: var(--zs-color-info);
+}
+
+.source-pill.source-milestone {
+  background: var(--zs-color-warning-soft, rgba(245, 158, 11, 0.1));
+  color: var(--zs-color-warning);
+}
+
+.source-pill.source-routine {
+  background: var(--zs-color-bg);
+  color: var(--zs-color-text-muted);
+}
+
+.source-pill.source-restore {
+  background: rgba(59, 130, 246, 0.1);
+  color: var(--zs-color-info, #3b82f6);
+}
+
+.pinned-pill {
+  background: var(--zs-color-warning-soft, rgba(245, 158, 11, 0.1));
+  color: var(--zs-color-warning);
 }
 
 .version-title {
@@ -980,6 +1222,10 @@ button:disabled {
 
   .header-actions {
     flex-wrap: wrap;
+  }
+
+  .summary-bar {
+    gap: var(--zs-space-3);
   }
 }
 </style>

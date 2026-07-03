@@ -6,7 +6,13 @@ export type VersionEntityType =
   | 'outline'
   | 'knowledge_source'
 
-export type VersionSource = 'manual' | 'autosave' | 'restore' | 'before_restore'
+export type VersionSource =
+  | 'manual'
+  | 'milestone'
+  | 'manual_save'
+  | 'autosave'
+  | 'restore'
+  | 'before_restore'
 
 export interface VersionListItem {
   version_ref: string
@@ -89,9 +95,37 @@ export const VERSION_ENTITY_TYPE_LABELS: Record<string, string> = {
   knowledge_source: '知识库',
 }
 
+export interface VersionSummaryResponse {
+  project_id: string
+  total: number
+  milestone_count: number
+  pinned_count: number
+  autosave_count: number
+  manual_save_count: number
+  restore_count: number
+  before_restore_count: number
+  legacy_manual_count: number
+  latest_version_at: string | null
+}
+
+export interface VersionSnapshotTarget {
+  entity_type: string
+  entity_id: string
+  title: string
+  subtitle: string
+  updated_at: string | null
+}
+
+export interface VersionSnapshotTargetsResponse {
+  project_id: string
+  targets: VersionSnapshotTarget[]
+}
+
 export const VERSION_SOURCE_LABELS: Record<string, string> = {
-  manual: '手动快照',
-  autosave: '自动保存',
-  restore: '恢复记录',
+  milestone: '里程碑',
+  manual_save: '手动保存',
+  autosave: '自动快照',
   before_restore: '恢复前备份',
+  restore: '恢复记录',
+  manual: '旧手动版本',
 }

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 from app.core.audit import audit_event
+from tests.conftest import seed_email_verification_code
 
 
 class TestAuditEvent:
@@ -64,6 +65,7 @@ class TestAuditEvent:
 
 class TestAuditIntegration:
     def test_register_emits_audit(self, client, caplog):
+        code = seed_email_verification_code(client, "audit@example.com", "register")
         with caplog.at_level(logging.INFO, logger="app.audit"):
             client.post(
                 "/api/auth/register",
@@ -71,6 +73,7 @@ class TestAuditIntegration:
                     "email": "audit@example.com",
                     "password": "securepassword123",
                     "display_name": "Audit",
+                    "verification_code": code,
                 },
             )
         assert any("user_registered" in r.message for r in caplog.records)

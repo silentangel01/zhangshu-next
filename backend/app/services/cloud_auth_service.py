@@ -24,6 +24,8 @@ _KEY_ACCESS_TOKEN = "cloud_access_token"
 _KEY_REFRESH_TOKEN = "cloud_refresh_token"
 _KEY_USER_ID = "cloud_user_id"
 _KEY_USER_EMAIL = "cloud_user_email"
+_KEY_USER_PHONE = "cloud_user_phone"
+_KEY_USER_OAUTH_LABEL = "cloud_user_oauth_label"
 
 # Valid modes — used to validate user input
 _VALID_MODES = {"auto", "secure_direct", "system_proxy", "compat_no_sni"}
@@ -61,6 +63,8 @@ class CloudAuthService:
 
         access_token = self._config.get_decrypted(_KEY_ACCESS_TOKEN)
         email = self._config.get_decrypted(_KEY_USER_EMAIL)
+        phone = self._config.get_decrypted(_KEY_USER_PHONE)
+        oauth_label = self._config.get_decrypted(_KEY_USER_OAUTH_LABEL)
 
         if not access_token:
             return {
@@ -68,6 +72,7 @@ class CloudAuthService:
                 "cloud_available": cloud_available,
                 "email": None,
                 "display_name": None,
+                "phone_number": None,
                 "token_expired": False,
             }
 
@@ -75,7 +80,8 @@ class CloudAuthService:
             "logged_in": True,
             "cloud_available": cloud_available,
             "email": email,
-            "display_name": email,
+            "display_name": email or phone or oauth_label,
+            "phone_number": phone,
             "token_expired": False,
         }
 
@@ -119,18 +125,19 @@ class CloudAuthService:
             ) from exc
 
         self._record_working_mode(client)
-        self._store_tokens(result, email)
+        self._store_tokens(result, email=email)
         return {
             "logged_in": True,
             "cloud_available": True,
             "email": email,
             "display_name": email,
+            "phone_number": None,
         }
 
-    def register(self, email: str, password: str, display_name: str) -> dict:
+    def login_with_email_code(self, email: str, verification_code: str) -> dict:
         client = self._build_client()
         try:
-            result = client.register(email, password, display_name)
+            result = client.login_with_email_code(email, verification_code)
         except CloudApiNotConfiguredError:
             raise
         except CloudApiError as exc:
@@ -142,12 +149,212 @@ class CloudAuthService:
             ) from exc
 
         self._record_working_mode(client)
-        self._store_tokens(result, email)
+        self._store_tokens(result, email=email)
+        return {
+            "logged_in": True,
+            "cloud_available": True,
+            "email": email,
+            "display_name": email,
+            "phone_number": None,
+        }
+
+    def login_with_phone_code(self, phone_number: str, verification_code: str) -> dict:
+        client = self._build_client()
+        try:
+            result = client.login_with_phone_code(phone_number, verification_code)
+        except CloudApiNotConfiguredError:
+            raise
+        except CloudApiError as exc:
+            raise CloudAuthError(
+                str(exc),
+                error_kind=exc.error_kind,
+                suggestion=exc.suggestion,
+                status_code=exc.status_code,
+            ) from exc
+
+        self._record_working_mode(client)
+        self._store_tokens(result, phone_number=phone_number)
+        return {
+            "logged_in": True,
+            "cloud_available": True,
+            "email": None,
+            "display_name": phone_number,
+            "phone_number": phone_number,
+        }
+
+    def check_email_available(self, email: str) -> dict:
+        client = self._build_client()
+        try:
+            result = client.check_email(email)
+        except CloudApiNotConfiguredError:
+            raise
+        except CloudApiError as exc:
+            raise CloudAuthError(
+                str(exc),
+                error_kind=exc.error_kind,
+                suggestion=exc.suggestion,
+                status_code=exc.status_code,
+            ) from exc
+
+        self._record_working_mode(client)
+        return result
+
+    def check_phone_available(self, phone_number: str) -> dict:
+        client = self._build_client()
+        try:
+            result = client.check_phone(phone_number)
+        except CloudApiNotConfiguredError:
+            raise
+        except CloudApiError as exc:
+            raise CloudAuthError(
+                str(exc),
+                error_kind=exc.error_kind,
+                suggestion=exc.suggestion,
+                status_code=exc.status_code,
+            ) from exc
+
+        self._record_working_mode(client)
+        return result
+
+    def send_email_code(self, email: str, purpose: str) -> dict:
+        client = self._build_client()
+        try:
+            result = client.send_email_code(email, purpose)
+        except CloudApiNotConfiguredError:
+            raise
+        except CloudApiError as exc:
+            raise CloudAuthError(
+                str(exc),
+                error_kind=exc.error_kind,
+                suggestion=exc.suggestion,
+                status_code=exc.status_code,
+            ) from exc
+
+        self._record_working_mode(client)
+        return result
+
+    def send_phone_code(self, phone_number: str, purpose: str) -> dict:
+        client = self._build_client()
+        try:
+            result = client.send_phone_code(phone_number, purpose)
+        except CloudApiNotConfiguredError:
+            raise
+        except CloudApiError as exc:
+            raise CloudAuthError(
+                str(exc),
+                error_kind=exc.error_kind,
+                suggestion=exc.suggestion,
+                status_code=exc.status_code,
+            ) from exc
+
+        self._record_working_mode(client)
+        return result
+
+    def register(
+        self,
+        email: str,
+        password: str,
+        display_name: str,
+        verification_code: str,
+    ) -> dict:
+        client = self._build_client()
+        try:
+            result = client.register(email, password, display_name, verification_code)
+        except CloudApiNotConfiguredError:
+            raise
+        except CloudApiError as exc:
+            raise CloudAuthError(
+                str(exc),
+                error_kind=exc.error_kind,
+                suggestion=exc.suggestion,
+                status_code=exc.status_code,
+            ) from exc
+
+        self._record_working_mode(client)
+        self._store_tokens(result, email=email)
         return {
             "logged_in": True,
             "cloud_available": True,
             "email": email,
             "display_name": display_name or email,
+            "phone_number": None,
+        }
+
+    def register_with_phone(
+        self,
+        phone_number: str,
+        verification_code: str,
+        display_name: str,
+    ) -> dict:
+        client = self._build_client()
+        try:
+            result = client.register_with_phone(
+                phone_number, verification_code, display_name
+            )
+        except CloudApiNotConfiguredError:
+            raise
+        except CloudApiError as exc:
+            raise CloudAuthError(
+                str(exc),
+                error_kind=exc.error_kind,
+                suggestion=exc.suggestion,
+                status_code=exc.status_code,
+            ) from exc
+
+        self._record_working_mode(client)
+        self._store_tokens(result, phone_number=phone_number)
+        return {
+            "logged_in": True,
+            "cloud_available": True,
+            "email": None,
+            "display_name": display_name or phone_number,
+            "phone_number": phone_number,
+        }
+
+    def start_oauth_login(self, provider: str) -> dict:
+        client = self._build_client()
+        try:
+            result = client.start_oauth_login(provider)
+        except CloudApiNotConfiguredError:
+            raise
+        except CloudApiError as exc:
+            raise CloudAuthError(
+                str(exc),
+                error_kind=exc.error_kind,
+                suggestion=exc.suggestion,
+                status_code=exc.status_code,
+            ) from exc
+
+        self._record_working_mode(client)
+        return result
+
+    def poll_oauth_login(self, session_id: str, poll_token: str) -> dict:
+        client = self._build_client()
+        try:
+            result = client.poll_oauth_login(session_id, poll_token)
+        except CloudApiNotConfiguredError:
+            raise
+        except CloudApiError as exc:
+            raise CloudAuthError(
+                str(exc),
+                error_kind=exc.error_kind,
+                suggestion=exc.suggestion,
+                status_code=exc.status_code,
+            ) from exc
+
+        self._record_working_mode(client)
+        if result.get("status") != "completed":
+            return result
+
+        display_name = str(result.get("display_name") or result.get("provider") or "第三方账号")
+        self._store_tokens(result, oauth_label=display_name)
+        return {
+            "status": "completed",
+            "logged_in": True,
+            "cloud_available": True,
+            "email": None,
+            "display_name": display_name,
+            "phone_number": None,
         }
 
     def logout(self) -> None:
@@ -156,6 +363,8 @@ class CloudAuthService:
             _KEY_REFRESH_TOKEN,
             _KEY_USER_ID,
             _KEY_USER_EMAIL,
+            _KEY_USER_PHONE,
+            _KEY_USER_OAUTH_LABEL,
         ):
             self._config.delete_value(key)
 
@@ -197,7 +406,14 @@ class CloudAuthService:
             return False
 
         email = self._config.get_decrypted(_KEY_USER_EMAIL) or ""
-        self._store_tokens(result, email)
+        phone = self._config.get_decrypted(_KEY_USER_PHONE) or ""
+        oauth_label = self._config.get_decrypted(_KEY_USER_OAUTH_LABEL) or ""
+        self._store_tokens(
+            result,
+            email=email or None,
+            phone_number=phone or None,
+            oauth_label=oauth_label or None,
+        )
         logger.info("Access token refreshed successfully.")
         return True
 
@@ -245,7 +461,14 @@ class CloudAuthService:
                     status_code=retry_exc.status_code,
                 ) from retry_exc
 
-    def _store_tokens(self, auth_payload: dict, email: str) -> None:
+    def _store_tokens(
+        self,
+        auth_payload: dict,
+        *,
+        email: str | None = None,
+        phone_number: str | None = None,
+        oauth_label: str | None = None,
+    ) -> None:
         self._config.set_value(
             _KEY_ACCESS_TOKEN, str(auth_payload.get("access_token", ""))
         )
@@ -255,7 +478,18 @@ class CloudAuthService:
         self._config.set_value(
             _KEY_USER_ID, str(auth_payload.get("user_id", ""))
         )
-        self._config.set_value(_KEY_USER_EMAIL, email)
+        if email is not None:
+            self._config.set_value(_KEY_USER_EMAIL, email)
+            self._config.delete_value(_KEY_USER_PHONE)
+            self._config.delete_value(_KEY_USER_OAUTH_LABEL)
+        if phone_number is not None:
+            self._config.set_value(_KEY_USER_PHONE, phone_number)
+            self._config.delete_value(_KEY_USER_EMAIL)
+            self._config.delete_value(_KEY_USER_OAUTH_LABEL)
+        if oauth_label is not None:
+            self._config.set_value(_KEY_USER_OAUTH_LABEL, oauth_label)
+            self._config.delete_value(_KEY_USER_EMAIL)
+            self._config.delete_value(_KEY_USER_PHONE)
 
     def get_cloud_user_id(self) -> str:
         """Return the current cloud user's ID, or empty string if not logged in."""
@@ -303,6 +537,26 @@ class CloudAuthService:
                 display_name=display_name, signature=signature
             )
         )
+
+    def send_bind_email_code(self, email: str) -> dict:
+        return self._cloud_call(lambda client: client.send_bind_email_code(email))
+
+    def send_bind_phone_code(self, phone_number: str) -> dict:
+        return self._cloud_call(lambda client: client.send_bind_phone_code(phone_number))
+
+    def bind_email(self, email: str, verification_code: str) -> dict:
+        result = self._cloud_call(
+            lambda client: client.bind_email(email, verification_code)
+        )
+        self._config.set_value(_KEY_USER_EMAIL, email)
+        return result
+
+    def bind_phone(self, phone_number: str, verification_code: str) -> dict:
+        result = self._cloud_call(
+            lambda client: client.bind_phone(phone_number, verification_code)
+        )
+        self._config.set_value(_KEY_USER_PHONE, phone_number)
+        return result
 
     def change_password(self, old_password: str, new_password: str) -> dict:
         """Change the user's password on the cloud server."""

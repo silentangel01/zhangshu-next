@@ -42,7 +42,7 @@ function submit() {
 
 <template>
   <section class="binding-panel">
-    <header>
+    <header class="binding-header">
       <p>快速创建</p>
       <h2>从资料创建节点</h2>
     </header>
@@ -69,13 +69,16 @@ function submit() {
 .binding-panel {
   display: grid;
   gap: 10px;
-  border-top: 1px solid var(--zs-color-border-soft);
-  padding-top: 12px;
+  border: 1px solid var(--zs-color-border-soft);
+  border-radius: var(--zs-radius-md);
+  padding: var(--zs-space-3);
+  background: var(--zs-color-surface-soft);
 }
 
-header {
+.binding-header {
   display: grid;
-  gap: 3px;
+  gap: 4px;
+  margin-bottom: 2px;
 }
 
 h2,
@@ -84,25 +87,27 @@ p {
 }
 
 p {
-  color: var(--zs-color-text-muted);
-  font-size: 0.76rem;
-  font-weight: 900;
+  color: var(--zs-color-text-faint);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
 }
 
 h2 {
   color: var(--zs-color-text);
-  font-size: 0.96rem;
+  font-size: 0.92rem;
+  font-weight: 700;
 }
 
 label {
   display: grid;
-  gap: 6px;
+  gap: 4px;
 }
 
-span {
-  color: var(--zs-color-text-muted);
-  font-size: 0.78rem;
-  font-weight: 800;
+label > span {
+  color: var(--zs-color-text-faint);
+  font-size: 0.74rem;
+  font-weight: 700;
 }
 
 select,
@@ -111,22 +116,33 @@ button {
   box-sizing: border-box;
   border: 1px solid var(--zs-color-border);
   border-radius: var(--zs-radius-sm);
-  padding: 8px 10px;
+  padding: 7px 10px;
   background: var(--zs-color-surface);
   color: var(--zs-color-text);
   font: inherit;
   font-size: 0.84rem;
 }
 
+select:focus {
+  border-color: var(--zs-color-primary);
+  outline: none;
+}
+
 button {
+  min-height: 34px;
   background: var(--zs-color-primary);
   color: var(--zs-color-on-primary);
-  font-weight: 800;
+  font-weight: 700;
   cursor: pointer;
+  transition: background var(--zs-duration-fast) var(--zs-ease-standard);
+}
+
+button:hover:not(:disabled) {
+  background: var(--zs-color-primary-hover);
 }
 
 button:disabled {
   cursor: not-allowed;
-  opacity: 0.55;
+  opacity: 0.5;
 }
 </style>

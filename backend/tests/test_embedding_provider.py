@@ -1,5 +1,8 @@
 """Tests for the embedding provider infrastructure."""
 
+import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -25,7 +28,7 @@ def provider():
 
 class TestProviderProperties:
     def test_model_name(self, provider):
-        assert provider.model_name == "bigram-hash-v1"
+        assert provider.model_name == "bigram-hash-v2"
 
     def test_vector_dim(self, provider):
         assert provider.vector_dim == 256
@@ -137,3 +140,44 @@ class TestCosineSimilarity:
     def test_batch_zero_query(self):
         results = cosine_similarity_batch([0.0, 0.0], [[1.0, 0.0], [0.0, 1.0]])
         assert all(r == 0.0 for r in results)
+
+
+# ---------- Cross-process Stability ----------
+
+
+class TestCrossProcessStability:
+    """Verify that the stable hash produces identical vectors regardless of
+    PYTHONHASHSEED.  Python's built-in ``hash()`` is randomised by default;
+    the provider must use hashlib.blake2b so persisted vectors stay valid
+    across interpreter restarts.
+    """
+
+    _SCRIPT = (
+        "import json, sys;"
+        "sys.path.insert(0, r'{backend_dir}');"
+        "from app.infrastructure.embedding_provider import BigramHashEmbeddingProvider;"
+        "p = BigramHashEmbeddingProvider();"
+        "v = p.encode('魔法体系的详细说明文档');"
+        "print(json.dumps(v))"
+    )
+
+    def test_same_vector_across_different_hash_seeds(self):
+        backend_dir = str(Path(__file__).resolve().parents[1])
+        script = self._SCRIPT.format(backend_dir=backend_dir)
+        python_exe = sys.executable
+
+        vectors = []
+        for seed in ("1", "2", "42"):
+            env = {**os.environ, "PYTHONHASHSEED": seed}
+            result = subprocess.run(
+                [python_exe, "-c", script],
+                capture_output=True,
+                text=True,
+                env=env,
+                check=True,
+            )
+            vectors.append(json.loads(result.stdout.strip()))
+
+        # All three runs must produce identical vectors
+        assert vectors[0] == vectors[1]
+        assert vectors[1] == vectors[2]

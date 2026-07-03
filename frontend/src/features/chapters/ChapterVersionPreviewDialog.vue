@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import type { ChapterVersionDetail, ChapterVersionSource } from '@/entities/chapter-version/types'
+import type { ChapterVersionDetail } from '@/entities/chapter-version/types'
+import { CHAPTER_VERSION_SOURCE_LABELS } from '@/entities/chapter-version/types'
 import { formatDateTimeFull } from '@/shared/utils/formatDateTime'
 
 defineProps<{
@@ -11,15 +12,8 @@ const emit = defineEmits<{
   restore: [versionId: string]
 }>()
 
-function getSourceLabel(source: ChapterVersionSource): string {
-  const labels: Record<ChapterVersionSource, string> = {
-    manual: '手动保存',
-    autosave: '自动保存',
-    restore: '恢复版本',
-    before_restore: '恢复前备份',
-  }
-
-  return labels[source]
+function getSourceLabel(source: string): string {
+  return CHAPTER_VERSION_SOURCE_LABELS[source] ?? source
 }
 </script>
 

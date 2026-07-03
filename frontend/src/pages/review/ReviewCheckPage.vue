@@ -302,9 +302,8 @@ function handleImportAndCloseMenu() {
   <main class="review-page">
     <header class="page-header">
       <div>
-        <RouterLink class="back-link" :to="`/projects/${projectId}`">返回写作页</RouterLink>
-        <p class="eyebrow">检查</p>
-        <h1>违禁词 / 敏感词检查</h1>
+        <RouterLink class="back-link" :to="`/projects/${projectId}`">← 返回写作页</RouterLink>
+        <h1>违禁词检查</h1>
       </div>
       <RouterLink class="secondary-link" to="/projects">项目列表</RouterLink>
     </header>
@@ -319,8 +318,7 @@ function handleImportAndCloseMenu() {
     <section class="page-layout">
       <article class="panel check-panel">
         <header class="panel-header-compact">
-          <p class="eyebrow">检查</p>
-          <h2>检查</h2>
+          <h2>检查范围</h2>
           <p class="panel-hint">只提示，不自动修改正文</p>
         </header>
 
@@ -370,8 +368,7 @@ function handleImportAndCloseMenu() {
       <article class="panel term-panel">
         <header class="term-panel-header">
           <div>
-            <p class="eyebrow">词库</p>
-            <h2>违禁词 / 敏感词</h2>
+            <h2>词条管理</h2>
           </div>
           <div class="more-menu-wrapper">
             <button class="secondary-button more-button" type="button" @click="toggleMoreMenu">
@@ -420,10 +417,10 @@ function handleImportAndCloseMenu() {
         </form>
 
         <div class="term-list">
-          <article v-for="term in terms" :key="term.id" class="term-item">
+          <article v-for="term in terms" :key="term.id" class="term-item" :class="{ disabled: !term.enabled }">
             <div>
               <strong>{{ term.term }}</strong>
-              <span>{{ getSeverityLabel(term.severity) }}</span>
+              <span class="term-severity" :class="`sev-${term.severity}`">{{ getSeverityLabel(term.severity) }}</span>
             </div>
             <p>{{ term.suggestion || '暂无建议' }}</p>
             <div class="term-actions">
@@ -440,7 +437,6 @@ function handleImportAndCloseMenu() {
 
     <section class="result-panel">
       <header class="result-title">
-        <p class="eyebrow">检查结果</p>
         <h2>检查结果</h2>
       </header>
 
@@ -450,7 +446,7 @@ function handleImportAndCloseMenu() {
             <p class="volume-title">{{ result.volume_title || '未分卷章节' }}</p>
             <h3>{{ result.chapter_title || '章节' }}</h3>
           </div>
-          <span class="severity-pill">{{ getSeverityLabel(result.severity) }}</span>
+          <span class="severity-pill" :class="`sev-${result.severity}`">{{ getSeverityLabel(result.severity) }}</span>
         </header>
 
         <dl class="result-grid">
@@ -484,7 +480,7 @@ function handleImportAndCloseMenu() {
   min-height: 100vh;
   box-sizing: border-box;
   overflow-x: hidden;
-  padding: var(--zs-space-6) var(--zs-space-5);
+  padding: var(--zs-space-4) var(--zs-space-4) var(--zs-space-6);
   background: var(--zs-color-bg);
   color: var(--zs-color-text);
 }
@@ -500,23 +496,26 @@ function handleImportAndCloseMenu() {
 }
 
 .page-header,
-.result-header,
-.term-actions,
-.result-footer,
-.term-panel-header,
-.term-toolbar {
+.term-panel-header {
   display: flex;
   gap: var(--zs-space-4);
+}
+
+.result-header,
+.result-footer,
+.term-actions {
+  display: flex;
+  gap: var(--zs-space-3);
 }
 
 .page-header {
   align-items: flex-end;
   justify-content: space-between;
-  margin-bottom: var(--zs-space-4);
+  margin-bottom: var(--zs-space-3);
 }
 
 .term-panel-header {
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
 }
 
@@ -550,8 +549,8 @@ function handleImportAndCloseMenu() {
   background: transparent;
   color: var(--zs-color-text);
   font: inherit;
-  font-size: 0.85rem;
-  font-weight: 700;
+  font-size: 0.84rem;
+  font-weight: 500;
   text-align: left;
   cursor: pointer;
 }
@@ -567,25 +566,24 @@ function handleImportAndCloseMenu() {
 .page-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: var(--zs-space-4);
+  gap: var(--zs-space-3);
   align-items: stretch;
-  margin-bottom: var(--zs-space-5);
+  margin-bottom: var(--zs-space-4);
 }
 
 .panel,
 .result-panel,
 .result-card {
   box-sizing: border-box;
-  border: 1px solid var(--zs-color-border);
+  border: 1px solid var(--zs-color-border-soft);
   border-radius: var(--zs-radius-md);
   background: var(--zs-color-surface);
-  box-shadow: var(--zs-shadow-sm);
 }
 
 .panel {
   display: grid;
   gap: var(--zs-space-3);
-  padding: var(--zs-space-4) var(--zs-space-5);
+  padding: var(--zs-space-3) var(--zs-space-4);
 }
 
 .panel-header-compact {
@@ -613,20 +611,33 @@ function handleImportAndCloseMenu() {
 .result-panel {
   display: grid;
   gap: var(--zs-space-2);
-  padding: var(--zs-space-4) var(--zs-space-5);
+  padding: var(--zs-space-3) var(--zs-space-4);
+}
+
+.result-title {
+  margin: 0 0 var(--zs-space-1);
+}
+
+.result-title h2 {
+  margin: 0;
 }
 
 .result-card {
   display: grid;
-  gap: var(--zs-space-3);
-  padding: var(--zs-space-4);
+  gap: var(--zs-space-2);
+  padding: var(--zs-space-3);
+  transition: border-color 0.15s;
+}
+
+.result-card:hover {
+  border-color: var(--zs-color-border);
 }
 
 .eyebrow {
   margin: 0 0 6px;
   color: var(--zs-color-text-muted);
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0;
 }
 
@@ -641,46 +652,67 @@ h3,
 }
 
 h1 {
-  font-size: 1.8rem;
-  line-height: 1.1;
-  letter-spacing: 0;
+  font-size: 1.3rem;
+  line-height: 1.3;
+  font-weight: 700;
 }
 
 h2 {
-  font-size: 1.2rem;
+  font-size: 1rem;
+  line-height: 1.35;
+  font-weight: 600;
 }
 
 h3 {
-  font-size: 1.05rem;
+  font-size: 0.95rem;
+  line-height: 1.35;
+  font-weight: 600;
 }
 
-.volume-title,
+.volume-title {
+  color: var(--zs-color-text-muted);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
 .suggestion {
   color: var(--zs-color-text-muted);
+  font-size: 0.84rem;
   line-height: 1.6;
 }
 
 .back-link {
   display: inline-flex;
   margin-bottom: var(--zs-space-2);
-  color: var(--zs-color-primary);
-  font-weight: 800;
+  color: var(--zs-color-text-muted);
+  font-size: 0.84rem;
+  font-weight: 600;
   text-decoration: none;
+}
+
+.back-link:hover {
+  color: var(--zs-color-primary);
 }
 
 .secondary-link {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 38px;
+  min-height: 34px;
   box-sizing: border-box;
   border: 1px solid var(--zs-color-border);
   border-radius: var(--zs-radius-sm);
-  padding: 0 14px;
+  padding: 0 var(--zs-space-3);
   background: var(--zs-color-surface);
   color: var(--zs-color-text);
-  font-weight: 800;
+  font-size: 0.84rem;
+  font-weight: 600;
   text-decoration: none;
+  transition: background 0.15s;
+}
+
+.secondary-link:hover {
+  background: var(--zs-color-surface-soft);
 }
 
 .visually-hidden {
@@ -695,10 +727,11 @@ h3 {
 .error-banner,
 .success-banner {
   box-sizing: border-box;
-  margin-bottom: var(--zs-space-4);
-  border-radius: var(--zs-radius-md);
-  padding: 12px 14px;
-  font-weight: 800;
+  margin-bottom: var(--zs-space-3);
+  border-radius: var(--zs-radius-sm);
+  padding: var(--zs-space-2) var(--zs-space-3);
+  font-size: 0.84rem;
+  font-weight: 600;
 }
 
 .error-banner {
@@ -749,7 +782,8 @@ h3 {
 
 .field-label {
   color: var(--zs-color-text-muted);
-  font-weight: 800;
+  font-size: 0.84rem;
+  font-weight: 600;
 }
 
 .segmented-control {
@@ -768,8 +802,8 @@ h3 {
   padding: 6px 8px;
   background: var(--zs-color-surface);
   color: var(--zs-color-text);
-  font-size: 0.88rem;
-  font-weight: 700;
+  font-size: 0.84rem;
+  font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
@@ -796,7 +830,7 @@ h3 {
 
 .segmented-control label.active span {
   color: var(--zs-color-primary);
-  font-weight: 800;
+  font-weight: 600;
 }
 
 input,
@@ -804,21 +838,31 @@ select {
   width: 100%;
   box-sizing: border-box;
   border: 1px solid var(--zs-color-border);
-  border-radius: var(--zs-radius-md);
-  padding: 8px 12px;
+  border-radius: var(--zs-radius-sm);
+  padding: var(--zs-space-2) var(--zs-space-3);
   background: var(--zs-color-surface);
   color: var(--zs-color-text);
   font: inherit;
+  font-size: 0.88rem;
+}
+
+input:focus,
+select:focus {
+  outline: none;
+  border-color: var(--zs-color-primary);
+  box-shadow: var(--zs-shadow-focus);
 }
 
 button {
   min-height: 34px;
   border-radius: var(--zs-radius-sm);
   border: 1px solid transparent;
-  padding: 0 14px;
+  padding: 0 var(--zs-space-3);
   font: inherit;
-  font-weight: 800;
+  font-size: 0.84rem;
+  font-weight: 600;
   cursor: pointer;
+  transition: background 0.15s;
 }
 
 button:disabled {
@@ -831,16 +875,29 @@ button:disabled {
   color: var(--zs-color-on-primary);
 }
 
+.primary-button:hover:not(:disabled) {
+  background: var(--zs-color-primary-hover);
+}
+
 .secondary-button {
   border-color: var(--zs-color-border);
   background: var(--zs-color-surface);
   color: var(--zs-color-primary);
 }
 
+.secondary-button:hover {
+  background: var(--zs-color-surface-soft);
+}
+
 .danger-button {
   border-color: var(--zs-color-danger);
   background: var(--zs-color-danger-soft);
   color: var(--zs-color-danger);
+}
+
+.danger-button:hover {
+  background: var(--zs-color-danger);
+  color: var(--zs-color-on-primary);
 }
 
 .term-list {
@@ -850,22 +907,63 @@ button:disabled {
 
 .term-item {
   display: grid;
-  gap: var(--zs-space-2);
+  gap: var(--zs-space-1);
   border: 1px solid var(--zs-color-border-soft);
-  border-radius: var(--zs-radius-md);
-  padding: var(--zs-space-3);
+  border-radius: var(--zs-radius-sm);
+  padding: var(--zs-space-2) var(--zs-space-3);
   background: var(--zs-color-surface-soft);
+  transition: border-color 0.15s;
+}
+
+.term-item:hover {
+  border-color: var(--zs-color-border);
+}
+
+.term-item.disabled {
+  opacity: 0.55;
 }
 
 .term-item div:first-child {
   display: flex;
-  justify-content: space-between;
-  gap: var(--zs-space-3);
+  align-items: center;
+  gap: var(--zs-space-2);
+}
+
+.term-item strong {
+  font-size: 0.9rem;
+  font-weight: 600;
 }
 
 .term-item p {
   margin: 0;
   color: var(--zs-color-text-muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.term-severity {
+  flex: 0 0 auto;
+  border-radius: var(--zs-radius-sm);
+  padding: 1px 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: var(--zs-color-info-soft);
+  color: var(--zs-color-info);
+}
+
+.term-severity.sev-high {
+  background: var(--zs-color-danger-soft);
+  color: var(--zs-color-danger);
+}
+
+.term-severity.sev-medium {
+  background: var(--zs-color-warning-soft, rgba(245, 158, 11, 0.12));
+  color: var(--zs-color-warning, #d97706);
+}
+
+.term-severity.sev-low {
+  background: var(--zs-color-info-soft);
+  color: var(--zs-color-info);
 }
 
 .result-header,
@@ -877,50 +975,73 @@ button:disabled {
 .severity-pill {
   flex: 0 0 auto;
   border-radius: var(--zs-radius-pill);
-  padding: 4px 9px;
+  padding: 3px 8px;
   background: var(--zs-color-info-soft);
   color: var(--zs-color-info);
-  font-size: 0.78rem;
-  font-weight: 800;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.severity-pill.sev-high {
+  background: var(--zs-color-danger-soft);
+  color: var(--zs-color-danger);
+}
+
+.severity-pill.sev-medium {
+  background: var(--zs-color-warning-soft, rgba(245, 158, 11, 0.12));
+  color: var(--zs-color-warning, #d97706);
+}
+
+.severity-pill.sev-low {
+  background: var(--zs-color-info-soft);
+  color: var(--zs-color-info);
 }
 
 .result-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: var(--zs-space-3);
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--zs-space-2);
   margin: 0;
 }
 
 .result-grid div {
   border: 1px solid var(--zs-color-border-soft);
-  border-radius: var(--zs-radius-md);
-  padding: var(--zs-space-3);
+  border-radius: var(--zs-radius-sm);
+  padding: var(--zs-space-2);
   background: var(--zs-color-surface-soft);
 }
 
 dt {
-  margin: 0 0 4px;
+  margin: 0 0 2px;
   color: var(--zs-color-text-muted);
-  font-size: 0.78rem;
-  font-weight: 800;
+  font-size: 0.76rem;
+  font-weight: 500;
 }
 
 dd {
   margin: 0;
   color: var(--zs-color-text);
-  font-weight: 800;
+  font-size: 0.88rem;
+  font-weight: 600;
 }
 
 .empty-state {
   display: grid;
   place-items: center;
-  min-height: 64px;
+  min-height: 80px;
   border: 1px dashed var(--zs-color-border);
   border-radius: var(--zs-radius-md);
   background: var(--zs-color-surface);
   color: var(--zs-color-text-muted);
-  font-size: 0.88rem;
-  font-weight: 700;
+  font-size: 0.84rem;
+  font-weight: 500;
+}
+
+/* Reserve space for fixed top-right bar (notification + theme) */
+@media (min-width: 721px) and (max-width: 1500px) {
+  .page-header {
+    padding-right: var(--top-bar-width, 220px);
+  }
 }
 
 @media (max-width: 820px) {
@@ -930,7 +1051,8 @@ dd {
 
   .page-header,
   .result-header,
-  .result-footer {
+  .result-footer,
+  .term-actions {
     align-items: stretch;
     flex-direction: column;
   }

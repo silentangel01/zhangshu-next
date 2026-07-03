@@ -1,21 +1,31 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 
 import { ApiError } from '@/shared/api/client'
 import {
+  checkCloudEmail,
+  checkCloudPhone,
   cloudLogin,
+  cloudLoginWithEmailCode,
+  cloudLoginWithPhoneCode,
   cloudLogout,
   cloudRegister,
+  cloudRegisterWithPhone,
   getCloudAccountStatus,
   getCloudNetworkSettings,
+  pollCloudOAuthLogin,
   runCloudNetworkDiagnostics,
+  sendCloudEmailCode,
+  sendCloudPhoneCode,
   setCloudNetworkSettings,
+  startCloudOAuthLogin,
 } from '@/entities/cloud/api'
 import type {
   CloudAccountStatus,
   CloudNetworkDiagnosticReport,
   CloudNetworkMode,
   CloudNetworkSettings,
+  CloudOAuthProvider,
 } from '@/entities/cloud/types'
 
 const emit = defineEmits<{
@@ -24,13 +34,25 @@ const emit = defineEmits<{
 
 const isLoading = ref(true)
 const isSubmitting = ref(false)
+const isSendingLoginCode = ref(false)
+const isSendingRegisterCode = ref(false)
+const isStartingOAuth = ref(false)
+const oauthPendingProvider = ref<CloudOAuthProvider | null>(null)
 const activeTab = ref<'login' | 'register'>('login')
+const loginMethod = ref<'password' | 'code'>('password')
+const loginCodeTarget = ref<'email' | 'phone'>('email')
+const registerMode = ref<'email' | 'phone'>('email')
 const email = ref('')
+const phoneNumber = ref('')
 const password = ref('')
 const displayName = ref('')
+const loginVerificationCode = ref('')
+const registerVerificationCode = ref('')
 const errorMessage = ref('')
 const errorSuggestion = ref('')
 const successMessage = ref('')
+const loginCodeCooldown = ref(0)
+const registerCodeCooldown = ref(0)
 
 const accountStatus = ref<CloudAccountStatus | null>(null)
 
@@ -49,6 +71,11 @@ const MODE_LABELS: Record<CloudNetworkMode, string> = {
   compat_no_sni: '兼容模式',
 }
 
+const OAUTH_LABELS: Record<CloudOAuthProvider, string> = {
+  wechat: '微信',
+  qq: 'QQ',
+}
+
 /** Error kinds that indicate network/TLS issues (not auth problems). */
 const NETWORK_ERROR_KINDS = new Set([
   'tls_reset_or_sni_filtered',
@@ -59,6 +86,9 @@ const NETWORK_ERROR_KINDS = new Set([
   'proxy_required_or_interfered',
   'cloud_unavailable',
 ])
+
+let cooldownTimer: ReturnType<typeof setInterval> | null = null
+let oauthPollTimer: ReturnType<typeof setInterval> | null = null
 
 onMounted(async () => {
   try {
@@ -73,7 +103,17 @@ onMounted(async () => {
   }
 })
 
+onUnmounted(() => {
+  stopCooldownTimer()
+  stopOAuthPolling()
+})
+
 async function handleLogin() {
+  if (loginMethod.value === 'code') {
+    await handleEmailCodeLogin()
+    return
+  }
+
   if (!email.value.trim() || !password.value) {
     errorMessage.value = '请输入邮箱和密码。'
     return
@@ -97,9 +137,14 @@ async function handleLogin() {
   }
 }
 
-async function handleRegister() {
-  if (!email.value.trim() || !password.value) {
-    errorMessage.value = '请输入邮箱和密码。'
+async function handleEmailCodeLogin() {
+  const target = loginCodeTarget.value
+  if (target === 'email' && (!email.value.trim() || !loginVerificationCode.value.trim())) {
+    errorMessage.value = '请输入邮箱和验证码。'
+    return
+  }
+  if (target === 'phone' && (!phoneNumber.value.trim() || !loginVerificationCode.value.trim())) {
+    errorMessage.value = '请输入手机号和验证码。'
     return
   }
 
@@ -107,16 +152,126 @@ async function handleRegister() {
   clearMessages()
 
   try {
-    const status = await cloudRegister(
-      email.value.trim(),
-      password.value,
-      displayName.value.trim(),
-    )
+    const status =
+      target === 'email'
+        ? await cloudLoginWithEmailCode(email.value.trim(), loginVerificationCode.value.trim())
+        : await cloudLoginWithPhoneCode(phoneNumber.value.trim(), loginVerificationCode.value.trim())
+    accountStatus.value = status
+    isLoggedIn.value = true
+    cloudAvailable.value = status.cloud_available
+    successMessage.value = '登录成功。'
+    loginVerificationCode.value = ''
+    showDiagnosticButton.value = false
+  } catch (error) {
+    handleError(error, '验证码登录失败，请检查验证码。')
+  } finally {
+    isSubmitting.value = false
+  }
+}
+
+async function handleSendLoginCode() {
+  if (loginCodeTarget.value === 'email' && !email.value.trim()) {
+    errorMessage.value = '请输入邮箱。'
+    return
+  }
+  if (loginCodeTarget.value === 'phone' && !phoneNumber.value.trim()) {
+    errorMessage.value = '请输入手机号。'
+    return
+  }
+
+  isSendingLoginCode.value = true
+  clearMessages()
+
+  try {
+    const result =
+      loginCodeTarget.value === 'email'
+        ? await sendCloudEmailCode(email.value.trim(), 'login')
+        : await sendCloudPhoneCode(phoneNumber.value.trim(), 'login')
+    successMessage.value =
+      loginCodeTarget.value === 'email'
+        ? '如果邮箱已注册，验证码将发送到该邮箱。'
+        : '如果手机号已注册，验证码将发送到该手机。'
+    startCooldown('login', result.cooldown_seconds)
+  } catch (error) {
+    handleError(error, '验证码发送失败，请稍后重试。')
+  } finally {
+    isSendingLoginCode.value = false
+  }
+}
+
+async function handleSendRegisterCode() {
+  if (registerMode.value === 'email' && !email.value.trim()) {
+    errorMessage.value = '请输入邮箱。'
+    return
+  }
+  if (registerMode.value === 'phone' && !phoneNumber.value.trim()) {
+    errorMessage.value = '请输入手机号。'
+    return
+  }
+
+  isSendingRegisterCode.value = true
+  clearMessages()
+
+  try {
+    const checked =
+      registerMode.value === 'email'
+        ? await checkCloudEmail(email.value.trim())
+        : await checkCloudPhone(phoneNumber.value.trim())
+    if (!checked.available) {
+      errorMessage.value =
+        registerMode.value === 'email'
+          ? '该邮箱已注册，请直接登录。'
+          : '该手机号已注册，请直接登录。'
+      return
+    }
+
+    const result =
+      registerMode.value === 'email'
+        ? await sendCloudEmailCode(email.value.trim(), 'register')
+        : await sendCloudPhoneCode(phoneNumber.value.trim(), 'register')
+    successMessage.value =
+      registerMode.value === 'email' ? '验证码已发送，请查看邮箱。' : '验证码已发送，请查看手机。'
+    startCooldown('register', result.cooldown_seconds)
+  } catch (error) {
+    handleError(error, '验证码发送失败，请稍后重试。')
+  } finally {
+    isSendingRegisterCode.value = false
+  }
+}
+
+async function handleRegister() {
+  if (registerMode.value === 'email' && (!email.value.trim() || !password.value || !registerVerificationCode.value.trim())) {
+    errorMessage.value = '请输入邮箱、密码和验证码。'
+    return
+  }
+  if (registerMode.value === 'phone' && (!phoneNumber.value.trim() || !registerVerificationCode.value.trim())) {
+    errorMessage.value = '请输入手机号和验证码。'
+    return
+  }
+
+  isSubmitting.value = true
+  clearMessages()
+
+  try {
+    const status =
+      registerMode.value === 'email'
+        ? await cloudRegister(
+            email.value.trim(),
+            password.value,
+            displayName.value.trim(),
+            registerVerificationCode.value.trim(),
+          )
+        : await cloudRegisterWithPhone(
+            phoneNumber.value.trim(),
+            registerVerificationCode.value.trim(),
+            displayName.value.trim(),
+          )
     accountStatus.value = status
     isLoggedIn.value = true
     cloudAvailable.value = status.cloud_available
     successMessage.value = '注册成功，已自动登录。'
     password.value = ''
+    registerVerificationCode.value = ''
     showDiagnosticButton.value = false
   } catch (error) {
     handleError(error, '注册失败，请稍后重试。')
@@ -142,8 +297,97 @@ async function handleLogout() {
   }
 }
 
+async function handleOAuthLogin(provider: CloudOAuthProvider) {
+  isStartingOAuth.value = true
+  oauthPendingProvider.value = provider
+  clearMessages()
+  stopOAuthPolling()
+
+  try {
+    const result = await startCloudOAuthLogin(provider)
+    window.open(result.authorization_url, '_blank', 'noopener')
+    successMessage.value = `请在浏览器中完成${OAUTH_LABELS[provider]}授权。`
+    startOAuthPolling(result.session_id, result.poll_token, provider)
+  } catch (error) {
+    oauthPendingProvider.value = null
+    handleError(error, `${OAUTH_LABELS[provider]}登录暂不可用。`)
+  } finally {
+    isStartingOAuth.value = false
+  }
+}
+
+function startOAuthPolling(sessionId: string, pollToken: string, provider: CloudOAuthProvider) {
+  stopOAuthPolling()
+  oauthPendingProvider.value = provider
+
+  const poll = async () => {
+    try {
+      const result = await pollCloudOAuthLogin(sessionId, pollToken)
+      if (result.status === 'pending') return
+      stopOAuthPolling()
+
+      if (result.status === 'failed') {
+        errorMessage.value = result.error_message || `${OAUTH_LABELS[provider]}登录失败。`
+        oauthPendingProvider.value = null
+        return
+      }
+
+      accountStatus.value = {
+        logged_in: true,
+        cloud_available: result.cloud_available ?? true,
+        email: result.email ?? null,
+        phone_number: result.phone_number ?? null,
+        display_name: result.display_name || OAUTH_LABELS[provider],
+      }
+      isLoggedIn.value = true
+      cloudAvailable.value = true
+      successMessage.value = `${OAUTH_LABELS[provider]}登录成功。`
+      oauthPendingProvider.value = null
+      showDiagnosticButton.value = false
+    } catch (error) {
+      stopOAuthPolling()
+      oauthPendingProvider.value = null
+      handleError(error, `${OAUTH_LABELS[provider]}登录状态确认失败。`)
+    }
+  }
+
+  void poll()
+  oauthPollTimer = setInterval(() => {
+    void poll()
+  }, 2000)
+}
+
+function stopOAuthPolling() {
+  if (!oauthPollTimer) return
+  clearInterval(oauthPollTimer)
+  oauthPollTimer = null
+}
+
 function switchTab(tab: 'login' | 'register') {
   activeTab.value = tab
+  password.value = ''
+  loginVerificationCode.value = ''
+  registerVerificationCode.value = ''
+  clearMessages()
+}
+
+function switchLoginMethod(method: 'password' | 'code') {
+  loginMethod.value = method
+  password.value = ''
+  loginVerificationCode.value = ''
+  clearMessages()
+}
+
+function switchLoginCodeTarget(target: 'email' | 'phone') {
+  loginCodeTarget.value = target
+  loginVerificationCode.value = ''
+  clearMessages()
+}
+
+function switchRegisterMode(mode: 'email' | 'phone') {
+  registerMode.value = mode
+  registerVerificationCode.value = ''
+  password.value = ''
   clearMessages()
 }
 
@@ -229,6 +473,37 @@ function shouldShowModeSwitch(): boolean {
   if (!networkSettings.value) return false
   return diagnosticReport.value.recommended_mode !== networkSettings.value.mode
 }
+
+function startCooldown(kind: 'login' | 'register', seconds: number) {
+  const value = Math.max(1, seconds)
+  if (kind === 'login') {
+    loginCodeCooldown.value = value
+  } else {
+    registerCodeCooldown.value = value
+  }
+  ensureCooldownTimer()
+}
+
+function ensureCooldownTimer() {
+  if (cooldownTimer) return
+  cooldownTimer = setInterval(() => {
+    if (loginCodeCooldown.value > 0) {
+      loginCodeCooldown.value -= 1
+    }
+    if (registerCodeCooldown.value > 0) {
+      registerCodeCooldown.value -= 1
+    }
+    if (loginCodeCooldown.value <= 0 && registerCodeCooldown.value <= 0) {
+      stopCooldownTimer()
+    }
+  }, 1000)
+}
+
+function stopCooldownTimer() {
+  if (!cooldownTimer) return
+  clearInterval(cooldownTimer)
+  cooldownTimer = null
+}
 </script>
 
 <template>
@@ -252,7 +527,9 @@ function shouldShowModeSwitch(): boolean {
           <div v-else-if="isLoggedIn" class="logged-in-section">
             <div class="account-info">
               <p class="info-label">已登录</p>
-              <p class="info-email">{{ accountStatus?.email ?? accountStatus?.display_name }}</p>
+              <p class="info-email">
+                {{ accountStatus?.email ?? accountStatus?.phone_number ?? accountStatus?.display_name }}
+              </p>
             </div>
             <button
               class="secondary-button"
@@ -283,40 +560,212 @@ function shouldShowModeSwitch(): boolean {
             </div>
 
             <form @submit.prevent="activeTab === 'login' ? handleLogin() : handleRegister()">
-              <label>
+              <label
+                v-if="
+                  activeTab === 'register'
+                    ? registerMode === 'email'
+                    : loginMethod === 'password' || loginCodeTarget === 'email'
+                "
+              >
                 <span>邮箱</span>
                 <input v-model.trim="email" type="email" required placeholder="your@email.com" />
               </label>
 
-              <label v-if="activeTab === 'register'">
-                <span>显示名称</span>
-                <input v-model.trim="displayName" type="text" placeholder="可选" />
+              <label v-if="activeTab === 'register' && registerMode === 'phone'">
+                <span>手机号</span>
+                <input v-model.trim="phoneNumber" inputmode="tel" required placeholder="13800138000" />
               </label>
 
-              <label>
-                <span>密码</span>
-                <input v-model="password" type="password" required />
-                <span v-if="activeTab === 'register'" class="field-hint">
-                  至少 10 个字符，建议包含字母和数字
-                </span>
-              </label>
+              <template v-if="activeTab === 'login' && loginMethod === 'password'">
+                <label>
+                  <span>密码</span>
+                  <input v-model="password" type="password" required />
+                </label>
 
-              <button
-                class="primary-button"
-                type="submit"
-                :disabled="isSubmitting || !email.trim() || !password"
-              >
-                {{
-                  isSubmitting
-                    ? activeTab === 'login'
-                      ? '正在登录…'
-                      : '正在注册…'
-                    : activeTab === 'login'
-                      ? '登录'
-                      : '注册'
-                }}
-              </button>
+                <button
+                  class="primary-button"
+                  type="submit"
+                  :disabled="isSubmitting || !email.trim() || !password"
+                >
+                  {{ isSubmitting ? '正在登录…' : '登录' }}
+                </button>
+
+                <div class="mode-link-row">
+                  <button class="mode-link" type="button" @click="switchLoginMethod('code')">
+                    使用验证码登录
+                  </button>
+                </div>
+              </template>
+
+              <template v-else-if="activeTab === 'login'">
+                <div class="code-target-row">
+                  <button
+                    :class="['target-chip', { active: loginCodeTarget === 'email' }]"
+                    type="button"
+                    @click="switchLoginCodeTarget('email')"
+                  >
+                    邮箱
+                  </button>
+                  <button
+                    :class="['target-chip', { active: loginCodeTarget === 'phone' }]"
+                    type="button"
+                    @click="switchLoginCodeTarget('phone')"
+                  >
+                    手机号
+                  </button>
+                </div>
+
+                <label v-if="loginCodeTarget === 'phone'">
+                  <span>手机号</span>
+                  <input v-model.trim="phoneNumber" inputmode="tel" required placeholder="13800138000" />
+                </label>
+
+                <label>
+                  <span>验证码</span>
+                  <div class="code-row">
+                    <input
+                      v-model.trim="loginVerificationCode"
+                      inputmode="numeric"
+                      maxlength="10"
+                      required
+                    />
+                    <button
+                      class="secondary-button code-button"
+                      type="button"
+                      :disabled="
+                        isSendingLoginCode ||
+                        (loginCodeTarget === 'email' ? !email.trim() : !phoneNumber.trim()) ||
+                        loginCodeCooldown > 0
+                      "
+                      @click="handleSendLoginCode"
+                    >
+                      {{
+                        loginCodeCooldown > 0
+                          ? `${loginCodeCooldown}s`
+                          : isSendingLoginCode
+                            ? '发送中…'
+                            : '发送验证码'
+                      }}
+                    </button>
+                  </div>
+                </label>
+
+                <button
+                  class="primary-button"
+                  type="submit"
+                  :disabled="
+                    isSubmitting ||
+                    (loginCodeTarget === 'email' ? !email.trim() : !phoneNumber.trim()) ||
+                    !loginVerificationCode.trim()
+                  "
+                >
+                  {{ isSubmitting ? '正在登录…' : '登录' }}
+                </button>
+
+                <div class="mode-link-row">
+                  <button class="mode-link" type="button" @click="switchLoginMethod('password')">
+                    使用密码登录
+                  </button>
+                </div>
+              </template>
+
+              <template v-else>
+                <div class="mode-link-row register-mode-row">
+                  <button
+                    v-if="registerMode === 'email'"
+                    class="mode-link"
+                    type="button"
+                    @click="switchRegisterMode('phone')"
+                  >
+                    使用手机号注册
+                  </button>
+                  <button
+                    v-else
+                    class="mode-link"
+                    type="button"
+                    @click="switchRegisterMode('email')"
+                  >
+                    使用邮箱注册
+                  </button>
+                </div>
+
+                <label>
+                  <span>显示名称</span>
+                  <input v-model.trim="displayName" type="text" placeholder="可选" />
+                </label>
+
+                <label v-if="registerMode === 'email'">
+                  <span>密码</span>
+                  <input v-model="password" type="password" required />
+                  <span class="field-hint">至少 10 个字符，建议包含字母和数字</span>
+                </label>
+
+                <label>
+                  <span>验证码</span>
+                  <div class="code-row">
+                    <input
+                      v-model.trim="registerVerificationCode"
+                      inputmode="numeric"
+                      maxlength="10"
+                      required
+                    />
+                    <button
+                      class="secondary-button code-button"
+                      type="button"
+                      :disabled="
+                        isSendingRegisterCode ||
+                        (registerMode === 'email' ? !email.trim() : !phoneNumber.trim()) ||
+                        registerCodeCooldown > 0
+                      "
+                      @click="handleSendRegisterCode"
+                    >
+                      {{
+                        registerCodeCooldown > 0
+                          ? `${registerCodeCooldown}s`
+                          : isSendingRegisterCode
+                            ? '发送中…'
+                            : '发送验证码'
+                      }}
+                    </button>
+                  </div>
+                </label>
+
+                <button
+                  class="primary-button"
+                  type="submit"
+                  :disabled="
+                    isSubmitting ||
+                    (registerMode === 'email' ? !email.trim() : !phoneNumber.trim()) ||
+                    (registerMode === 'email' && !password) ||
+                    !registerVerificationCode.trim()
+                  "
+                >
+                  {{ isSubmitting ? '正在注册…' : '注册' }}
+                </button>
+              </template>
             </form>
+
+            <div class="oauth-login-section">
+              <div class="oauth-divider"><span>第三方登录</span></div>
+              <div class="oauth-buttons">
+                <button
+                  class="oauth-button wechat"
+                  type="button"
+                  :disabled="isStartingOAuth || oauthPendingProvider !== null"
+                  @click="handleOAuthLogin('wechat')"
+                >
+                  {{ oauthPendingProvider === 'wechat' ? '等待授权…' : '微信登录' }}
+                </button>
+                <button
+                  class="oauth-button qq"
+                  type="button"
+                  :disabled="isStartingOAuth || oauthPendingProvider !== null"
+                  @click="handleOAuthLogin('qq')"
+                >
+                  {{ oauthPendingProvider === 'qq' ? '等待授权…' : 'QQ 登录' }}
+                </button>
+              </div>
+            </div>
           </div>
         </template>
 
@@ -545,6 +994,65 @@ input:focus {
   font-weight: 500;
 }
 
+.code-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--zs-space-2);
+  align-items: center;
+}
+
+.code-button {
+  min-width: 112px;
+  padding-inline: 12px;
+  white-space: nowrap;
+}
+
+.code-target-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--zs-space-2);
+  padding: var(--zs-space-1);
+  border: 1px solid var(--zs-color-border-soft);
+  border-radius: var(--zs-radius-sm);
+  background: var(--zs-color-surface-soft);
+}
+
+.target-chip {
+  min-height: 34px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--zs-color-text-muted);
+  font-size: 0.84rem;
+  box-shadow: none;
+}
+
+.target-chip.active {
+  background: var(--zs-color-surface);
+  color: var(--zs-color-primary);
+  border-color: var(--zs-color-border-soft);
+}
+
+.target-chip:not(:disabled):hover {
+  transform: none;
+  background: var(--zs-color-surface);
+}
+
+.mode-link-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: calc(var(--zs-space-2) * -1);
+}
+
+.mode-link {
+  min-height: 24px;
+  border: none;
+  padding: 0;
+  background: transparent;
+  color: var(--zs-color-primary);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
 button {
   min-height: 42px;
   border-radius: var(--zs-radius-sm);
@@ -565,6 +1073,12 @@ button:not(:disabled):hover {
   transform: translateY(-1px);
 }
 
+.mode-link:not(:disabled):hover {
+  transform: none;
+  color: var(--zs-color-primary-hover, var(--zs-color-primary));
+  text-decoration: underline;
+}
+
 .primary-button {
   background: var(--zs-color-primary);
   color: var(--zs-color-on-primary);
@@ -583,6 +1097,52 @@ button:not(:disabled):hover {
 
 .secondary-button:not(:disabled):hover {
   background: var(--zs-color-surface-soft);
+}
+
+.oauth-login-section {
+  display: grid;
+  gap: var(--zs-space-3);
+}
+
+.oauth-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--zs-space-3);
+  color: var(--zs-color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.oauth-divider::before,
+.oauth-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--zs-color-border-soft);
+}
+
+.oauth-buttons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--zs-space-2);
+}
+
+.oauth-button {
+  min-height: 38px;
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
+  border-color: var(--zs-color-border);
+  font-size: 0.86rem;
+}
+
+.oauth-button.wechat:not(:disabled):hover {
+  color: #14853d;
+  border-color: #16a34a;
+}
+
+.oauth-button.qq:not(:disabled):hover {
+  color: #0b68c8;
+  border-color: #0ea5e9;
 }
 
 .error-text {

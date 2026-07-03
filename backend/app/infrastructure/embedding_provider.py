@@ -1,5 +1,6 @@
 """Embedding provider abstraction for knowledge chunk vectorization."""
 
+import hashlib
 from typing import Protocol, runtime_checkable
 
 import numpy as np
@@ -41,7 +42,22 @@ class BigramHashEmbeddingProvider:
     """
 
     VECTOR_DIM = 256
-    MODEL_NAME = "bigram-hash-v1"
+    # v2: switched from Python built-in hash() (unstable across processes
+    # due to PYTHONHASHSEED randomisation) to hashlib.blake2b for deterministic
+    # dimension mapping.  Old v1 vectors persisted in the database are no longer
+    # compatible and will be reported as stale by the index-status API.
+    MODEL_NAME = "bigram-hash-v2"
+
+    @classmethod
+    def _bigram_index(cls, bigram: str) -> int:
+        """Map a bigram to a stable dimension index using blake2b.
+
+        Do NOT use the Python built-in ``hash()`` here — its output changes
+        across interpreter invocations when ``PYTHONHASHSEED`` is randomised,
+        which would make persisted vectors inconsistent with fresh queries.
+        """
+        digest = hashlib.blake2b(bigram.encode("utf-8"), digest_size=8).digest()
+        return int.from_bytes(digest, "big") % cls.VECTOR_DIM
 
     def encode(self, text: str) -> list[float]:
         """Encode text using character bigram frequency hashing."""
@@ -50,11 +66,10 @@ class BigramHashEmbeddingProvider:
         if not text or len(text) < 2:
             return vector.tolist()
 
-        # Extract character bigrams and hash to dimensions
+        # Extract character bigrams and map to dimensions via stable hash
         for i in range(len(text) - 1):
             bigram = text[i : i + 2]
-            # Use hash of bigram to determine dimension index
-            idx = hash(bigram) % self.VECTOR_DIM
+            idx = self._bigram_index(bigram)
             vector[idx] += 1.0
 
         # L2 normalize to unit vector

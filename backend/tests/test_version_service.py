@@ -359,7 +359,7 @@ def test_cleanup_old_autosave(db_session):
     cid = _make_chapter(db_session, pid)
 
     svc = VersionService(db_session)
-    # Create a manual snapshot (should not be cleaned up)
+    # Create a milestone snapshot (should not be cleaned up)
     svc.create_snapshot(pid, CreateVersionSnapshotRequest(
         entity_type="chapter", entity_id=cid,
     ))
@@ -367,3 +367,133 @@ def test_cleanup_old_autosave(db_session):
     result = svc.cleanup(pid, keep_days=30)
     # No old autosave versions to clean
     assert result.deleted_count == 0
+
+
+# -- V2 source semantics
+
+
+def test_create_snapshot_uses_milestone_source(db_session):
+    pid = _make_project(db_session)
+    cid = _make_chapter(db_session, pid)
+
+    svc = VersionService(db_session)
+    item = svc.create_snapshot(pid, CreateVersionSnapshotRequest(
+        entity_type="chapter", entity_id=cid,
+    ))
+
+    assert item.source == "milestone"
+
+
+def test_create_entity_snapshot_uses_milestone_source(db_session):
+    pid = _make_project(db_session)
+    char_id = _make_character(db_session, pid)
+
+    svc = VersionService(db_session)
+    item = svc.create_snapshot(pid, CreateVersionSnapshotRequest(
+        entity_type="character", entity_id=char_id,
+    ))
+
+    assert item.source == "milestone"
+
+
+def test_summary_counts(db_session):
+    pid = _make_project(db_session)
+    cid = _make_chapter(db_session, pid)
+
+    svc = VersionService(db_session)
+    # Create 2 milestone snapshots
+    svc.create_snapshot(pid, CreateVersionSnapshotRequest(
+        entity_type="chapter", entity_id=cid, label="v1",
+    ))
+    svc.create_snapshot(pid, CreateVersionSnapshotRequest(
+        entity_type="chapter", entity_id=cid, label="v2",
+    ))
+
+    summary = svc.get_summary(pid)
+    assert summary.project_id == pid
+    assert summary.milestone_count == 2
+    assert summary.total == 2
+    assert summary.latest_version_at is not None
+
+
+def test_summary_empty_project(db_session):
+    pid = _make_project(db_session)
+    svc = VersionService(db_session)
+
+    summary = svc.get_summary(pid)
+    assert summary.total == 0
+    assert summary.milestone_count == 0
+    assert summary.latest_version_at is None
+
+
+def test_snapshot_targets_chapters(db_session):
+    pid = _make_project(db_session)
+    _make_chapter(db_session, pid, title="第一章", content="内容一")
+    _make_chapter(db_session, pid, title="第二章", content="内容二")
+
+    svc = VersionService(db_session)
+    resp = svc.list_snapshot_targets(pid, entity_type="chapter")
+
+    assert resp.project_id == pid
+    assert len(resp.targets) == 2
+    titles = {t.title for t in resp.targets}
+    assert "第一章" in titles
+    assert "第二章" in titles
+
+
+def test_snapshot_targets_keyword_filter(db_session):
+    pid = _make_project(db_session)
+    _make_chapter(db_session, pid, title="重要章节", content="内容")
+    _make_chapter(db_session, pid, title="普通章节", content="内容")
+
+    svc = VersionService(db_session)
+    resp = svc.list_snapshot_targets(pid, keyword="重要")
+
+    assert len(resp.targets) == 1
+    assert resp.targets[0].title == "重要章节"
+
+
+def test_snapshot_targets_excludes_soft_deleted(db_session):
+    pid = _make_project(db_session)
+    cid = _make_chapter(db_session, pid, title="已删除")
+
+    # Soft delete
+    chapter = db_session.get(Chapter, cid)
+    chapter.deleted_at = datetime.now(timezone.utc)
+    db_session.commit()
+
+    svc = VersionService(db_session)
+    resp = svc.list_snapshot_targets(pid, entity_type="chapter")
+
+    assert len(resp.targets) == 0
+
+
+def test_snapshot_targets_cross_entity(db_session):
+    pid = _make_project(db_session)
+    _make_chapter(db_session, pid, title="章节")
+    _make_character(db_session, pid, name="角色")
+
+    svc = VersionService(db_session)
+    # No entity_type filter — should return all
+    resp = svc.list_snapshot_targets(pid)
+
+    assert len(resp.targets) == 2
+
+
+def test_cleanup_routine_does_not_delete_milestone(db_session):
+    pid = _make_project(db_session)
+    cid = _make_chapter(db_session, pid)
+
+    svc = VersionService(db_session)
+    item = svc.create_snapshot(pid, CreateVersionSnapshotRequest(
+        entity_type="chapter", entity_id=cid,
+    ))
+    assert item.source == "milestone"
+
+    # Cleanup with "routine" should not affect milestones
+    result = svc.cleanup(pid, keep_days=30, source="routine")
+    assert result.deleted_count == 0
+
+    # Milestone should still exist
+    detail = svc.get_version(pid, item.version_ref)
+    assert detail.source == "milestone"

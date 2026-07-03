@@ -3,6 +3,7 @@ export interface CloudAccountStatus {
   cloud_available: boolean
   email: string | null
   display_name: string | null
+  phone_number?: string | null
   token_expired?: boolean
 }
 
@@ -10,6 +11,45 @@ export interface CloudAuthToken {
   access_token: string
   refresh_token: string
   expires_in: number
+}
+
+export type CloudEmailCodePurpose = 'register' | 'login'
+export type CloudPhoneCodePurpose = 'register' | 'login' | 'bind'
+export type CloudOAuthProvider = 'wechat' | 'qq'
+
+export interface CloudEmailCheckResponse {
+  email: string
+  available: boolean
+}
+
+export interface CloudPhoneCheckResponse {
+  phone_number: string
+  available: boolean
+}
+
+export interface CloudOAuthStartResponse {
+  provider: CloudOAuthProvider
+  authorization_url: string
+  session_id: string
+  poll_token: string
+  expires_in_seconds: number
+}
+
+export interface CloudOAuthPollResponse {
+  status: 'pending' | 'completed' | 'failed'
+  provider?: CloudOAuthProvider
+  logged_in?: boolean
+  cloud_available?: boolean
+  email?: string | null
+  display_name?: string | null
+  phone_number?: string | null
+  error_message?: string | null
+}
+
+export interface CloudSendEmailCodeResponse {
+  ok: boolean
+  expires_in_seconds: number
+  cooldown_seconds: number
 }
 
 export interface CloudProjectStatus {
@@ -83,7 +123,12 @@ export interface CloudNetworkDiagnosticReport {
 
 export interface CloudAccountProfile {
   id: string
-  email: string
+  email: string | null
+  phone_number: string | null
+  identities?: Array<{
+    provider: string
+    identifier: string
+  }>
   display_name: string
   signature: string | null
   avatar_url: string | null

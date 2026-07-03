@@ -4,11 +4,13 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 
-ChapterVersionSource = Literal["manual", "autosave", "restore", "before_restore"]
+ChapterVersionSource = Literal[
+    "manual", "milestone", "manual_save", "autosave", "restore", "before_restore"
+]
 
 
 class CreateChapterVersionRequest(BaseModel):
-    source: ChapterVersionSource = "manual"
+    source: ChapterVersionSource = "milestone"
     note: str | None = None
 
 
