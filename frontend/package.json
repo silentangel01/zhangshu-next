@@ -17,7 +17,8 @@
     "tauri:dev": "cross-env VITE_API_BASE_URL=http://127.0.0.1:8765 tauri dev",
     "tauri:build:frontend": "cross-env VITE_API_BASE_URL=http://127.0.0.1:8765 npm run build",
     "tauri:build": "npm run tauri:build:frontend && tauri build",
-    "tauri:build:backend": "cd .. && backend\\.venv\\Scripts\\python.exe -m PyInstaller --noconfirm --clean --onedir --name zhangshu-backend --distpath frontend/src-tauri/binaries --workpath build/pyinstaller-sidecar --specpath build/spec-sidecar --hidden-import app.api.cloud --hidden-import app.api.cloud_sync --hidden-import app.api.knowledge_embedding --hidden-import app.api.knowledge_retrieval --hidden-import app.api.rag backend/tauri_sidecar_main.py"
+    "tauri:build:backend": "cd .. && backend\\.venv\\Scripts\\python.exe -m PyInstaller --noconfirm --clean --onedir --name zhangshu-backend --distpath frontend/src-tauri/binaries --workpath build/pyinstaller-sidecar --specpath build/spec-sidecar --hidden-import app.api.cloud --hidden-import app.api.cloud_sync --hidden-import app.api.knowledge_embedding --hidden-import app.api.knowledge_retrieval --hidden-import app.api.rag backend/tauri_sidecar_main.py",
+    "tauri:build:macos": "bash ../scripts/package_macos.sh"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.0",

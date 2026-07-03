@@ -24,16 +24,22 @@ struct BackendState {
 fn find_backend_exe() -> Option<std::path::PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let dir = exe.parent()?;
-    // --onedir mode: backend in zhangshu-backend/ subdirectory
-    let backend_dir = dir.join("zhangshu-backend").join("zhangshu-backend.exe");
-    if backend_dir.exists() {
-        return Some(backend_dir);
+    let backend_binary = backend_binary_name();
+
+    for search_dir in bundle_search_dirs(dir) {
+        // --onedir mode: backend in zhangshu-backend/ subdirectory
+        let backend_dir = search_dir.join("zhangshu-backend").join(backend_binary);
+        if backend_dir.exists() {
+            return Some(backend_dir);
+        }
+
+        // --onefile mode: backend next to the app executable/resources
+        let backend = search_dir.join(backend_binary);
+        if backend.exists() {
+            return Some(backend);
+        }
     }
-    // --onefile mode: backend in same directory
-    let backend = dir.join("zhangshu-backend.exe");
-    if backend.exists() {
-        return Some(backend);
-    }
+
     None
 }
 
@@ -43,11 +49,40 @@ fn find_backend_exe() -> Option<std::path::PathBuf> {
 fn find_frontend_dist() -> Option<std::path::PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let dir = exe.parent()?;
-    let frontend_dist = dir.join("frontend-dist");
-    if frontend_dist.join("index.html").exists() {
-        Some(frontend_dist)
-    } else {
-        None
+
+    for search_dir in bundle_search_dirs(dir) {
+        let frontend_dist = search_dir.join("frontend-dist");
+        if frontend_dist.join("index.html").exists() {
+            return Some(frontend_dist);
+        }
+    }
+
+    None
+}
+
+#[cfg(target_os = "windows")]
+fn backend_binary_name() -> &'static str {
+    "zhangshu-backend.exe"
+}
+
+#[cfg(not(target_os = "windows"))]
+fn backend_binary_name() -> &'static str {
+    "zhangshu-backend"
+}
+
+fn bundle_search_dirs(exe_dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        let mut dirs = vec![exe_dir.to_path_buf()];
+        if let Some(contents_dir) = exe_dir.parent() {
+            dirs.push(contents_dir.join("Resources"));
+        }
+        dirs
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        vec![exe_dir.to_path_buf()]
     }
 }
 
@@ -98,10 +133,7 @@ fn kill_process_on_port(port: u16) {
         pids.dedup();
 
         for pid in &pids {
-            eprintln!(
-                "[章枢] 端口 {} 被进程 PID={} 占用，正在清理...",
-                port, pid
-            );
+            eprintln!("[章枢] 端口 {} 被进程 PID={} 占用，正在清理...", port, pid);
             let _ = Command::new("taskkill")
                 .args(["/F", "/T", "/PID", pid])
                 .creation_flags(CREATE_NO_WINDOW)
@@ -190,12 +222,47 @@ fn launch_backend(
     cmd.spawn()
 }
 
+#[cfg(target_os = "windows")]
+fn terminate_backend_process(pid: u32) {
+    let _ = std::process::Command::new("taskkill")
+        .args(["/F", "/T", "/PID", &pid.to_string()])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output();
+}
+
+#[cfg(not(target_os = "windows"))]
+fn terminate_backend_process(pid: u32) {
+    let pid_str = pid.to_string();
+
+    let _ = std::process::Command::new("kill")
+        .args(["-TERM", pid_str.as_str()])
+        .output();
+
+    for _ in 0..20 {
+        if !is_process_alive(pid) {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+
+    let _ = std::process::Command::new("kill")
+        .args(["-KILL", pid_str.as_str()])
+        .output();
+}
+
+#[cfg(not(target_os = "windows"))]
+fn is_process_alive(pid: u32) -> bool {
+    let pid_str = pid.to_string();
+    std::process::Command::new("kill")
+        .args(["-0", pid_str.as_str()])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
 /// Spawn an async task that reads from a pipe and forwards to stdout/stderr.
 #[allow(dead_code)]
-fn forward_pipe_to_log(
-    reader: impl std::io::Read + Send + 'static,
-    prefix: &'static str,
-) {
+fn forward_pipe_to_log(reader: impl std::io::Read + Send + 'static, prefix: &'static str) {
     use std::io::BufRead;
     tauri::async_runtime::spawn(async move {
         let reader = std::io::BufReader::new(reader);
@@ -280,31 +347,31 @@ fn main() {
 
                 // ── 3. Find and launch the backend exe ──
                 let backend_exe = find_backend_exe().unwrap_or_else(|| {
-                    eprintln!("[章枢] 找不到 zhangshu-backend.exe");
-                    eprintln!(
-                        "[章枢] 当前目录: {:?}",
-                        std::env::current_exe().ok()
-                    );
-                    panic!(
-                        "zhangshu-backend.exe not found next to zhangshu-desktop.exe"
-                    );
+                    eprintln!("[章枢] 找不到后端 sidecar: {}", backend_binary_name());
+                    eprintln!("[章枢] 当前目录: {:?}", std::env::current_exe().ok());
+                    panic!("backend sidecar not found in app bundle");
                 });
 
                 // Find frontend dist (served by the backend)
                 let frontend_dist = find_frontend_dist().unwrap_or_else(|| {
                     eprintln!("[章枢] 警告: frontend-dist/ 未找到，前端页面可能无法加载");
                     // Pass a non-existent path; the backend will skip static mounting
-                    std::env::current_exe().unwrap().parent().unwrap().join("frontend-dist")
+                    std::env::current_exe()
+                        .unwrap()
+                        .parent()
+                        .unwrap()
+                        .join("frontend-dist")
                 });
 
                 println!("[章枢] 启动后端: {:?}", backend_exe);
                 println!("[章枢] 数据目录: {:?}", data_dir);
                 println!("[章枢] 前端目录: {:?}", frontend_dist);
 
-                let child = launch_backend(&backend_exe, &data_dir, &logs_dir, &frontend_dist, port)
-                    .unwrap_or_else(|e| {
-                        panic!("Failed to start zhangshu-backend.exe: {}", e);
-                    });
+                let child =
+                    launch_backend(&backend_exe, &data_dir, &logs_dir, &frontend_dist, port)
+                        .unwrap_or_else(|e| {
+                            panic!("Failed to start zhangshu-backend.exe: {}", e);
+                        });
 
                 let pid = child.id();
                 println!("[章枢] 后端进程 PID={}", pid);
@@ -343,10 +410,7 @@ fn main() {
                 let pid = state.pid;
                 if pid > 0 {
                     eprintln!("[章枢] 窗口关闭，清理后端 PID={}", pid);
-                    let _ = std::process::Command::new("taskkill")
-                        .args(["/F", "/T", "/PID", &pid.to_string()])
-                        .creation_flags(CREATE_NO_WINDOW)
-                        .output();
+                    terminate_backend_process(pid);
                 }
             }
         })
