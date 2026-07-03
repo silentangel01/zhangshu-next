@@ -5,6 +5,20 @@ from __future__ import annotations
 from app.core.config import Settings, validate_production_config
 
 
+def _valid_delivery_settings() -> dict:
+    return {
+        "email_delivery_mode": "smtp",
+        "smtp_host": "smtp.example.com",
+        "smtp_from": "noreply@example.com",
+        "phone_auth_enabled": True,
+        "sms_delivery_mode": "aliyun",
+        "aliyun_sms_access_key_id": "sms-key-id",
+        "aliyun_sms_access_key_secret": "sms-key-secret",
+        "aliyun_sms_sign_name": "Zhangshu",
+        "aliyun_sms_template_code": "SMS_123456789",
+    }
+
+
 class TestValidateProductionConfig:
     def test_development_mode_returns_empty(self):
         s = Settings(environment="development")
@@ -31,6 +45,7 @@ class TestValidateProductionConfig:
             redis_enabled=True,
             rate_limit_backend="redis",
             cache_backend="redis",
+            **_valid_delivery_settings(),
         )
         issues = validate_production_config(s)
         assert issues == []
@@ -66,6 +81,7 @@ class TestValidateProductionConfig:
             redis_enabled=True,
             rate_limit_backend="redis",
             cache_backend="redis",
+            **_valid_delivery_settings(),
         )
         issues = validate_production_config(s)
         assert issues == []

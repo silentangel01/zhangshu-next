@@ -71,6 +71,13 @@ from app.services.email_verification_service import hash_email_code  # noqa: E40
 from app.services.phone_verification_service import hash_phone_code  # noqa: E402
 
 
+def _get_db_from_override(override) -> Session:
+    db_or_generator = override()
+    if isinstance(db_or_generator, Session):
+        return db_or_generator
+    return next(db_or_generator)
+
+
 @pytest.fixture(autouse=True)
 def _clear_rate_limit():
     """Clean up DB rate limit events after each test."""
@@ -150,7 +157,7 @@ def seed_email_verification_code(
     if override is None:
         raise RuntimeError("get_db override is not configured for test client")
 
-    db = next(override())
+    db = _get_db_from_override(override)
     settings = get_settings()
     normalized = normalize_email(email)
     now = utc_now()
@@ -186,7 +193,7 @@ def seed_phone_verification_code(
     if override is None:
         raise RuntimeError("get_db override is not configured for test client")
 
-    db = next(override())
+    db = _get_db_from_override(override)
     settings = get_settings()
     normalized = normalize_phone_number(phone_number)
     now = utc_now()
