@@ -2,6 +2,7 @@ import { apiRequest, apiUpload } from '@/shared/api/client'
 
 import type {
   CreateKnowledgeLinkPayload,
+  CreateKnowledgeGraphExtractionRunPayload,
   CreateKnowledgeSourcePayload,
   EmbeddingProviderListResponse,
   IndexProfile,
@@ -10,6 +11,16 @@ import type {
   KnowledgeBuildSourceEmbeddingsResponse,
   KnowledgeChunk,
   KnowledgeCredibility,
+  KnowledgeGraphEntity,
+  KnowledgeGraphEntityList,
+  KnowledgeGraphExtractionRun,
+  KnowledgeGraphFactStatus,
+  KnowledgeGraphRelation,
+  KnowledgeGraphRelationList,
+  KnowledgeGraphRelationType,
+  KnowledgeGraphRunList,
+  KnowledgeGraphStatus,
+  KnowledgeGraphSubgraph,
   KnowledgeImportPreview,
   KnowledgeImportResult,
   KnowledgeIndexStatus,
@@ -259,5 +270,123 @@ export function summarizeKnowledge(
   return apiRequest<KnowledgeSummaryResponse>(
     `/api/projects/${projectId}/knowledge/summary`,
     { method: 'POST', body: payload },
+  )
+}
+
+// --- Knowledge Graph ---
+
+function buildKnowledgeGraphQuery(
+  filters?: Record<string, string | number | null | undefined>,
+): string {
+  if (!filters) return ''
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined && value !== null && value !== '') {
+      params.set(key, String(value))
+    }
+  }
+  const query = params.toString()
+  return query ? `?${query}` : ''
+}
+
+export function createKnowledgeGraphExtractionRun(
+  projectId: string,
+  payload: CreateKnowledgeGraphExtractionRunPayload,
+): Promise<KnowledgeGraphExtractionRun> {
+  return apiRequest<KnowledgeGraphExtractionRun>(
+    `/api/projects/${projectId}/knowledge-graph/extraction-runs`,
+    { method: 'POST', body: payload },
+  )
+}
+
+export function listKnowledgeGraphExtractionRuns(
+  projectId: string,
+  limit = 20,
+): Promise<KnowledgeGraphRunList> {
+  return apiRequest<KnowledgeGraphRunList>(
+    `/api/projects/${projectId}/knowledge-graph/extraction-runs${buildKnowledgeGraphQuery({ limit })}`,
+  )
+}
+
+export function listKnowledgeGraphEntities(
+  projectId: string,
+  filters?: {
+    status?: KnowledgeGraphStatus
+    entity_type?: string
+    keyword?: string
+    limit?: number
+  },
+): Promise<KnowledgeGraphEntityList> {
+  return apiRequest<KnowledgeGraphEntityList>(
+    `/api/projects/${projectId}/knowledge-graph/entities${buildKnowledgeGraphQuery(filters)}`,
+  )
+}
+
+export function listKnowledgeGraphRelations(
+  projectId: string,
+  filters?: {
+    status?: KnowledgeGraphStatus
+    entity_id?: string
+    relation_type?: KnowledgeGraphRelationType
+    fact_status?: KnowledgeGraphFactStatus
+    source_id?: string
+    limit?: number
+  },
+): Promise<KnowledgeGraphRelationList> {
+  return apiRequest<KnowledgeGraphRelationList>(
+    `/api/projects/${projectId}/knowledge-graph/relations${buildKnowledgeGraphQuery(filters)}`,
+  )
+}
+
+export function acceptKnowledgeGraphEntity(
+  projectId: string,
+  entityId: string,
+): Promise<KnowledgeGraphEntity> {
+  return apiRequest<KnowledgeGraphEntity>(
+    `/api/projects/${projectId}/knowledge-graph/entities/${entityId}/accept`,
+    { method: 'POST' },
+  )
+}
+
+export function rejectKnowledgeGraphEntity(
+  projectId: string,
+  entityId: string,
+): Promise<KnowledgeGraphEntity> {
+  return apiRequest<KnowledgeGraphEntity>(
+    `/api/projects/${projectId}/knowledge-graph/entities/${entityId}/reject`,
+    { method: 'POST' },
+  )
+}
+
+export function acceptKnowledgeGraphRelation(
+  projectId: string,
+  relationId: string,
+): Promise<KnowledgeGraphRelation> {
+  return apiRequest<KnowledgeGraphRelation>(
+    `/api/projects/${projectId}/knowledge-graph/relations/${relationId}/accept`,
+    { method: 'POST' },
+  )
+}
+
+export function rejectKnowledgeGraphRelation(
+  projectId: string,
+  relationId: string,
+): Promise<KnowledgeGraphRelation> {
+  return apiRequest<KnowledgeGraphRelation>(
+    `/api/projects/${projectId}/knowledge-graph/relations/${relationId}/reject`,
+    { method: 'POST' },
+  )
+}
+
+export function getKnowledgeGraphSubgraph(
+  projectId: string,
+  filters?: {
+    status?: KnowledgeGraphStatus
+    entity_id?: string
+    limit?: number
+  },
+): Promise<KnowledgeGraphSubgraph> {
+  return apiRequest<KnowledgeGraphSubgraph>(
+    `/api/projects/${projectId}/knowledge-graph/subgraph${buildKnowledgeGraphQuery(filters)}`,
   )
 }

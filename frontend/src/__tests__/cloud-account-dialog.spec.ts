@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
 // Mock the cloud API module
@@ -82,6 +82,10 @@ const mockRunCloudNetworkDiagnostics = vi.mocked(runCloudNetworkDiagnostics)
 const mockSetCloudNetworkSettings = vi.mocked(setCloudNetworkSettings)
 
 describe('CloudAccountDialog — diagnostic mode switch', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     vi.spyOn(window, 'open').mockImplementation(() => null)
@@ -151,12 +155,7 @@ describe('CloudAccountDialog — diagnostic mode switch', () => {
   it('shows mode switch button after diagnostics and calls setCloudNetworkSettings', async () => {
     // Login fails with a network error → triggers diagnostic button
     mockCloudLogin.mockRejectedValue(
-      new ApiError(
-        '连接被重置',
-        0,
-        '可尝试系统代理或兼容模式。',
-        'tls_reset_or_sni_filtered',
-      ),
+      new ApiError('连接被重置', 0, '可尝试系统代理或兼容模式。', 'tls_reset_or_sni_filtered'),
     )
 
     mockRunCloudNetworkDiagnostics.mockResolvedValue({
@@ -229,9 +228,7 @@ describe('CloudAccountDialog — diagnostic mode switch', () => {
   })
 
   it('does not show mode switch when diagnostic reports ok', async () => {
-    mockCloudLogin.mockRejectedValue(
-      new ApiError('连接超时', 0, '请检查网络。', 'timeout'),
-    )
+    mockCloudLogin.mockRejectedValue(new ApiError('连接超时', 0, '请检查网络。', 'timeout'))
 
     mockRunCloudNetworkDiagnostics.mockResolvedValue({
       ok: true,
@@ -266,9 +263,7 @@ describe('CloudAccountDialog — diagnostic mode switch', () => {
   })
 
   it('does not show mode switch when recommended mode matches current', async () => {
-    mockCloudLogin.mockRejectedValue(
-      new ApiError('连接超时', 0, '请检查网络。', 'timeout'),
-    )
+    mockCloudLogin.mockRejectedValue(new ApiError('连接超时', 0, '请检查网络。', 'timeout'))
 
     mockRunCloudNetworkDiagnostics.mockResolvedValue({
       ok: false,
@@ -332,6 +327,36 @@ describe('CloudAccountDialog — diagnostic mode switch', () => {
     await flushPromises()
 
     expect(mockCloudLoginWithEmailCode).toHaveBeenCalledWith('test@example.com', '123456')
+  })
+
+  it('closes 1.5 seconds after a successful login', async () => {
+    mockCloudLogin.mockResolvedValue({
+      logged_in: true,
+      cloud_available: true,
+      email: 'test@example.com',
+      display_name: '测试用户',
+    })
+
+    const wrapper = mount(CloudAccountDialog)
+    await flushPromises()
+
+    await wrapper.find('input[type="email"]').setValue('test@example.com')
+    await wrapper.find('input[type="password"]').setValue('password123abc')
+
+    vi.useFakeTimers()
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('登录成功。')
+    expect(wrapper.emitted('close')).toBeUndefined()
+
+    await vi.advanceTimersByTimeAsync(1499)
+    expect(wrapper.emitted('close')).toBeUndefined()
+
+    await vi.advanceTimersByTimeAsync(1)
+    expect(wrapper.emitted('close')).toEqual([[]])
+
+    wrapper.unmount()
   })
 
   it('sends login phone code and logs in with verification code', async () => {

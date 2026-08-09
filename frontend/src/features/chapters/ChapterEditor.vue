@@ -141,12 +141,19 @@ const sessionActiveMilliseconds = computed(() => {
   if (activeWritingStartedAt.value === null) {
     return activeWritingMilliseconds.value
   }
-  return activeWritingMilliseconds.value + Math.max(sessionClock.value - activeWritingStartedAt.value, 0)
+  return (
+    activeWritingMilliseconds.value + Math.max(sessionClock.value - activeWritingStartedAt.value, 0)
+  )
 })
 const sessionWritingMinutes = computed(() => Math.floor(sessionActiveMilliseconds.value / 60000))
-const sessionWordsAdded = computed(() => Math.max(localWordCount.value - initialSessionWordCount.value, 0))
+const sessionWordsAdded = computed(() =>
+  Math.max(localWordCount.value - initialSessionWordCount.value, 0),
+)
 const sessionSpeedText = computed(() => {
-  if (sessionWordsAdded.value <= 0 || sessionActiveMilliseconds.value < SESSION_SPEED_MIN_ACTIVE_MS) {
+  if (
+    sessionWordsAdded.value <= 0 ||
+    sessionActiveMilliseconds.value < SESSION_SPEED_MIN_ACTIVE_MS
+  ) {
     return '--'
   }
   const activeHours = sessionActiveMilliseconds.value / 3600000
@@ -181,7 +188,8 @@ const saveStatusText = computed(() => {
 })
 const saveStatusIndicator = computed(() => {
   if (isManualSaving.value || isAutosaving.value) return 'saving'
-  if (saveStatus.value === 'autosave-failed' || saveStatus.value === 'manual-save-failed') return 'error'
+  if (saveStatus.value === 'autosave-failed' || saveStatus.value === 'manual-save-failed')
+    return 'error'
   if (saveStatus.value === 'offline') return 'offline'
   if (hasUnsavedChanges.value) return 'dirty'
   return 'saved'
@@ -208,28 +216,25 @@ watch(hasUnsavedChanges, (isDirty) => {
   emit('dirtyChange', isDirty)
 })
 
-watch(
-  localContent,
-  () => {
-    if (isApplyingLoadedContent) {
-      return
-    }
+watch(localContent, () => {
+  if (isApplyingLoadedContent) {
+    return
+  }
 
-    cancelPendingAutosave()
-    errorMessage.value = ''
-    autoFormatMessage.value = ''
+  cancelPendingAutosave()
+  errorMessage.value = ''
+  autoFormatMessage.value = ''
 
-    if (!hasUnsavedChanges.value) {
-      clearRecoveryDraft(props.chapter.id)
-      saveStatus.value = 'loaded'
-      return
-    }
+  if (!hasUnsavedChanges.value) {
+    clearRecoveryDraft(props.chapter.id)
+    saveStatus.value = 'loaded'
+    return
+  }
 
-    saveStatus.value = 'dirty'
-    saveLocalDraft()
-    scheduleAutosave()
-  },
-)
+  saveStatus.value = 'dirty'
+  saveLocalDraft()
+  scheduleAutosave()
+})
 
 watch(
   appearanceSettings,
@@ -378,7 +383,11 @@ async function applyLoadedChapter(chapter: Chapter) {
   originalContent.value = chapter.content
 
   const draft = await getLatestRecoveryDraft(chapter)
-  if (draft && draft.content !== chapter.content && isDraftNewerThanChapter(draft.updated_at, chapter.updated_at)) {
+  if (
+    draft &&
+    draft.content !== chapter.content &&
+    isDraftNewerThanChapter(draft.updated_at, chapter.updated_at)
+  ) {
     pendingDraft.value = draft
     localContent.value = chapter.content
     saveStatus.value = 'loaded'
@@ -405,7 +414,10 @@ async function getLatestRecoveryDraft(chapter: Chapter): Promise<DraftCandidate 
   try {
     const remoteDrafts = await listRecoveryDrafts(chapter.id)
     const remoteDraft = remoteDrafts[0]
-    if (remoteDraft && (!localDraft || new Date(remoteDraft.updated_at) > new Date(localDraft.updated_at))) {
+    if (
+      remoteDraft &&
+      (!localDraft || new Date(remoteDraft.updated_at) > new Date(localDraft.updated_at))
+    ) {
       return toDraftCandidate(remoteDraft)
     }
   } catch {
@@ -444,7 +456,9 @@ function restorePendingDraftToEditor() {
   if (!draft) {
     return
   }
-  const confirmed = window.confirm('恢复草稿会替换当前编辑框内容，但不会自动保存到章节正文。是否继续？')
+  const confirmed = window.confirm(
+    '恢复草稿会替换当前编辑框内容，但不会自动保存到章节正文。是否继续？',
+  )
   if (!confirmed) {
     return
   }
@@ -618,16 +632,22 @@ function handleBeforeUnload(event: BeforeUnloadEvent) {
 }
 
 function isNetworkLikeError(error: unknown): boolean {
-  return error instanceof TypeError || (error instanceof Error && error.message.includes('Failed to fetch'))
+  return (
+    error instanceof TypeError ||
+    (error instanceof Error && error.message.includes('Failed to fetch'))
+  )
 }
 
 function readEditorAppearanceSettings(): EditorAppearanceSettings {
-  const settings = safeReadJson<(Partial<EditorAppearanceSettings> & {
-    fontFamily?: unknown
-    firstLineIndent?: unknown
-    lineHeight?: unknown
-    paragraphSpacing?: unknown
-  }) | null>(EDITOR_APPEARANCE_STORAGE_KEY, null)
+  const settings = safeReadJson<
+    | (Partial<EditorAppearanceSettings> & {
+        fontFamily?: unknown
+        firstLineIndent?: unknown
+        lineHeight?: unknown
+        paragraphSpacing?: unknown
+      })
+    | null
+  >(EDITOR_APPEARANCE_STORAGE_KEY, null)
 
   const legacyFontPreset = normalizeLegacyFontPreset(settings?.fontFamily)
 
@@ -662,12 +682,19 @@ function readEditorAppearanceSettings(): EditorAppearanceSettings {
     lineHeight,
     selectedFontPreset: isEditorFontPreset(settings?.selectedFontPreset)
       ? settings.selectedFontPreset
-      : legacyFontPreset ?? defaultAppearanceSettings.selectedFontPreset,
-    customFontFamily: typeof settings?.customFontFamily === 'string' ? settings.customFontFamily : '',
-    fontSize: isEditorFontSize(settings?.fontSize) ? settings.fontSize : defaultAppearanceSettings.fontSize,
-    editorWidth: isEditorWidth(settings?.editorWidth) ? settings.editorWidth : defaultAppearanceSettings.editorWidth,
+      : (legacyFontPreset ?? defaultAppearanceSettings.selectedFontPreset),
+    customFontFamily:
+      typeof settings?.customFontFamily === 'string' ? settings.customFontFamily : '',
+    fontSize: isEditorFontSize(settings?.fontSize)
+      ? settings.fontSize
+      : defaultAppearanceSettings.fontSize,
+    editorWidth: isEditorWidth(settings?.editorWidth)
+      ? settings.editorWidth
+      : defaultAppearanceSettings.editorWidth,
     paragraphSpacingLines,
-    textAlign: isEditorTextAlign(settings?.textAlign) ? settings.textAlign : defaultAppearanceSettings.textAlign,
+    textAlign: isEditorTextAlign(settings?.textAlign)
+      ? settings.textAlign
+      : defaultAppearanceSettings.textAlign,
     theme: isEditorTheme(settings?.theme) ? settings.theme : defaultAppearanceSettings.theme,
   }
 }
@@ -689,25 +716,27 @@ function isEditorTextAlign(value: unknown): value is EditorTextAlign {
 }
 
 function isEditorFontPreset(value: unknown): value is EditorFontPreset {
-  return value === 'system'
-    || value === 'microsoft-yahei'
-    || value === 'simsun'
-    || value === 'simhei'
-    || value === 'kaiti'
-    || value === 'fangsong'
-    || value === 'dengxian'
-    || value === 'pingfang'
-    || value === 'source-han-sans'
-    || value === 'source-han-serif'
-    || value === 'noto-sans-cjk'
-    || value === 'noto-serif-cjk'
-    || value === 'lxgw-wenkai'
-    || value === 'sarasa-gothic'
-    || value === 'arial'
-    || value === 'georgia'
-    || value === 'times-new-roman'
-    || value === 'consolas'
-    || value === 'courier-new'
+  return (
+    value === 'system' ||
+    value === 'microsoft-yahei' ||
+    value === 'simsun' ||
+    value === 'simhei' ||
+    value === 'kaiti' ||
+    value === 'fangsong' ||
+    value === 'dengxian' ||
+    value === 'pingfang' ||
+    value === 'source-han-sans' ||
+    value === 'source-han-serif' ||
+    value === 'noto-sans-cjk' ||
+    value === 'noto-serif-cjk' ||
+    value === 'lxgw-wenkai' ||
+    value === 'sarasa-gothic' ||
+    value === 'arial' ||
+    value === 'georgia' ||
+    value === 'times-new-roman' ||
+    value === 'consolas' ||
+    value === 'courier-new'
+  )
 }
 
 function normalizeLegacyFontPreset(value: unknown): EditorFontPreset | null {
@@ -790,10 +819,7 @@ function handleAutoFormat() {
  * Core formatting logic — applies indent and spacing to the current content.
  * Shared by the manual button and the settings-change watcher.
  */
-function applyFormatToContent(
-  indent: FirstLineIndentSpaces,
-  spacing: ParagraphSpacingLines,
-) {
+function applyFormatToContent(indent: FirstLineIndentSpaces, spacing: ParagraphSpacingLines) {
   const textarea = editorTextareaRef.value
   const result = formatChapterContent(localContent.value, {
     firstLineIndentSpaces: indent,
@@ -883,10 +909,18 @@ function clearFormattingUndo() {
     <section v-if="pendingDraft" class="recovery-banner">
       <div>
         <h3>检测到未恢复的草稿</h3>
-        <p>草稿更新时间：{{ formatDateTimeFull(pendingDraft.updated_at) }}，字数：{{ pendingDraft.word_count }}</p>
+        <p>
+          草稿更新时间：{{ formatDateTimeFull(pendingDraft.updated_at) }}，字数：{{
+            pendingDraft.word_count
+          }}
+        </p>
       </div>
       <div class="recovery-actions">
-        <button class="secondary-button" type="button" @click="showDraftPreview = !showDraftPreview">
+        <button
+          class="secondary-button"
+          type="button"
+          @click="showDraftPreview = !showDraftPreview"
+        >
           草稿预览
         </button>
         <button class="primary-outline-button" type="button" @click="restorePendingDraftToEditor">
@@ -924,10 +958,10 @@ function clearFormattingUndo() {
             @click="appearanceSettings.textAlign = 'left'"
           >
             <svg width="16" height="14" viewBox="0 0 16 14" aria-hidden="true">
-              <rect x="0" y="0" width="16" height="2" rx="0.5" fill="currentColor"/>
-              <rect x="0" y="4" width="10" height="2" rx="0.5" fill="currentColor"/>
-              <rect x="0" y="8" width="14" height="2" rx="0.5" fill="currentColor"/>
-              <rect x="0" y="12" width="8" height="2" rx="0.5" fill="currentColor"/>
+              <rect x="0" y="0" width="16" height="2" rx="0.5" fill="currentColor" />
+              <rect x="0" y="4" width="10" height="2" rx="0.5" fill="currentColor" />
+              <rect x="0" y="8" width="14" height="2" rx="0.5" fill="currentColor" />
+              <rect x="0" y="12" width="8" height="2" rx="0.5" fill="currentColor" />
             </svg>
           </button>
           <button
@@ -937,10 +971,10 @@ function clearFormattingUndo() {
             @click="appearanceSettings.textAlign = 'center'"
           >
             <svg width="16" height="14" viewBox="0 0 16 14" aria-hidden="true">
-              <rect x="0" y="0" width="16" height="2" rx="0.5" fill="currentColor"/>
-              <rect x="3" y="4" width="10" height="2" rx="0.5" fill="currentColor"/>
-              <rect x="1" y="8" width="14" height="2" rx="0.5" fill="currentColor"/>
-              <rect x="4" y="12" width="8" height="2" rx="0.5" fill="currentColor"/>
+              <rect x="0" y="0" width="16" height="2" rx="0.5" fill="currentColor" />
+              <rect x="3" y="4" width="10" height="2" rx="0.5" fill="currentColor" />
+              <rect x="1" y="8" width="14" height="2" rx="0.5" fill="currentColor" />
+              <rect x="4" y="12" width="8" height="2" rx="0.5" fill="currentColor" />
             </svg>
           </button>
           <button
@@ -950,10 +984,10 @@ function clearFormattingUndo() {
             @click="appearanceSettings.textAlign = 'right'"
           >
             <svg width="16" height="14" viewBox="0 0 16 14" aria-hidden="true">
-              <rect x="0" y="0" width="16" height="2" rx="0.5" fill="currentColor"/>
-              <rect x="6" y="4" width="10" height="2" rx="0.5" fill="currentColor"/>
-              <rect x="2" y="8" width="14" height="2" rx="0.5" fill="currentColor"/>
-              <rect x="8" y="12" width="8" height="2" rx="0.5" fill="currentColor"/>
+              <rect x="0" y="0" width="16" height="2" rx="0.5" fill="currentColor" />
+              <rect x="6" y="4" width="10" height="2" rx="0.5" fill="currentColor" />
+              <rect x="2" y="8" width="14" height="2" rx="0.5" fill="currentColor" />
+              <rect x="8" y="12" width="8" height="2" rx="0.5" fill="currentColor" />
             </svg>
           </button>
           <button
@@ -963,18 +997,14 @@ function clearFormattingUndo() {
             @click="appearanceSettings.textAlign = 'justify'"
           >
             <svg width="16" height="14" viewBox="0 0 16 14" aria-hidden="true">
-              <rect x="0" y="0" width="16" height="2" rx="0.5" fill="currentColor"/>
-              <rect x="0" y="4" width="16" height="2" rx="0.5" fill="currentColor"/>
-              <rect x="0" y="8" width="16" height="2" rx="0.5" fill="currentColor"/>
-              <rect x="0" y="12" width="10" height="2" rx="0.5" fill="currentColor"/>
+              <rect x="0" y="0" width="16" height="2" rx="0.5" fill="currentColor" />
+              <rect x="0" y="4" width="16" height="2" rx="0.5" fill="currentColor" />
+              <rect x="0" y="8" width="16" height="2" rx="0.5" fill="currentColor" />
+              <rect x="0" y="12" width="10" height="2" rx="0.5" fill="currentColor" />
             </svg>
           </button>
         </div>
-        <button
-          class="primary-outline-button"
-          type="button"
-          @click="handleAutoFormat"
-        >
+        <button class="primary-outline-button" type="button" @click="handleAutoFormat">
           自动排版
         </button>
         <button
@@ -1081,14 +1111,16 @@ function clearFormattingUndo() {
 <style scoped>
 .chapter-editor {
   display: grid;
-  gap: var(--zs-space-3);
+  gap: var(--zs-space-2);
   min-width: 0;
 }
 
 .editor-toolbar {
   display: grid;
-  gap: var(--zs-space-1);
-  margin-bottom: var(--zs-space-1);
+  gap: var(--zs-space-2);
+  margin-bottom: 0;
+  padding-bottom: var(--zs-space-3);
+  border-bottom: 1px solid var(--zs-color-border-soft);
 }
 
 .editor-title-row {
@@ -1105,7 +1137,8 @@ function clearFormattingUndo() {
 .editor-title h2 {
   margin: 0;
   color: var(--zs-color-text);
-  font-size: 1.12rem;
+  font-family: 'Songti SC', 'STSong', var(--zs-font-ui);
+  font-size: 1.24rem;
   font-weight: 700;
   line-height: 1.4;
   letter-spacing: 0.01em;
@@ -1131,15 +1164,31 @@ function clearFormattingUndo() {
   transition: background-color 0.3s;
 }
 
-.save-indicator.saved .save-dot { background: var(--zs-color-success); }
-.save-indicator.dirty .save-dot { background: var(--zs-color-warning); }
-.save-indicator.saving .save-dot { background: var(--zs-color-info); animation: pulse 1s infinite; }
-.save-indicator.error .save-dot { background: var(--zs-color-danger); }
-.save-indicator.offline .save-dot { background: var(--zs-color-text-faint); }
+.save-indicator.saved .save-dot {
+  background: var(--zs-color-success);
+}
+.save-indicator.dirty .save-dot {
+  background: var(--zs-color-warning);
+}
+.save-indicator.saving .save-dot {
+  background: var(--zs-color-info);
+  animation: pulse 1s infinite;
+}
+.save-indicator.error .save-dot {
+  background: var(--zs-color-danger);
+}
+.save-indicator.offline .save-dot {
+  background: var(--zs-color-text-faint);
+}
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
 }
 
 .save-indicator.error .save-text {
@@ -1206,9 +1255,9 @@ function clearFormattingUndo() {
 .save-button,
 .secondary-button,
 .primary-outline-button {
-  min-height: 30px;
-  border-radius: var(--zs-radius-sm);
-  padding: 0 var(--zs-space-2);
+  min-height: 32px;
+  border-radius: 2px;
+  padding: 0 var(--zs-space-3);
   font: inherit;
   font-size: 0.82rem;
   font-weight: 600;
@@ -1228,9 +1277,9 @@ function clearFormattingUndo() {
 }
 
 .primary-outline-button {
-  border: 1px solid var(--zs-color-primary);
-  background: var(--zs-color-primary-soft);
-  color: var(--zs-color-primary);
+  border: 1px solid var(--zs-color-border);
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text);
 }
 
 .save-button:disabled {
@@ -1242,27 +1291,22 @@ function clearFormattingUndo() {
   width: 100%;
   justify-self: center;
   min-width: 0;
+  background: var(--zs-color-canvas);
 }
 
 .writing-toolbar {
   position: relative;
   display: flex;
   flex-wrap: wrap;
-  gap: var(--zs-space-1) var(--zs-space-2);
+  gap: var(--zs-space-2) var(--zs-space-3);
   align-items: center;
-  margin-bottom: var(--zs-space-2);
-  padding: var(--zs-space-1) var(--zs-space-2);
-  border-radius: var(--zs-radius-sm);
-  background: var(--zs-color-surface-soft);
-  color: var(--zs-color-text-faint);
+  margin-bottom: 0;
+  padding: var(--zs-space-2) 0;
+  border-bottom: 1px solid var(--zs-color-border-soft);
+  border-radius: 0;
+  background: transparent;
+  color: var(--zs-color-text-muted);
   font-size: 0.78rem;
-  opacity: 0.85;
-  transition: opacity 0.2s;
-}
-
-.writing-toolbar:hover,
-.writing-toolbar:focus-within {
-  opacity: 1;
 }
 
 .writing-toolbar label {
@@ -1272,11 +1316,12 @@ function clearFormattingUndo() {
 }
 
 .writing-toolbar select {
-  min-height: 26px;
-  border: 1px solid var(--zs-color-border);
-  border-radius: var(--zs-radius-sm);
+  min-height: 28px;
+  border: 0;
+  border-bottom: 1px solid var(--zs-color-border);
+  border-radius: 0;
   padding: 0 6px;
-  background: var(--zs-color-surface);
+  background: transparent;
   color: var(--zs-color-text);
   font: inherit;
   font-size: 0.8rem;
@@ -1295,8 +1340,9 @@ function clearFormattingUndo() {
 
 .align-group {
   display: inline-flex;
-  border: 1px solid var(--zs-color-border);
-  border-radius: var(--zs-radius-sm);
+  border: 0;
+  border-bottom: 1px solid var(--zs-color-border);
+  border-radius: 0;
   overflow: hidden;
 }
 
@@ -1307,9 +1353,9 @@ function clearFormattingUndo() {
   min-height: 28px;
   min-width: 30px;
   border: none;
-  border-right: 1px solid var(--zs-color-border-soft);
+  border-right: 0;
   padding: 0 var(--zs-space-2);
-  background: var(--zs-color-surface);
+  background: transparent;
   color: var(--zs-color-text-muted);
   cursor: pointer;
 }
@@ -1319,7 +1365,8 @@ function clearFormattingUndo() {
 }
 
 .align-group button.active {
-  background: var(--zs-color-surface-soft);
+  box-shadow: inset 0 -2px 0 var(--zs-color-primary);
+  background: transparent;
   color: var(--zs-color-primary);
 }
 
@@ -1335,11 +1382,12 @@ function clearFormattingUndo() {
 .more-settings summary {
   display: inline-flex;
   align-items: center;
-  min-height: 26px;
-  border: 1px solid var(--zs-color-border);
-  border-radius: var(--zs-radius-sm);
+  min-height: 28px;
+  border: 0;
+  border-bottom: 1px solid var(--zs-color-border);
+  border-radius: 0;
   padding: 0 8px;
-  background: var(--zs-color-surface);
+  background: transparent;
   color: var(--zs-color-text-muted);
   font-size: 0.8rem;
   font-weight: 600;
@@ -1377,19 +1425,26 @@ function clearFormattingUndo() {
   box-sizing: border-box;
   border: none;
   border-radius: 0;
-  padding: 32px 40px;
+  padding: 40px clamp(36px, 7vw, 86px) 56px;
   resize: vertical;
   background: var(--zs-color-canvas);
   color: var(--zs-color-text);
-  font: inherit;
+  font-family: var(--zs-font-writing);
+  font-size: 1rem;
   white-space: pre-wrap;
   line-height: 1.8;
-  box-shadow: inset 0 -1px 0 var(--zs-color-canvas-border);
+  box-shadow:
+    inset 0 -1px 0 var(--zs-color-canvas-border),
+    inset 1px 0 0 var(--zs-color-canvas-border),
+    inset -1px 0 0 var(--zs-color-canvas-border);
 }
 
 .editor-textarea:focus {
   outline: none;
-  box-shadow: inset 0 -1px 0 var(--zs-color-canvas-border), 0 0 0 1px var(--zs-color-border-soft);
+  box-shadow:
+    inset 0 -1px 0 var(--zs-color-canvas-border),
+    inset 1px 0 0 var(--zs-color-canvas-border),
+    inset -1px 0 0 var(--zs-color-canvas-border);
 }
 
 .editor-messages {

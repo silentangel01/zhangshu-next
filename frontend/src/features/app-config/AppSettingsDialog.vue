@@ -286,14 +286,14 @@ function handleClose() {
 
           <!-- LLM settings section -->
           <fieldset class="option-group">
-            <legend class="option-label">AI 问答模型</legend>
+            <legend class="option-label">AI 模型</legend>
             <p class="option-hint">
-              启用后，知识库问答和摘要将使用 DashScope 大语言模型生成真实回答，否则使用占位文本。
+              启用后，知识库问答、摘要和知识图谱抽取将使用 DashScope 大语言模型，否则只使用本地知识库能力。
             </p>
 
             <label class="toggle-row">
               <input v-model="llmEnabled" type="checkbox" />
-              <span>启用 AI 问答</span>
+              <span>启用 AI 能力</span>
             </label>
 
             <template v-if="llmEnabled">
@@ -323,7 +323,7 @@ function handleClose() {
                   :disabled="!canTestLlm"
                   @click="handleTestLlm"
                 >
-                  {{ isTestingLlm ? '测试中...' : '测试问答连接' }}
+                  {{ isTestingLlm ? '测试中...' : '测试 AI 连接' }}
                 </button>
                 <span v-if="llmTestResult?.success" class="test-success">
                   连接成功 — {{ llmTestResult.model_name }}

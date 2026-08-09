@@ -37,6 +37,7 @@ import {
   knowledgeSourceTypeLabels,
 } from '@/entities/knowledge/types'
 import KnowledgeAskPanel from '@/features/knowledge/KnowledgeAskPanel.vue'
+import KnowledgeGraphPanel from '@/features/knowledge/KnowledgeGraphPanel.vue'
 import KnowledgeImportDialog from '@/features/knowledge/KnowledgeImportDialog.vue'
 import KnowledgeIndexRefreshDialog from '@/features/knowledge/KnowledgeIndexRefreshDialog.vue'
 import KnowledgeSearchPanel from '@/features/knowledge/KnowledgeSearchPanel.vue'
@@ -89,7 +90,7 @@ const isLinkFormOpen = ref(false)
 const isFilterPanelOpen = ref(false)
 const isImportDialogOpen = ref(false)
 const rightTab = ref<'chunks' | 'links'>('chunks')
-const viewMode = ref<'browse' | 'search' | 'ask' | 'summary'>('browse')
+const viewMode = ref<'browse' | 'search' | 'ask' | 'summary' | 'graph'>('browse')
 const indexStatus = ref<KnowledgeIndexStatus | null>(null)
 const indexProfile = ref<IndexProfile | null>(null)
 const isRefreshDialogOpen = ref(false)
@@ -430,6 +431,7 @@ function handleKeyDown(event: KeyboardEvent) {
           <button type="button" class="mode-button" :class="{ active: viewMode === 'search' }" @click="viewMode = 'search'">检索</button>
           <button type="button" class="mode-button" :class="{ active: viewMode === 'ask' }" @click="viewMode = 'ask'">问答</button>
           <button type="button" class="mode-button" :class="{ active: viewMode === 'summary' }" @click="viewMode = 'summary'">摘要</button>
+          <button type="button" class="mode-button" :class="{ active: viewMode === 'graph' }" @click="viewMode = 'graph'">图谱</button>
         </div>
         <div class="header-right-actions">
           <button class="primary-button" type="button" :disabled="isSaving" @click="isImportDialogOpen = true">批量导入</button>
@@ -541,6 +543,14 @@ function handleKeyDown(event: KeyboardEvent) {
       <KnowledgeSummaryPanel
         v-else-if="viewMode === 'summary'"
         :project-id="projectId"
+        @select-source="handleSearchSelectSource"
+      />
+
+      <KnowledgeGraphPanel
+        v-else-if="viewMode === 'graph'"
+        :project-id="projectId"
+        :selected-source-id="selectedSource?.id ?? null"
+        :selected-source-title="selectedSource?.title ?? null"
         @select-source="handleSearchSelectSource"
       />
     </section>

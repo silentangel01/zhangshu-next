@@ -29,6 +29,7 @@ from app.api.exports import router as exports_router
 from app.api.graphs import router as graphs_router
 from app.api.imports import projects_import_router, router as imports_router
 from app.api.knowledge import router as knowledge_router
+from app.api.knowledge_graph import router as knowledge_graph_router
 from app.api.material_links import router as material_links_router
 from app.api.outlines import router as outlines_router
 from app.api.projects import router as projects_router
@@ -189,6 +190,7 @@ app.include_router(settings_router)
 app.include_router(clues_router)
 app.include_router(creative_reminders_router)
 app.include_router(knowledge_router)
+app.include_router(knowledge_graph_router)
 app.include_router(material_links_router)
 app.include_router(graphs_router)
 app.include_router(timeline_router)

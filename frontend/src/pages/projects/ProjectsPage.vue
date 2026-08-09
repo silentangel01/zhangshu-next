@@ -16,7 +16,12 @@ import {
   updateProject,
   uploadProjectCover,
 } from '@/entities/project/api'
-import type { CreateProjectPayload, Project, ProjectStatus, UpdateProjectPayload } from '@/entities/project/types'
+import type {
+  CreateProjectPayload,
+  Project,
+  ProjectStatus,
+  UpdateProjectPayload,
+} from '@/entities/project/types'
 import CreateProjectDialog from '@/features/projects/CreateProjectDialog.vue'
 import EditProjectDialog from '@/features/projects/EditProjectDialog.vue'
 import {
@@ -141,6 +146,11 @@ async function loadCloudStatus() {
   } catch {
     // Cloud not configured — silently ignore.
   }
+}
+
+function handleCloudDialogClose() {
+  showCloudDialog.value = false
+  void loadCloudStatus()
 }
 
 async function refreshProjects() {
@@ -299,8 +309,10 @@ function handleCloudAccountClick() {
 <template>
   <main class="projects-page">
     <header class="page-header">
-      <div>
+      <div class="page-heading">
+        <p class="page-kicker">章枢 · 作品库</p>
         <h1>我的作品</h1>
+        <p class="page-subtitle">整理故事资料，继续上一次写作。</p>
       </div>
       <div class="header-actions">
         <button
@@ -308,14 +320,10 @@ function handleCloudAccountClick() {
           type="button"
           @click="handleCloudAccountClick"
         >
-          {{ cloudAccountStatus?.logged_in ? cloudAccountStatus.email ?? '云账户' : '云账户' }}
+          {{ cloudAccountStatus?.logged_in ? (cloudAccountStatus.email ?? '云账户') : '云账户' }}
         </button>
         <div class="import-dropdown">
-          <button
-            class="secondary-link import-trigger"
-            type="button"
-            @click="toggleImportMenu"
-          >
+          <button class="secondary-link import-trigger" type="button" @click="toggleImportMenu">
             导入
             <span class="caret" aria-hidden="true">▾</span>
           </button>
@@ -329,7 +337,12 @@ function handleCloudAccountClick() {
           </ul>
         </div>
         <RouterLink class="secondary-link" to="/backup">备份恢复</RouterLink>
-        <button class="primary-button" type="button" :disabled="isSaving" @click="showCreateDialog = true">
+        <button
+          class="primary-button"
+          type="button"
+          :disabled="isSaving"
+          @click="showCreateDialog = true"
+        >
           新建作品
         </button>
       </div>
@@ -348,6 +361,7 @@ function handleCloudAccountClick() {
           class="search-input"
         />
       </div>
+      <span class="project-count">{{ displayedProjects.length }} 部作品</span>
       <div class="toolbar-controls">
         <div class="filter-menu">
           <button
@@ -377,15 +391,21 @@ function handleCloudAccountClick() {
               </select>
             </label>
             <div class="filter-actions">
-              <button class="secondary-button" type="button" @click="handleClearFilters">清空</button>
-              <button class="primary-button" type="button" @click="isFilterPanelOpen = false">确定</button>
+              <button class="secondary-button" type="button" @click="handleClearFilters">
+                清空
+              </button>
+              <button class="primary-button" type="button" @click="isFilterPanelOpen = false">
+                确定
+              </button>
             </div>
           </div>
         </div>
         <label class="sort-control">
           <span>排序</span>
           <select v-model="sortKey">
-            <option v-for="opt in SORT_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+            <option v-for="opt in SORT_OPTIONS" :key="opt.value" :value="opt.value">
+              {{ opt.label }}
+            </option>
           </select>
         </label>
       </div>
@@ -406,10 +426,7 @@ function handleCloudAccountClick() {
       <div v-else class="book-grid">
         <article v-for="project in displayedProjects" :key="project.id" class="book-card">
           <div class="book-cover">
-            <img
-              :src="getCoverUrl(project) || defaultBookCover"
-              :alt="`${project.title} 封面`"
-            />
+            <img :src="getCoverUrl(project) || defaultBookCover" :alt="`${project.title} 封面`" />
           </div>
 
           <div class="book-info">
@@ -437,7 +454,7 @@ function handleCloudAccountClick() {
             <footer class="book-footer">
               <span class="book-updated">更新于 {{ formatDateTime(project.updated_at) }}</span>
               <div class="book-actions">
-                <RouterLink class="open-link" :to="`/projects/${project.id}`">打开</RouterLink>
+                <RouterLink class="open-link" :to="`/projects/${project.id}`">继续写作</RouterLink>
                 <button
                   class="secondary-button"
                   type="button"
@@ -480,10 +497,7 @@ function handleCloudAccountClick() {
       @delete-cover="handleEditCoverDelete"
     />
 
-    <CloudAccountDialog
-      v-if="showCloudDialog"
-      @close="showCloudDialog = false; loadCloudStatus()"
-    />
+    <CloudAccountDialog v-if="showCloudDialog" @close="handleCloudDialogClose" />
 
     <CloudProjectImportDialog
       v-if="showImportDialog"
@@ -497,18 +511,18 @@ function handleCloudAccountClick() {
 .projects-page {
   min-height: 100vh;
   box-sizing: border-box;
-  padding: 24px 32px;
+  padding: 34px 40px 56px;
   background: var(--zs-color-bg);
   color: var(--zs-color-text);
 }
 
 .page-header {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: 16px;
-  max-width: 1120px;
-  margin: 0 auto 16px;
+  gap: 24px;
+  max-width: 1180px;
+  margin: 0 auto 22px;
 }
 
 .header-actions {
@@ -517,16 +531,41 @@ function handleCloudAccountClick() {
   gap: 10px;
 }
 
+.page-heading {
+  display: grid;
+  gap: 4px;
+}
+
+.page-kicker,
+.page-subtitle {
+  margin: 0;
+}
+
+.page-kicker {
+  color: var(--zs-color-accent);
+  font-family: Georgia, 'Songti SC', serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+.page-subtitle {
+  color: var(--zs-color-text-muted);
+  font-size: 0.84rem;
+}
+
 h1 {
   margin: 0;
-  font-size: 1.35rem;
+  font-family: 'Songti SC', 'STSong', var(--zs-font-ui);
+  font-size: 1.8rem;
   font-weight: 700;
-  line-height: 1.3;
+  line-height: 1.25;
+  letter-spacing: 0.02em;
 }
 
 .content-panel,
 .error-banner {
-  max-width: 1120px;
+  max-width: 1180px;
   margin: 0 auto;
 }
 
@@ -576,26 +615,50 @@ h1 {
 
 .book-grid {
   display: grid;
-  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
 }
 
 .book-card {
   display: grid;
-  grid-template-columns: 88px 1fr;
-  gap: 16px;
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: 18px;
+  min-height: 246px;
   border: 1px solid var(--zs-color-border);
-  border-radius: var(--zs-radius-md);
-  padding: 16px;
+  border-radius: var(--zs-radius-sm);
+  padding: 18px;
   background: var(--zs-color-surface);
+  box-shadow: var(--zs-shadow-sm);
+  transform-origin: center bottom;
+  animation: book-card-enter var(--zs-duration-slow) var(--zs-ease-emphasized) both;
+  transition:
+    border-color var(--zs-duration-fast) var(--zs-ease-standard),
+    box-shadow var(--zs-duration-normal) var(--zs-ease-standard),
+    transform var(--zs-duration-normal) var(--zs-ease-emphasized);
+}
+
+.book-card:nth-child(2) {
+  animation-delay: 40ms;
+}
+
+.book-card:nth-child(n + 3) {
+  animation-delay: 70ms;
+}
+
+.book-card:hover {
+  border-color: var(--zs-color-border-strong);
+  box-shadow: var(--zs-shadow-card-hover);
+  transform: translateY(-2px);
 }
 
 .book-cover {
-  width: 88px;
+  width: 104px;
   aspect-ratio: 3 / 4.2;
-  border-radius: var(--zs-radius-sm);
+  border-radius: 2px;
   overflow: hidden;
-  border: 1px solid var(--zs-color-border-soft);
+  border: 1px solid var(--zs-color-border);
   background: var(--zs-color-surface-soft);
+  box-shadow: 3px 4px 0 var(--zs-color-surface-muted);
   flex-shrink: 0;
 }
 
@@ -604,12 +667,17 @@ h1 {
   height: 100%;
   object-fit: cover;
   display: block;
+  transition: transform var(--zs-duration-slow) var(--zs-ease-emphasized);
+}
+
+.book-card:hover .book-cover img {
+  transform: scale(1.012);
 }
 
 .book-info {
-  display: grid;
-  gap: 6px;
-  align-content: start;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
   min-width: 0;
 }
 
@@ -623,42 +691,49 @@ h1 {
 .book-header h2 {
   margin: 0;
   color: var(--zs-color-text);
-  font-size: 1.05rem;
+  font-family: 'Songti SC', 'STSong', var(--zs-font-ui);
+  font-size: 1.16rem;
   font-weight: 700;
   line-height: 1.3;
 }
 
 .status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   flex: 0 0 auto;
-  border-radius: var(--zs-radius-sm);
-  padding: 2px 8px;
+  padding: 2px 0;
+  background: transparent;
   font-size: 0.72rem;
   font-weight: 600;
   white-space: nowrap;
 }
 
+.status-badge::before {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  content: '';
+}
+
 .status-planning {
-  background: var(--zs-color-info-soft);
   color: var(--zs-color-info);
 }
 
 .status-writing {
-  background: var(--zs-color-success-soft);
   color: var(--zs-color-success);
 }
 
 .status-paused {
-  background: var(--zs-color-warning-soft);
   color: var(--zs-color-warning);
 }
 
 .status-completed {
-  background: var(--zs-color-success-soft);
   color: var(--zs-color-success);
 }
 
 .status-archived {
-  background: var(--zs-color-surface-muted);
   color: var(--zs-color-text-muted);
 }
 
@@ -678,22 +753,23 @@ h1 {
 .book-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 2px;
+  gap: 4px 10px;
+  margin-top: 3px;
 }
 
 .book-tag {
-  border-radius: var(--zs-radius-sm);
-  padding: 2px 6px;
-  background: var(--zs-color-surface-soft);
-  color: var(--zs-color-text-muted);
+  padding: 0;
+  background: transparent;
+  color: var(--zs-color-accent);
   font-size: 0.72rem;
   font-weight: 600;
-  border: 1px solid var(--zs-color-border-soft);
+}
+
+.book-tag::before {
+  content: '#';
 }
 
 .book-tag.more {
-  background: var(--zs-color-surface-muted);
   color: var(--zs-color-text-faint);
 }
 
@@ -714,9 +790,12 @@ h1 {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 8px;
+  align-self: end;
+  margin-top: auto;
+  padding-top: 9px;
+  border-top: 1px solid var(--zs-color-border-soft);
   color: var(--zs-color-text-faint);
-  font-size: 0.82rem;
+  font-size: 0.76rem;
 }
 
 .book-actions {
@@ -725,13 +804,25 @@ h1 {
   gap: 8px;
 }
 
+@keyframes book-card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .open-link {
   display: inline-flex;
   align-items: center;
-  min-height: 30px;
+  min-height: 32px;
   box-sizing: border-box;
-  border-radius: var(--zs-radius-sm);
-  padding: 0 10px;
+  border-radius: 2px;
+  padding: 0 12px;
   background: var(--zs-color-primary);
   color: var(--zs-color-on-primary);
   font-weight: 600;
@@ -742,7 +833,7 @@ h1 {
 .secondary-link {
   display: inline-flex;
   align-items: center;
-  min-height: 32px;
+  min-height: 34px;
   box-sizing: border-box;
   border: 1px solid var(--zs-color-border);
   border-radius: var(--zs-radius-sm);
@@ -810,7 +901,7 @@ h1 {
 }
 
 button {
-  min-height: 30px;
+  min-height: 32px;
   border-radius: var(--zs-radius-sm);
   border: 1px solid transparent;
   padding: 0 10px;
@@ -837,18 +928,25 @@ button:disabled {
 }
 
 .danger-button {
-  border-color: var(--zs-color-danger);
-  background: var(--zs-color-danger-soft);
+  border-color: transparent;
+  background: transparent;
   color: var(--zs-color-danger);
+}
+
+.danger-button:hover {
+  background: var(--zs-color-danger-soft);
 }
 
 .projects-toolbar {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 14px;
   align-items: center;
-  max-width: 1120px;
-  margin: 0 auto 16px;
+  max-width: 1180px;
+  margin: 0 auto 20px;
+  padding: 10px 0;
+  border-top: 1px solid var(--zs-color-border);
+  border-bottom: 1px solid var(--zs-color-border);
 }
 
 .toolbar-search {
@@ -859,7 +957,7 @@ button:disabled {
 .search-input {
   width: 100%;
   box-sizing: border-box;
-  min-height: 32px;
+  min-height: 36px;
   border: 1px solid var(--zs-color-border);
   border-radius: var(--zs-radius-sm);
   padding: 0 10px;
@@ -867,6 +965,12 @@ button:disabled {
   color: var(--zs-color-text);
   font: inherit;
   font-size: 0.88rem;
+}
+
+.project-count {
+  color: var(--zs-color-text-faint);
+  font-size: 0.78rem;
+  white-space: nowrap;
 }
 
 .search-input:focus {
@@ -886,7 +990,7 @@ button:disabled {
 }
 
 .filter-button {
-  min-height: 32px;
+  min-height: 36px;
   border: 1px solid var(--zs-color-border);
   border-radius: var(--zs-radius-sm);
   padding: 0 10px;
@@ -955,7 +1059,7 @@ button:disabled {
 }
 
 .sort-control select {
-  min-height: 32px;
+  min-height: 36px;
   border: 1px solid var(--zs-color-border);
   border-radius: var(--zs-radius-sm);
   padding: 0 8px;
@@ -979,6 +1083,16 @@ button:disabled {
   }
 }
 
+@media (max-width: 1040px) {
+  .book-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .book-card {
+    min-height: 220px;
+  }
+}
+
 @media (max-width: 720px) {
   .projects-page {
     padding: 16px 12px;
@@ -994,11 +1108,13 @@ button:disabled {
   .book-card {
     grid-template-columns: 72px 1fr;
     gap: 12px;
+    min-height: 0;
     padding: 12px;
   }
 
   .book-cover {
     width: 72px;
+    box-shadow: 2px 3px 0 var(--zs-color-surface-muted);
   }
 
   .primary-button,

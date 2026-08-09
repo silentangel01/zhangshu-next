@@ -76,6 +76,8 @@ const OAUTH_LABELS: Record<CloudOAuthProvider, string> = {
   qq: 'QQ',
 }
 
+const LOGIN_AUTO_CLOSE_DELAY_MS = 1500
+
 /** Error kinds that indicate network/TLS issues (not auth problems). */
 const NETWORK_ERROR_KINDS = new Set([
   'tls_reset_or_sni_filtered',
@@ -89,6 +91,7 @@ const NETWORK_ERROR_KINDS = new Set([
 
 let cooldownTimer: ReturnType<typeof setInterval> | null = null
 let oauthPollTimer: ReturnType<typeof setInterval> | null = null
+let autoCloseTimer: ReturnType<typeof setTimeout> | null = null
 
 onMounted(async () => {
   try {
@@ -106,7 +109,31 @@ onMounted(async () => {
 onUnmounted(() => {
   stopCooldownTimer()
   stopOAuthPolling()
+  stopAutoCloseTimer()
 })
+
+function completeLogin(status: CloudAccountStatus, message: string) {
+  accountStatus.value = status
+  isLoggedIn.value = true
+  cloudAvailable.value = status.cloud_available
+  successMessage.value = message
+  showDiagnosticButton.value = false
+  scheduleAutoClose()
+}
+
+function scheduleAutoClose() {
+  stopAutoCloseTimer()
+  autoCloseTimer = setTimeout(() => {
+    autoCloseTimer = null
+    emit('close')
+  }, LOGIN_AUTO_CLOSE_DELAY_MS)
+}
+
+function stopAutoCloseTimer() {
+  if (!autoCloseTimer) return
+  clearTimeout(autoCloseTimer)
+  autoCloseTimer = null
+}
 
 async function handleLogin() {
   if (loginMethod.value === 'code') {
@@ -124,12 +151,8 @@ async function handleLogin() {
 
   try {
     const status = await cloudLogin(email.value.trim(), password.value)
-    accountStatus.value = status
-    isLoggedIn.value = true
-    cloudAvailable.value = status.cloud_available
-    successMessage.value = '登录成功。'
+    completeLogin(status, '登录成功。')
     password.value = ''
-    showDiagnosticButton.value = false
   } catch (error) {
     handleError(error, '登录失败，请检查邮箱和密码。')
   } finally {
@@ -155,13 +178,12 @@ async function handleEmailCodeLogin() {
     const status =
       target === 'email'
         ? await cloudLoginWithEmailCode(email.value.trim(), loginVerificationCode.value.trim())
-        : await cloudLoginWithPhoneCode(phoneNumber.value.trim(), loginVerificationCode.value.trim())
-    accountStatus.value = status
-    isLoggedIn.value = true
-    cloudAvailable.value = status.cloud_available
-    successMessage.value = '登录成功。'
+        : await cloudLoginWithPhoneCode(
+            phoneNumber.value.trim(),
+            loginVerificationCode.value.trim(),
+          )
+    completeLogin(status, '登录成功。')
     loginVerificationCode.value = ''
-    showDiagnosticButton.value = false
   } catch (error) {
     handleError(error, '验证码登录失败，请检查验证码。')
   } finally {
@@ -240,11 +262,17 @@ async function handleSendRegisterCode() {
 }
 
 async function handleRegister() {
-  if (registerMode.value === 'email' && (!email.value.trim() || !password.value || !registerVerificationCode.value.trim())) {
+  if (
+    registerMode.value === 'email' &&
+    (!email.value.trim() || !password.value || !registerVerificationCode.value.trim())
+  ) {
     errorMessage.value = '请输入邮箱、密码和验证码。'
     return
   }
-  if (registerMode.value === 'phone' && (!phoneNumber.value.trim() || !registerVerificationCode.value.trim())) {
+  if (
+    registerMode.value === 'phone' &&
+    (!phoneNumber.value.trim() || !registerVerificationCode.value.trim())
+  ) {
     errorMessage.value = '请输入手机号和验证码。'
     return
   }
@@ -266,13 +294,9 @@ async function handleRegister() {
             registerVerificationCode.value.trim(),
             displayName.value.trim(),
           )
-    accountStatus.value = status
-    isLoggedIn.value = true
-    cloudAvailable.value = status.cloud_available
-    successMessage.value = '注册成功，已自动登录。'
+    completeLogin(status, '注册成功，已自动登录。')
     password.value = ''
     registerVerificationCode.value = ''
-    showDiagnosticButton.value = false
   } catch (error) {
     handleError(error, '注册失败，请稍后重试。')
   } finally {
@@ -281,6 +305,7 @@ async function handleRegister() {
 }
 
 async function handleLogout() {
+  stopAutoCloseTimer()
   isSubmitting.value = true
   clearMessages()
 
@@ -332,18 +357,15 @@ function startOAuthPolling(sessionId: string, pollToken: string, provider: Cloud
         return
       }
 
-      accountStatus.value = {
+      const status: CloudAccountStatus = {
         logged_in: true,
         cloud_available: result.cloud_available ?? true,
         email: result.email ?? null,
         phone_number: result.phone_number ?? null,
         display_name: result.display_name || OAUTH_LABELS[provider],
       }
-      isLoggedIn.value = true
-      cloudAvailable.value = true
-      successMessage.value = `${OAUTH_LABELS[provider]}登录成功。`
+      completeLogin(status, `${OAUTH_LABELS[provider]}登录成功。`)
       oauthPendingProvider.value = null
-      showDiagnosticButton.value = false
     } catch (error) {
       stopOAuthPolling()
       oauthPendingProvider.value = null
@@ -528,7 +550,9 @@ function stopCooldownTimer() {
             <div class="account-info">
               <p class="info-label">已登录</p>
               <p class="info-email">
-                {{ accountStatus?.email ?? accountStatus?.phone_number ?? accountStatus?.display_name }}
+                {{
+                  accountStatus?.email ?? accountStatus?.phone_number ?? accountStatus?.display_name
+                }}
               </p>
             </div>
             <button
@@ -573,7 +597,12 @@ function stopCooldownTimer() {
 
               <label v-if="activeTab === 'register' && registerMode === 'phone'">
                 <span>手机号</span>
-                <input v-model.trim="phoneNumber" inputmode="tel" required placeholder="13800138000" />
+                <input
+                  v-model.trim="phoneNumber"
+                  inputmode="tel"
+                  required
+                  placeholder="13800138000"
+                />
               </label>
 
               <template v-if="activeTab === 'login' && loginMethod === 'password'">
@@ -617,7 +646,12 @@ function stopCooldownTimer() {
 
                 <label v-if="loginCodeTarget === 'phone'">
                   <span>手机号</span>
-                  <input v-model.trim="phoneNumber" inputmode="tel" required placeholder="13800138000" />
+                  <input
+                    v-model.trim="phoneNumber"
+                    inputmode="tel"
+                    required
+                    placeholder="13800138000"
+                  />
                 </label>
 
                 <label>
@@ -798,12 +832,14 @@ function stopCooldownTimer() {
                 :disabled="isSwitchingMode"
                 @click="handleSwitchMode(diagnosticReport!.recommended_mode)"
               >
-                {{ isSwitchingMode ? '正在切换...' : MODE_LABELS[diagnosticReport!.recommended_mode] }}
+                {{
+                  isSwitchingMode ? '正在切换...' : MODE_LABELS[diagnosticReport!.recommended_mode]
+                }}
               </button>
             </div>
 
             <ul class="diagnostic-steps">
-              <li v-for="step in diagnosticReport.steps.filter(s => !s.ok)" :key="step.name">
+              <li v-for="step in diagnosticReport.steps.filter((s) => !s.ok)" :key="step.name">
                 {{ step.message }}
                 <span v-if="step.suggestion" class="step-suggestion">— {{ step.suggestion }}</span>
               </li>
@@ -979,7 +1015,9 @@ input {
   background: var(--zs-color-surface);
   color: var(--zs-color-text);
   font: inherit;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 input:focus {

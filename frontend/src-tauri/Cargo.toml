@@ -1,6 +1,6 @@
 [package]
 name = "zhangshu-desktop"
-version = "0.8.1"
+version = "0.9.5"
 description = "章枢 - 本地优先的网络小说写作应用"
 authors = ["Zhangshu Team"]
 edition = "2021"

@@ -146,6 +146,8 @@ const menuItems = computed<ContextMenuItem[]>(() => {
         { id: 'delete-chapter', label: '删除章节', danger: true },
       ]
   }
+
+  return []
 })
 
 function handleMenuSelect(item: ContextMenuItem) {
@@ -356,7 +358,8 @@ function buildReorderPayload(target: DropTarget): ReorderChaptersPayload | null 
     draggedChapter.volume_id && activeVolumeIds.value.has(draggedChapter.volume_id)
       ? draggedChapter.volume_id
       : null
-  const targetChapterVolumeId = target.target === 'chapter' ? getChapterById(target.chapterId)?.volume_id : null
+  const targetChapterVolumeId =
+    target.target === 'chapter' ? getChapterById(target.chapterId)?.volume_id : null
   const targetVolumeId =
     target.target === 'volume'
       ? target.volumeId
@@ -377,7 +380,8 @@ function buildReorderPayload(target: DropTarget): ReorderChaptersPayload | null 
   }
 
   const sourceBefore = sourceGroup.map((chapter) => chapter.id)
-  const targetBefore = sourceVolumeId === targetVolumeId ? sourceBefore : targetGroup.map((chapter) => chapter.id)
+  const targetBefore =
+    sourceVolumeId === targetVolumeId ? sourceBefore : targetGroup.map((chapter) => chapter.id)
   const draggedIndex = sourceGroup.findIndex((chapter) => chapter.id === draggedChapterId)
 
   if (draggedIndex === -1) {
@@ -409,7 +413,10 @@ function buildReorderPayload(target: DropTarget): ReorderChaptersPayload | null 
     if (sourceBefore.join('|') === sourceAfter.join('|')) {
       return null
     }
-  } else if (sourceBefore.join('|') === sourceAfter.join('|') && targetBefore.join('|') === targetAfter.join('|')) {
+  } else if (
+    sourceBefore.join('|') === sourceAfter.join('|') &&
+    targetBefore.join('|') === targetAfter.join('|')
+  ) {
     return null
   }
 
@@ -450,11 +457,19 @@ function isDraggingChapter(chapterId: string) {
 }
 
 function isDropBefore(chapterId: string) {
-  return dropTarget.value?.target === 'chapter' && dropTarget.value.chapterId === chapterId && dropTarget.value.position === 'before'
+  return (
+    dropTarget.value?.target === 'chapter' &&
+    dropTarget.value.chapterId === chapterId &&
+    dropTarget.value.position === 'before'
+  )
 }
 
 function isDropAfter(chapterId: string) {
-  return dropTarget.value?.target === 'chapter' && dropTarget.value.chapterId === chapterId && dropTarget.value.position === 'after'
+  return (
+    dropTarget.value?.target === 'chapter' &&
+    dropTarget.value.chapterId === chapterId &&
+    dropTarget.value.position === 'after'
+  )
 }
 
 function isVolumeDropTarget(volumeId: string | null) {
@@ -468,14 +483,16 @@ function isVolumeDropTarget(volumeId: string | null) {
       <div class="tree-row root-row">
         <span class="tree-label">{{ projectTitle }}</span>
       </div>
-
     </div>
 
     <section v-for="volume in sortedVolumes" :key="volume.id" class="tree-group">
       <button
         type="button"
         class="tree-row volume-row"
-        :class="{ expanded: isVolumeExpanded(volume.id), 'drop-target': isVolumeDropTarget(volume.id) }"
+        :class="{
+          expanded: isVolumeExpanded(volume.id),
+          'drop-target': isVolumeDropTarget(volume.id),
+        }"
         @click="toggleVolume(volume.id)"
         @contextmenu.stop.prevent="openVolumeMenu($event, volume)"
         @dragover.prevent="handleVolumeDragOver($event, volume.id)"
@@ -615,7 +632,7 @@ function isVolumeDropTarget(volumeId: string | null) {
 <style scoped>
 .chapter-tree {
   display: grid;
-  gap: 1px;
+  gap: 2px;
   min-width: 0;
 }
 
@@ -655,32 +672,37 @@ function isVolumeDropTarget(volumeId: string | null) {
 }
 
 .root-row {
-  min-height: 30px;
-  color: var(--zs-color-text-muted);
-  font-size: 0.78rem;
+  min-height: 34px;
+  color: var(--zs-color-text);
+  font-family: 'Songti SC', 'STSong', var(--zs-font-ui);
+  font-size: 0.88rem;
   font-weight: 700;
-  letter-spacing: 0.02em;
-  padding-bottom: var(--zs-space-1);
+  letter-spacing: 0.04em;
+  padding-bottom: var(--zs-space-2);
   border-bottom: 1px solid var(--zs-color-border-soft);
-  margin-bottom: var(--zs-space-1);
+  margin-bottom: var(--zs-space-2);
 }
 
 .create-row {
-  justify-content: center;
-  min-height: 26px;
-  border: 1px dashed var(--zs-color-border-soft);
+  justify-content: flex-start;
+  min-height: 28px;
+  border: 0;
+  border-radius: 0;
+  padding-left: 22px;
   background: transparent;
   color: var(--zs-color-text-faint);
   font-size: 0.78rem;
   font-weight: 500;
-  opacity: 0.7;
-  transition: opacity 0.15s, border-color 0.15s, color 0.15s;
+  opacity: 0.8;
+  transition:
+    opacity 0.15s,
+    color 0.15s,
+    background 0.15s;
 }
 
 .create-row:hover,
 .create-row:focus-visible {
   opacity: 1;
-  border-color: var(--zs-color-primary);
   color: var(--zs-color-primary);
   background: var(--zs-color-primary-soft);
 }
@@ -690,7 +712,7 @@ function isVolumeDropTarget(volumeId: string | null) {
 }
 
 .volume-row {
-  min-height: 32px;
+  min-height: 34px;
   color: var(--zs-color-text);
   font-weight: 700;
   font-size: 0.86rem;
@@ -699,9 +721,8 @@ function isVolumeDropTarget(volumeId: string | null) {
 
 .chapter-count {
   margin-left: auto;
-  padding: 0 6px;
-  border-radius: var(--zs-radius-pill);
-  background: var(--zs-color-surface-soft);
+  padding: 0;
+  background: transparent;
   color: var(--zs-color-text-faint);
   font-size: 0.7rem;
   font-weight: 600;
@@ -714,7 +735,7 @@ function isVolumeDropTarget(volumeId: string | null) {
 
 .chapter-row {
   position: relative;
-  min-height: 30px;
+  min-height: 32px;
   color: var(--zs-color-text-muted);
   user-select: none;
 }
@@ -723,8 +744,9 @@ function isVolumeDropTarget(volumeId: string | null) {
   background: var(--zs-color-primary-soft);
   color: var(--zs-color-primary);
   font-weight: 600;
-  border-left: 3px solid var(--zs-color-primary);
-  padding-left: 17px;
+  border-left: 2px solid var(--zs-color-primary);
+  border-radius: 0 var(--zs-radius-sm) var(--zs-radius-sm) 0;
+  padding-left: 18px;
 }
 
 .chapter-row.selected:hover,

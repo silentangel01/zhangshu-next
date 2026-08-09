@@ -16,10 +16,7 @@ import {
   listChapterVersions,
   restoreChapterVersion,
 } from '@/entities/chapter-version/api'
-import type {
-  ChapterVersionDetail,
-  ChapterVersionListItem,
-} from '@/entities/chapter-version/types'
+import type { ChapterVersionDetail, ChapterVersionListItem } from '@/entities/chapter-version/types'
 import type {
   Chapter,
   CreateChapterPayload,
@@ -78,7 +75,16 @@ const isLeftPanelCollapsed = ref(false)
 const isRightPanelCollapsed = ref(false)
 const isWorkspaceTransitionReady = ref(false)
 
-type WritingAidTab = 'outline' | 'characters' | 'settings' | 'graph' | 'timeline' | 'foreshadowing' | 'reminders' | 'versions'
+type WritingAidTab =
+  | 'overview'
+  | 'outline'
+  | 'characters'
+  | 'settings'
+  | 'graph'
+  | 'timeline'
+  | 'foreshadowing'
+  | 'reminders'
+  | 'versions'
 
 interface WorkspaceViewState {
   selectedChapterId: string | null
@@ -197,10 +203,10 @@ function saveWorkspaceViewState(patch: Partial<WorkspaceViewState>) {
   const current = readValidWorkspaceViewState()
   safeWriteJson(workspaceStorageKey.value, {
     selectedChapterId: Object.prototype.hasOwnProperty.call(patch, 'selectedChapterId')
-      ? patch.selectedChapterId ?? null
+      ? (patch.selectedChapterId ?? null)
       : current.selectedChapterId,
     rightAidTab: Object.prototype.hasOwnProperty.call(patch, 'rightAidTab')
-      ? patch.rightAidTab ?? null
+      ? (patch.rightAidTab ?? null)
       : current.rightAidTab,
     leftPanelCollapsed: Object.prototype.hasOwnProperty.call(patch, 'leftPanelCollapsed')
       ? Boolean(patch.leftPanelCollapsed)
@@ -215,22 +221,28 @@ function readValidWorkspaceViewState(): WorkspaceViewState {
   const state = safeReadJson<Partial<WorkspaceViewState> | null>(workspaceStorageKey.value, null)
   const validTab = isWritingAidTab(state?.rightAidTab) ? state.rightAidTab : null
   return {
-    selectedChapterId: typeof state?.selectedChapterId === 'string' ? state.selectedChapterId : null,
+    selectedChapterId:
+      typeof state?.selectedChapterId === 'string' ? state.selectedChapterId : null,
     rightAidTab: validTab,
-    leftPanelCollapsed: typeof state?.leftPanelCollapsed === 'boolean' ? state.leftPanelCollapsed : false,
-    rightPanelCollapsed: typeof state?.rightPanelCollapsed === 'boolean' ? state.rightPanelCollapsed : false,
+    leftPanelCollapsed:
+      typeof state?.leftPanelCollapsed === 'boolean' ? state.leftPanelCollapsed : false,
+    rightPanelCollapsed:
+      typeof state?.rightPanelCollapsed === 'boolean' ? state.rightPanelCollapsed : false,
   }
 }
 
 function isWritingAidTab(value: unknown): value is WritingAidTab {
-  return value === 'outline'
-    || value === 'characters'
-    || value === 'settings'
-    || value === 'graph'
-    || value === 'timeline'
-    || value === 'foreshadowing'
-    || value === 'reminders'
-    || value === 'versions'
+  return (
+    value === 'overview' ||
+    value === 'outline' ||
+    value === 'characters' ||
+    value === 'settings' ||
+    value === 'graph' ||
+    value === 'timeline' ||
+    value === 'foreshadowing' ||
+    value === 'reminders' ||
+    value === 'versions'
+  )
 }
 
 function handleRightAidTabChanged(tab: WritingAidTab) {
@@ -331,7 +343,8 @@ async function handleEditChapter(payload: UpdateChapterMetadataPayload) {
     })
 
     editingChapter.value = null
-    selectedChapter.value = selectedChapter.value?.id === updatedChapter.id ? updatedChapter : selectedChapter.value
+    selectedChapter.value =
+      selectedChapter.value?.id === updatedChapter.id ? updatedChapter : selectedChapter.value
     await refreshVolumesAndChapters()
     cloudSyncManager.notifyDirty(projectId.value)
   }, '更新章节信息失败。')
@@ -491,9 +504,7 @@ async function handleRestoreVersion(versionId: string) {
     return
   }
 
-  const confirmed = window.confirm(
-    '确认恢复此版本吗？当前正文会被覆盖，但系统会先创建恢复前备份。',
-  )
+  const confirmed = window.confirm('确认恢复此版本吗？当前正文会被覆盖，但系统会先创建恢复前备份。')
   if (!confirmed) {
     return
   }
@@ -555,14 +566,15 @@ const projectCoverUrl = computed<string | null>(() => {
 function getErrorMessage(error: unknown, fallback: string): string {
   return formatApiErrorMessage(error, fallback)
 }
-
 </script>
 
 <template>
   <main class="project-detail-page">
     <header class="page-header">
-      <div>
-        <RouterLink class="back-link" to="/projects">← 返回作品库</RouterLink>
+      <div class="workspace-breadcrumb">
+        <RouterLink class="back-link" to="/projects">作品库</RouterLink>
+        <span class="breadcrumb-separator" aria-hidden="true">/</span>
+        <span class="breadcrumb-current">{{ project?.title || '写作台' }}</span>
       </div>
       <div class="header-actions">
         <CloudSyncStatusIndicator />
@@ -606,11 +618,23 @@ function getErrorMessage(error: unknown, fallback: string): string {
           type="button"
           class="collapse-tab"
           :aria-label="isLeftPanelCollapsed ? '展开章节栏' : '收起章节栏'"
+          :title="isLeftPanelCollapsed ? '展开章节栏' : '收起章节栏'"
           @click="toggleLeftPanel"
         >
-          {{ isLeftPanelCollapsed ? '›' : '‹' }}
+          <svg
+            class="collapse-icon"
+            :class="{ 'points-left': !isLeftPanelCollapsed }"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path d="m9 5 7 7-7 7" />
+          </svg>
         </button>
-        <div class="panel-content sidebar-content" :class="{ hidden: isLeftPanelCollapsed }" :aria-hidden="isLeftPanelCollapsed">
+        <div
+          class="panel-content sidebar-content"
+          :class="{ hidden: isLeftPanelCollapsed }"
+          :aria-hidden="isLeftPanelCollapsed"
+        >
           <ChapterTree
             :project-title="project?.title || '作品标题'"
             :volumes="sortedVolumes"
@@ -641,7 +665,6 @@ function getErrorMessage(error: unknown, fallback: string): string {
             @dirty-change="isEditorDirty = $event"
             @saved="handleChapterSaved"
           />
-
         </article>
 
         <article v-else class="project-summary">
@@ -659,10 +682,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
 
           <div v-if="project" class="summary-cover-row">
             <div class="summary-cover">
-              <img
-                :src="projectCoverUrl || defaultBookCover"
-                :alt="`${project.title} 封面`"
-              />
+              <img :src="projectCoverUrl || defaultBookCover" :alt="`${project.title} 封面`" />
             </div>
             <dl class="metadata-grid">
               <div>
@@ -675,7 +695,13 @@ function getErrorMessage(error: unknown, fallback: string): string {
               </div>
               <div>
                 <dt>目标字数</dt>
-                <dd>{{ project.target_word_count ? project.target_word_count.toLocaleString() : '未设置' }}</dd>
+                <dd>
+                  {{
+                    project.target_word_count
+                      ? project.target_word_count.toLocaleString()
+                      : '未设置'
+                  }}
+                </dd>
               </div>
               <div>
                 <dt>更新时间</dt>
@@ -705,11 +731,23 @@ function getErrorMessage(error: unknown, fallback: string): string {
           type="button"
           class="collapse-tab right"
           :aria-label="isRightPanelCollapsed ? '展开资料栏' : '收起资料栏'"
+          :title="isRightPanelCollapsed ? '展开资料栏' : '收起资料栏'"
           @click="toggleRightPanel"
         >
-          {{ isRightPanelCollapsed ? '‹' : '›' }}
+          <svg
+            class="collapse-icon"
+            :class="{ 'points-left': isRightPanelCollapsed }"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path d="m9 5 7 7-7 7" />
+          </svg>
         </button>
-        <div class="panel-content aid-content" :class="{ hidden: isRightPanelCollapsed }" :aria-hidden="isRightPanelCollapsed">
+        <div
+          class="panel-content aid-content"
+          :class="{ hidden: isRightPanelCollapsed }"
+          :aria-hidden="isRightPanelCollapsed"
+        >
           <WritingAidPanel
             :project-id="projectId"
             :chapter-id="selectedChapter?.id ?? null"
@@ -764,10 +802,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
       @restore="handleRestoreVersion"
     />
 
-    <AppSettingsDialog
-      v-if="showAppSettings"
-      @close="showAppSettings = false"
-    />
+    <AppSettingsDialog v-if="showAppSettings" @close="showAppSettings = false" />
   </main>
 </template>
 
@@ -787,20 +822,43 @@ function getErrorMessage(error: unknown, fallback: string): string {
   justify-content: space-between;
   gap: var(--zs-space-2);
   max-width: 1600px;
-  margin: 0 auto var(--zs-space-2);
-  min-height: 36px;
+  margin: 0 auto var(--zs-space-3);
+  min-height: 34px;
+  padding-bottom: var(--zs-space-2);
+  border-bottom: 1px solid var(--zs-color-border);
+}
+
+.workspace-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: var(--zs-space-2);
+  min-width: 0;
 }
 
 .back-link {
   display: inline-flex;
   color: var(--zs-color-text-muted);
-  font-size: 0.84rem;
-  font-weight: 600;
+  font-size: 0.8rem;
+  font-weight: 500;
   text-decoration: none;
 }
 
 .back-link:hover {
   color: var(--zs-color-primary);
+}
+
+.breadcrumb-separator {
+  color: var(--zs-color-border-strong);
+}
+
+.breadcrumb-current {
+  overflow: hidden;
+  color: var(--zs-color-text);
+  font-family: 'Songti SC', 'STSong', var(--zs-font-ui);
+  font-size: 0.92rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 h2 {
@@ -941,31 +999,45 @@ h2 {
   --left-panel-collapsed-width: var(--zs-sidebar-collapsed-width);
   --right-panel-width: minmax(280px, 320px);
   --right-panel-collapsed-width: var(--zs-sidebar-collapsed-width);
-  --workspace-transition-duration: var(--zs-duration-normal);
-  --workspace-transition-easing: var(--zs-ease-standard);
+  --workspace-transition-duration: var(--zs-duration-slow);
+  --workspace-transition-easing: var(--zs-ease-emphasized);
   display: grid;
-  grid-template-columns: var(--left-panel-width) minmax(var(--zs-writing-width-min), 1fr) var(--right-panel-width);
-  gap: var(--zs-space-3);
+  grid-template-columns: var(--left-panel-width) minmax(var(--zs-writing-width-min), 1fr) var(
+      --right-panel-width
+    );
+  gap: 0;
   align-items: stretch;
   height: calc(100vh - 80px);
   min-height: 480px;
   min-width: 0;
+  border: 1px solid var(--zs-color-border);
+  border-radius: var(--zs-radius-sm);
+  background: var(--zs-color-surface);
+  box-shadow: var(--zs-shadow-sm);
+  overflow: hidden;
 }
 
 .workspace-layout.transition-ready {
-  transition: grid-template-columns var(--workspace-transition-duration) var(--workspace-transition-easing);
+  transition: grid-template-columns var(--workspace-transition-duration)
+    var(--workspace-transition-easing);
 }
 
 .workspace-layout.left-collapsed {
-  grid-template-columns: var(--left-panel-collapsed-width) minmax(var(--zs-writing-width-min), 1fr) var(--right-panel-width);
+  grid-template-columns:
+    var(--left-panel-collapsed-width) minmax(var(--zs-writing-width-min), 1fr)
+    var(--right-panel-width);
 }
 
 .workspace-layout.right-collapsed {
-  grid-template-columns: var(--left-panel-width) minmax(var(--zs-writing-width-min), 1fr) var(--right-panel-collapsed-width);
+  grid-template-columns: var(--left-panel-width) minmax(var(--zs-writing-width-min), 1fr) var(
+      --right-panel-collapsed-width
+    );
 }
 
 .workspace-layout.left-collapsed.right-collapsed {
-  grid-template-columns: var(--left-panel-collapsed-width) minmax(var(--zs-writing-width-min), 1fr) var(--right-panel-collapsed-width);
+  grid-template-columns:
+    var(--left-panel-collapsed-width) minmax(var(--zs-writing-width-min), 1fr)
+    var(--right-panel-collapsed-width);
 }
 
 .sidebar,
@@ -977,108 +1049,138 @@ h2 {
 
 .detail-panel {
   overflow: auto;
-}
-
-.sidebar {
-  display: grid;
-  gap: var(--zs-space-2);
-  grid-template-rows: auto minmax(0, 1fr);
-}
-
-.aid-sidebar {
-  display: grid;
-  gap: var(--zs-space-2);
-  grid-template-rows: auto minmax(0, 1fr);
+  border-right: 1px solid var(--zs-color-border-soft);
+  border-left: 1px solid var(--zs-color-border-soft);
+  background: var(--zs-color-canvas);
 }
 
 .sidebar,
 .aid-sidebar {
   position: relative;
+  display: block;
   width: 100%;
-  border-radius: var(--zs-radius-md);
+  border: 0;
+  border-radius: 0;
   background: var(--zs-color-surface);
-  border: 1px solid var(--zs-color-border-soft);
   transition:
     opacity var(--workspace-transition-duration) var(--workspace-transition-easing),
     transform var(--workspace-transition-duration) var(--workspace-transition-easing);
 }
 
-.sidebar {
-  border-right: none;
-  border-top-right-radius: 0;
-  border-bottom-right-radius: 0;
-}
-
-.aid-sidebar {
-  border-left: none;
-  border-top-left-radius: 0;
-  border-bottom-left-radius: 0;
-}
-
 .sidebar.collapsed,
 .aid-sidebar.collapsed {
-  place-items: start center;
   overflow: hidden;
 }
 
 .collapse-tab {
+  position: absolute;
+  top: 50%;
+  right: -1px;
+  z-index: 4;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  min-height: 24px;
-  border: none;
-  border-bottom: 1px solid var(--zs-color-border-soft);
-  border-radius: 0;
-  padding: 2px var(--zs-space-2);
-  background: transparent;
-  color: var(--zs-color-text-faint);
-  font-size: 0.84rem;
-  font-weight: 400;
+  justify-content: center;
+  width: 24px;
+  height: 48px;
+  min-height: 48px;
+  border: 1px solid var(--zs-color-border);
+  border-right: 0;
+  border-radius: 8px 0 0 8px;
+  padding: 0;
+  background: var(--zs-color-surface);
+  color: var(--zs-color-text-muted);
+  box-shadow: 0 2px 8px rgb(35 39 32 / 8%);
   cursor: pointer;
+  opacity: 0.64;
+  transform: translateY(-50%);
   transition:
-    background-color 160ms ease,
-    color 160ms ease;
+    background-color var(--zs-duration-fast) var(--zs-ease-standard),
+    border-color var(--zs-duration-fast) var(--zs-ease-standard),
+    color var(--zs-duration-fast) var(--zs-ease-standard),
+    opacity var(--zs-duration-fast) var(--zs-ease-standard),
+    box-shadow var(--zs-duration-fast) var(--zs-ease-standard),
+    transform var(--zs-duration-normal) var(--zs-ease-emphasized);
 }
 
 .collapse-tab:hover {
-  color: var(--zs-color-text-muted);
+  border-color: var(--zs-color-border-strong);
   background: var(--zs-color-surface-soft);
+  color: var(--zs-color-primary);
+  box-shadow: 0 3px 12px rgb(35 39 32 / 12%);
+  opacity: 1;
+  transform: translateY(-50%) translateX(-2px);
+}
+
+.collapse-tab:focus-visible {
+  outline: none;
+  color: var(--zs-color-primary);
+  box-shadow:
+    var(--zs-shadow-focus),
+    0 3px 12px rgb(35 39 32 / 12%);
+  opacity: 1;
 }
 
 .collapse-tab.right {
-  justify-content: flex-start;
+  right: auto;
+  left: -1px;
+  border-right: 1px solid var(--zs-color-border);
+  border-left: 0;
+  border-radius: 0 8px 8px 0;
+}
+
+.collapse-tab.right:hover {
+  transform: translateY(-50%) translateX(2px);
+}
+
+.collapse-tab:active,
+.collapse-tab.right:active {
+  transform: translateY(-50%) scale(0.96);
+}
+
+.collapse-icon {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+  transition: transform var(--workspace-transition-duration) var(--workspace-transition-easing);
+}
+
+.collapse-icon.points-left {
+  transform: rotate(180deg);
 }
 
 .sidebar.collapsed .collapse-tab,
 .aid-sidebar.collapsed .collapse-tab {
-  justify-self: center;
-  min-height: 100px;
-  padding: 10px 3px;
-  writing-mode: vertical-rl;
-  text-orientation: mixed;
-  border-bottom: none;
-  border-radius: 0;
-  font-size: 1rem;
+  right: 8px;
+  left: 8px;
+  width: 28px;
+  border: 1px solid var(--zs-color-border);
+  border-radius: 8px;
+  opacity: 0.82;
 }
 
 .panel-content {
+  height: 100%;
   min-width: 0;
   overflow: hidden;
-  padding: var(--zs-space-2) var(--zs-space-3);
+  padding: var(--zs-space-3);
   box-sizing: border-box;
   opacity: 1;
   transform: translateX(0);
   transition:
-    opacity 160ms ease,
+    opacity var(--zs-duration-fast) var(--zs-ease-standard),
     transform var(--workspace-transition-duration) var(--workspace-transition-easing),
     visibility 0s linear 0s;
 }
 
 .workspace-layout.transition-ready .panel-content.hidden {
   transition:
-    opacity 120ms ease,
-    transform 160ms ease,
-    visibility 0s linear 160ms;
+    opacity var(--zs-duration-fast) var(--zs-ease-standard),
+    transform var(--zs-duration-normal) var(--workspace-transition-easing),
+    visibility 0s linear var(--zs-duration-normal);
 }
 
 .panel-content.hidden {
@@ -1112,8 +1214,8 @@ h2 {
 .detail-panel > article {
   min-height: 100%;
   box-sizing: border-box;
-  padding: var(--zs-space-3);
-  background: var(--zs-color-surface);
+  padding: var(--zs-space-4) var(--zs-space-5);
+  background: var(--zs-color-canvas);
 }
 
 .detail-panel > .chapter-preview {
@@ -1122,7 +1224,7 @@ h2 {
 
 .detail-panel > .project-summary {
   border-radius: 0;
-  border: 1px solid var(--zs-color-border-soft);
+  border: 0;
 }
 
 .detail-panel > .chapter-preview {
@@ -1316,7 +1418,7 @@ button:disabled {
   .workspace-layout {
     --left-panel-width: minmax(220px, 260px);
     --right-panel-width: minmax(260px, 300px);
-    gap: var(--zs-space-2);
+    gap: 0;
     height: calc(100vh - 76px);
   }
 
@@ -1340,14 +1442,16 @@ button:disabled {
   .workspace-layout {
     --left-panel-width: minmax(200px, 240px);
     grid-template-columns: var(--left-panel-width) minmax(0, 1fr) var(--right-panel-collapsed-width);
-    gap: var(--zs-space-2);
+    gap: 0;
     height: calc(100vh - 120px);
     min-height: 440px;
     overflow-x: hidden;
   }
 
   .workspace-layout.left-collapsed {
-    grid-template-columns: var(--left-panel-collapsed-width) minmax(0, 1fr) var(--right-panel-collapsed-width);
+    grid-template-columns: var(--left-panel-collapsed-width) minmax(0, 1fr) var(
+        --right-panel-collapsed-width
+      );
   }
 
   .workspace-layout.right-collapsed,
@@ -1356,19 +1460,17 @@ button:disabled {
   }
 
   .workspace-layout.left-collapsed.right-collapsed {
-    grid-template-columns: var(--left-panel-collapsed-width) minmax(0, 1fr) var(--right-panel-collapsed-width);
-  }
-
-  .aid-sidebar {
-    place-items: start center;
+    grid-template-columns: var(--left-panel-collapsed-width) minmax(0, 1fr) var(
+        --right-panel-collapsed-width
+      );
   }
 
   .aid-sidebar .collapse-tab {
-    justify-self: center;
-    min-height: 100px;
-    padding: 10px 3px;
-    writing-mode: vertical-rl;
-    text-orientation: mixed;
+    right: 8px;
+    left: 8px;
+    width: 28px;
+    border: 1px solid var(--zs-color-border);
+    border-radius: 8px;
   }
 
   .aid-sidebar .panel-content {
@@ -1379,7 +1481,7 @@ button:disabled {
   }
 
   .detail-panel > article {
-    padding: var(--zs-space-3);
+    padding: var(--zs-space-3) var(--zs-space-4);
   }
 }
 
