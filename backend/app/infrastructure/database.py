@@ -602,6 +602,10 @@ def init_database() -> None:
     from app.models import knowledge_link  # noqa: F401
     from app.models import knowledge_embedding  # noqa: F401
     from app.models import knowledge_index_profile  # noqa: F401
+    from app.models import knowledge_graph_entity  # noqa: F401
+    from app.models import knowledge_graph_relation  # noqa: F401
+    from app.models import knowledge_graph_evidence  # noqa: F401
+    from app.models import knowledge_graph_extraction_run  # noqa: F401
     from app.models import app_config  # noqa: F401
     from app.models import writing_stat_event  # noqa: F401
     from app.models import entity_version  # noqa: F401
@@ -619,6 +623,17 @@ def _ensure_sync_tables_and_columns() -> None:
     """Create local sync state and dirty record tables if they do not exist."""
     from app.models import cloud_sync_state  # noqa: F401
     from app.models import sync_dirty_record  # noqa: F401
+
+    ensure_database_directory()
+    Base.metadata.create_all(bind=engine)
+
+
+def _ensure_knowledge_graph_tables() -> None:
+    """Create knowledge graph MVP tables on existing local databases."""
+    from app.models import knowledge_graph_entity  # noqa: F401
+    from app.models import knowledge_graph_relation  # noqa: F401
+    from app.models import knowledge_graph_evidence  # noqa: F401
+    from app.models import knowledge_graph_extraction_run  # noqa: F401
 
     ensure_database_directory()
     Base.metadata.create_all(bind=engine)
@@ -661,6 +676,7 @@ def run_migrations() -> None:
     _ensure_chapter_version_management_columns()
     _ensure_cloud_user_id_columns()
     _ensure_sync_tables_and_columns()
+    _ensure_knowledge_graph_tables()
     _ensure_join_sync_columns()
     _ensure_character_profile_columns()
     _backfill_timeline_tracks()

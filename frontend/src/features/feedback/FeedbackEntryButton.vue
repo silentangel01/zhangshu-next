@@ -16,8 +16,8 @@ function closeDialog() {
 
 <template>
   <button class="feedback-entry-btn" type="button" title="提交反馈" @click="openDialog">
-    <span class="feedback-icon">💬</span>
-    <span class="feedback-label">反馈</span>
+    <span class="feedback-mark" aria-hidden="true"></span>
+    <span class="feedback-label">意见反馈</span>
   </button>
 
   <FeedbackDialog v-if="showDialog" @close="closeDialog" />
@@ -31,24 +31,30 @@ function closeDialog() {
   z-index: 89;
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 6px 12px;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 12px;
   border: 1px solid var(--zs-color-border, #ddd);
-  border-radius: var(--zs-radius-md, 6px);
+  border-radius: var(--zs-radius-sm, 4px);
   background: var(--zs-color-surface, #fff);
-  box-shadow: var(--zs-shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.1));
   cursor: pointer;
   font-size: 0.8125rem;
-  color: inherit;
-  transition: box-shadow 0.2s;
+  color: var(--zs-color-text-muted);
+  transition:
+    border-color var(--zs-duration-fast) var(--zs-ease-standard),
+    color var(--zs-duration-fast) var(--zs-ease-standard);
 }
 
 .feedback-entry-btn:hover {
-  box-shadow: var(--zs-shadow-md, 0 4px 12px rgba(0, 0, 0, 0.1));
+  border-color: var(--zs-color-border-strong);
+  color: var(--zs-color-text);
 }
 
-.feedback-icon {
-  font-size: 1rem;
+.feedback-mark {
+  width: 8px;
+  height: 8px;
+  border: 1px solid currentColor;
+  transform: rotate(45deg);
 }
 
 @media (max-width: 720px) {

@@ -35,6 +35,17 @@ class LLMProvider(Protocol):
         """
         ...
 
+    def complete(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        temperature: float = 0.3,
+        max_tokens: int | None = None,
+    ) -> str:
+        """Generate a raw chat completion for structured AI workflows."""
+        ...
+
     @property
     def model_name(self) -> str:
         """Return the model identifier."""
@@ -98,6 +109,17 @@ class StubLLMProvider:
             "---\n"
             "提示：当前使用 stub 模式。接入真实 LLM 后，此处将生成结构化摘要。"
         )
+
+    def complete(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        temperature: float = 0.3,
+        max_tokens: int | None = None,
+    ) -> str:
+        """Return an empty JSON object for raw structured stub calls."""
+        return "{}"
 
     @property
     def model_name(self) -> str:

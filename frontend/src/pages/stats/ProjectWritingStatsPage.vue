@@ -121,8 +121,10 @@ const hasEvents = computed(() => {
             />
           </div>
           <span class="progress-text">
-            {{ formatNumber(overview.total_words) }} / {{ formatNumber(overview.target_words) }}
-            （{{ formatPercent(overview.progress_percent) }}）
+            {{ formatNumber(overview.total_words) }} /
+            {{ formatNumber(overview.target_words) }} （{{
+              formatPercent(overview.progress_percent)
+            }}）
           </span>
         </div>
       </section>
@@ -180,6 +182,7 @@ const hasEvents = computed(() => {
 
 <style scoped>
 .stats-page {
+  width: 100%;
   max-width: 1200px;
   margin: 0 auto;
   padding: var(--zs-space-6);
@@ -191,7 +194,7 @@ const hasEvents = computed(() => {
 
 .stats-header {
   display: flex;
-  align-items: flex-start;
+  align-items: flex-end;
   justify-content: space-between;
   gap: var(--zs-space-4);
   margin-bottom: var(--zs-space-5);

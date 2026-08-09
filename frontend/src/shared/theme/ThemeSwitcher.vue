@@ -1,12 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 
-import {
-  type AppTheme,
-  applyAppTheme,
-  readAppTheme,
-  writeAppTheme,
-} from './appTheme'
+import { type AppTheme, applyAppTheme, readAppTheme, writeAppTheme } from './appTheme'
 
 const THEME_OPTIONS: { value: AppTheme; label: string }[] = [
   { value: 'default', label: '默认' },
@@ -46,26 +41,31 @@ function selectTheme(theme: AppTheme) {
 <style scoped>
 .theme-switcher {
   display: inline-flex;
-  gap: 2px;
+  gap: 0;
   border: 1px solid var(--zs-color-border);
   border-radius: var(--zs-radius-sm);
-  padding: 2px;
   background: var(--zs-color-surface);
+  overflow: hidden;
 }
 
 .theme-option {
   min-height: 28px;
   border: none;
-  border-radius: var(--zs-radius-sm);
+  border-right: 1px solid var(--zs-color-border-soft);
+  border-radius: 0;
   padding: 0 10px;
   background: transparent;
   color: var(--zs-color-text-muted);
   font-size: 0.78rem;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
   transition:
     background var(--zs-duration-fast) var(--zs-ease-standard),
     color var(--zs-duration-fast) var(--zs-ease-standard);
+}
+
+.theme-option:last-child {
+  border-right: 0;
 }
 
 .theme-option:hover {
@@ -74,8 +74,9 @@ function selectTheme(theme: AppTheme) {
 }
 
 .theme-option.active {
-  background: var(--zs-color-primary);
-  color: var(--zs-color-on-primary);
+  background: var(--zs-color-surface);
+  color: var(--zs-color-primary);
+  box-shadow: inset 0 -2px 0 var(--zs-color-primary);
 }
 
 .theme-option:focus-visible {

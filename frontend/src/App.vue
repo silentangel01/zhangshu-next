@@ -16,7 +16,13 @@ useCloudSyncLifecycle()
       <ThemeSwitcher />
     </div>
     <FeedbackEntryButton />
-    <RouterView />
+    <RouterView v-slot="{ Component, route }">
+      <Transition name="route-view" mode="out-in">
+        <div :key="route.path" class="route-stage">
+          <component :is="Component" />
+        </div>
+      </Transition>
+    </RouterView>
   </div>
 </template>
 
@@ -25,8 +31,37 @@ useCloudSyncLifecycle()
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  --top-bar-clearance: calc(var(--banner-height, 0px) + 64px);
+  --top-bar-clearance: calc(var(--banner-height, 0px) + 56px);
   --top-bar-width: 220px;
+}
+
+.route-stage {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.route-view-enter-active {
+  transition:
+    opacity var(--zs-duration-normal) var(--zs-ease-emphasized),
+    transform var(--zs-duration-normal) var(--zs-ease-emphasized);
+}
+
+.route-view-leave-active {
+  transition:
+    opacity var(--zs-duration-fast) var(--zs-ease-standard),
+    transform var(--zs-duration-fast) var(--zs-ease-standard);
+}
+
+.route-view-enter-from {
+  opacity: 0;
+  transform: translateY(5px);
+}
+
+.route-view-leave-to {
+  opacity: 0;
+  transform: translateY(-3px);
 }
 
 .app-top-bar {
@@ -36,12 +71,11 @@ useCloudSyncLifecycle()
   z-index: 90;
   display: flex;
   align-items: center;
-  gap: var(--zs-space-1);
-  padding: var(--zs-space-1);
-  border: 1px solid var(--zs-color-border-soft);
-  border-radius: var(--zs-radius-sm);
-  background: var(--zs-color-surface);
-  transition: top 0.3s ease;
+  gap: var(--zs-space-2);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  transition: top var(--zs-duration-slow) var(--zs-ease-emphasized);
 }
 
 @media (max-width: 720px) {

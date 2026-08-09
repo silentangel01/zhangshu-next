@@ -3,8 +3,10 @@ import { computed, ref, watch } from 'vue'
 
 import type { ChapterVersionListItem } from '@/entities/chapter-version/types'
 import ChapterVersionPanel from '@/features/chapters/ChapterVersionPanel.vue'
+import ChapterGraphCard from '@/features/graph/ChapterGraphCard.vue'
 import ChapterContextSummary from '@/features/writing/ChapterContextSummary.vue'
 import CreativeReminderPanel from '@/features/writing/CreativeReminderPanel.vue'
+import ChapterTimelinePanel from '@/features/timeline/ChapterTimelinePanel.vue'
 
 const props = defineProps<{
   projectId: string
@@ -24,12 +26,32 @@ const emit = defineEmits<{
   activeTabChange: [tab: AidTab]
 }>()
 
-type AidTab = 'outline' | 'characters' | 'settings' | 'graph' | 'timeline' | 'foreshadowing' | 'reminders' | 'versions'
-type ContextKind = 'outline' | 'characters' | 'settings' | 'graph' | 'timeline' | 'clues'
+type AidTab =
+  | 'overview'
+  | 'outline'
+  | 'characters'
+  | 'settings'
+  | 'graph'
+  | 'timeline'
+  | 'foreshadowing'
+  | 'reminders'
+  | 'versions'
+type ContextKind =
+  | 'overview'
+  | 'outline'
+  | 'characters'
+  | 'settings'
+  | 'graph'
+  | 'timeline'
+  | 'clues'
+type LinkedContextKind = Exclude<ContextKind, 'overview'>
 
-const activeTab = ref<AidTab>(isAidTab(props.initialActiveTab) ? props.initialActiveTab : 'outline')
+const activeTab = ref<AidTab>(
+  isAidTab(props.initialActiveTab) ? props.initialActiveTab : 'overview',
+)
 
 const tabs: Array<{ id: AidTab; label: string }> = [
+  { id: 'overview', label: '联动' },
   { id: 'outline', label: '大纲' },
   { id: 'characters', label: '人物' },
   { id: 'settings', label: '设定' },
@@ -42,15 +64,22 @@ const tabs: Array<{ id: AidTab; label: string }> = [
 
 const versionsTabMessage = computed(() => props.versionMessage || '')
 
-watch(() => props.initialActiveTab, (tab) => {
-  if (isAidTab(tab) && tab !== activeTab.value) {
-    activeTab.value = tab
-  }
-})
+watch(
+  () => props.initialActiveTab,
+  (tab) => {
+    if (isAidTab(tab) && tab !== activeTab.value) {
+      activeTab.value = tab
+    }
+  },
+)
 
 function setActiveTab(tab: AidTab) {
   activeTab.value = tab
   emit('activeTabChange', tab)
+}
+
+function selectLinkedContext(kind: LinkedContextKind) {
+  setActiveTab(kind === 'clues' ? 'foreshadowing' : kind)
 }
 
 function getContextKind(tab: AidTab): ContextKind | null {
@@ -64,14 +93,17 @@ function getContextKind(tab: AidTab): ContextKind | null {
 }
 
 function isAidTab(value: unknown): value is AidTab {
-  return value === 'outline'
-    || value === 'characters'
-    || value === 'settings'
-    || value === 'graph'
-    || value === 'timeline'
-    || value === 'foreshadowing'
-    || value === 'reminders'
-    || value === 'versions'
+  return (
+    value === 'overview' ||
+    value === 'outline' ||
+    value === 'characters' ||
+    value === 'settings' ||
+    value === 'graph' ||
+    value === 'timeline' ||
+    value === 'foreshadowing' ||
+    value === 'reminders' ||
+    value === 'versions'
+  )
 }
 </script>
 
@@ -112,11 +144,24 @@ function isAidTab(value: unknown): value is AidTab {
         </template>
       </section>
 
+      <ChapterGraphCard
+        v-else-if="activeTab === 'graph'"
+        :project-id="projectId"
+        :chapter-id="chapterId"
+      />
+
+      <ChapterTimelinePanel
+        v-else-if="activeTab === 'timeline'"
+        :project-id="projectId"
+        :chapter-id="chapterId"
+      />
+
       <ChapterContextSummary
         v-else
         :project-id="projectId"
         :chapter-id="chapterId"
         :kind="getContextKind(activeTab)!"
+        @select-context="selectLinkedContext"
       />
     </section>
   </aside>
@@ -125,7 +170,7 @@ function isAidTab(value: unknown): value is AidTab {
 <style scoped>
 .writing-aid-panel {
   display: grid;
-  gap: var(--zs-space-3);
+  gap: var(--zs-space-2);
   min-height: 0;
   grid-template-rows: auto minmax(0, 1fr);
 }
@@ -138,25 +183,27 @@ function isAidTab(value: unknown): value is AidTab {
 .tab-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 0 var(--zs-space-1);
-  border-bottom: 1px solid var(--zs-color-border-soft);
-  padding: 0 var(--zs-space-1) 0;
+  gap: 0;
+  border-bottom: 1px solid var(--zs-color-border);
+  padding: 0;
   margin: 0 calc(-1 * var(--zs-space-3));
 }
 
 .tab-list button {
-  min-height: 32px;
+  min-height: 34px;
   border: none;
   border-bottom: 2px solid transparent;
   border-radius: 0;
-  padding: 0 var(--zs-space-2);
+  padding: 0 9px;
   background: transparent;
   color: var(--zs-color-text-muted);
   font: inherit;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   font-weight: 500;
   cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
   margin-bottom: -1px;
 }
 
@@ -167,7 +214,7 @@ function isAidTab(value: unknown): value is AidTab {
 .tab-list button.active {
   color: var(--zs-color-primary);
   border-bottom-color: var(--zs-color-primary);
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .tab-content {
@@ -177,8 +224,10 @@ function isAidTab(value: unknown): value is AidTab {
 }
 
 .state-message {
-  border: 1px dashed var(--zs-color-border-soft);
-  border-radius: var(--zs-radius-sm);
+  border: 0;
+  border-top: 1px solid var(--zs-color-border-soft);
+  border-bottom: 1px solid var(--zs-color-border-soft);
+  border-radius: 0;
   padding: var(--zs-space-3);
   color: var(--zs-color-text-muted);
   font-size: 0.86rem;

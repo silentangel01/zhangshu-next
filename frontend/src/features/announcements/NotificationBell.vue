@@ -7,7 +7,6 @@ import type { Announcement } from '@/entities/announcement/types'
 import AnnouncementDetailDialog from './AnnouncementDetailDialog.vue'
 
 const READ_KEY = 'zhangshu:read-announcements'
-const DISMISSED_KEY = 'zhangshu:dismissed-announcements'
 
 const announcements = ref<Announcement[]>([])
 const isPanelOpen = ref(false)
@@ -109,14 +108,8 @@ function formatDate(dateStr: string | null): string {
   }
 }
 
-function severityIcon(severity: string): string {
-  const icons: Record<string, string> = {
-    critical: '🔴',
-    warning: '🟡',
-    success: '🟢',
-    info: '🔵',
-  }
-  return icons[severity] ?? '⚪'
+function severityIcon(): string {
+  return '●'
 }
 
 function severityLabel(severity: string): string {
@@ -140,7 +133,10 @@ function severityLabel(severity: string): string {
       title="通知中心"
       @click="togglePanel"
     >
-      <span class="bell-icon">🔔</span>
+      <svg class="bell-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6.8 9.5a5.2 5.2 0 0 1 10.4 0c0 5 2 5.8 2 5.8H4.8s2-.8 2-5.8Z" />
+        <path d="M9.8 18.2a2.4 2.4 0 0 0 4.4 0" />
+      </svg>
       <span v-if="unreadCount > 0" class="badge">{{ unreadCount > 9 ? '9+' : unreadCount }}</span>
     </button>
 
@@ -154,7 +150,7 @@ function severityLabel(severity: string): string {
         <div v-if="isLoading" class="panel-loading">加载中...</div>
 
         <div v-else-if="announcements.length === 0" class="panel-empty">
-          <p class="empty-icon">📭</p>
+          <p class="empty-icon">—</p>
           <p>暂无通知</p>
         </div>
 
@@ -167,7 +163,9 @@ function severityLabel(severity: string): string {
             @click="openDetail(ann)"
           >
             <div class="item-header">
-              <span class="severity-dot">{{ severityIcon(ann.severity) }}</span>
+              <span class="severity-dot" :class="`severity-${ann.severity}`">{{
+                severityIcon()
+              }}</span>
               <span class="item-title">{{ ann.title }}</span>
             </div>
             <div class="item-meta">
@@ -204,7 +202,9 @@ function severityLabel(severity: string): string {
   border-radius: var(--zs-radius-sm);
   background: var(--zs-color-surface);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition:
+    background var(--zs-duration-fast) var(--zs-ease-standard),
+    border-color var(--zs-duration-fast) var(--zs-ease-standard);
 }
 
 .notification-bell:hover {
@@ -219,8 +219,13 @@ function severityLabel(severity: string): string {
 }
 
 .bell-icon {
-  font-size: 1rem;
-  line-height: 1;
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
 }
 
 .badge {
@@ -290,9 +295,10 @@ function severityLabel(severity: string): string {
 }
 
 .empty-icon {
-  font-size: 2rem;
-  margin-bottom: var(--zs-space-2);
-  opacity: 0.5;
+  margin: 0 0 var(--zs-space-2);
+  color: var(--zs-color-border-strong);
+  font-family: Georgia, serif;
+  font-size: 1.5rem;
 }
 
 .announcement-list {
@@ -330,9 +336,26 @@ function severityLabel(severity: string): string {
 }
 
 .severity-dot {
-  font-size: 0.5rem;
+  color: var(--zs-color-text-faint);
+  font-size: 0.48rem;
   line-height: 1;
   flex-shrink: 0;
+}
+
+.severity-critical {
+  color: var(--zs-color-danger);
+}
+
+.severity-warning {
+  color: var(--zs-color-warning);
+}
+
+.severity-success {
+  color: var(--zs-color-success);
+}
+
+.severity-info {
+  color: var(--zs-color-info);
 }
 
 .item-title {

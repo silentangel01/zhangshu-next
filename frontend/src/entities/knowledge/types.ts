@@ -379,3 +379,217 @@ export interface KnowledgeSummaryResponse {
   is_draft: boolean
   warnings?: string[]
 }
+
+// --- Knowledge Graph ---
+
+export type KnowledgeGraphStatus = 'candidate' | 'accepted' | 'rejected'
+
+export type KnowledgeGraphExtractionStatus = 'pending' | 'running' | 'completed' | 'failed'
+
+export type KnowledgeGraphExtractionScope = 'project' | 'source'
+
+export type KnowledgeGraphEntityType =
+  | 'character'
+  | 'setting'
+  | 'location'
+  | 'organization'
+  | 'item'
+  | 'event'
+  | 'clue'
+  | 'concept'
+  | 'custom'
+
+export type KnowledgeGraphRelationType =
+  | 'relationship'
+  | 'conflict'
+  | 'ally'
+  | 'family'
+  | 'belongs_to'
+  | 'located_in'
+  | 'controls'
+  | 'causes'
+  | 'reveals'
+  | 'foreshadows'
+  | 'setting_related'
+  | 'timeline_related'
+  | 'custom'
+
+export type KnowledgeGraphFactStatus =
+  | 'confirmed'
+  | 'claimed'
+  | 'rumor'
+  | 'hypothesis'
+  | 'dream'
+  | 'plan'
+  | 'deprecated'
+
+export interface KnowledgeGraphExtractionRun {
+  id: string
+  project_id: string
+  scope: KnowledgeGraphExtractionScope
+  source_id: string | null
+  status: KnowledgeGraphExtractionStatus
+  model_name: string
+  total_chunks: number
+  processed_chunks: number
+  candidate_entity_count: number
+  candidate_relation_count: number
+  error_message: string
+  created_at: string
+  started_at: string | null
+  completed_at: string | null
+  deleted_at: string | null
+}
+
+export interface KnowledgeGraphRunList {
+  total: number
+  items: KnowledgeGraphExtractionRun[]
+}
+
+export interface CreateKnowledgeGraphExtractionRunPayload {
+  scope: KnowledgeGraphExtractionScope
+  source_id?: string | null
+  max_chunks?: number
+  privacy_confirmed?: boolean
+}
+
+export interface KnowledgeGraphEntity {
+  id: string
+  project_id: string
+  canonical_name: string
+  entity_type: KnowledgeGraphEntityType
+  aliases_json: string
+  description: string
+  bound_type: string | null
+  bound_id: string | null
+  status: KnowledgeGraphStatus
+  confidence: number
+  source_count: number
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+  version: number
+}
+
+export interface KnowledgeGraphEntityList {
+  total: number
+  items: KnowledgeGraphEntity[]
+}
+
+export interface KnowledgeGraphEvidence {
+  id: string
+  project_id: string
+  entity_id: string | null
+  relation_id: string | null
+  source_id: string
+  source_title: string
+  chunk_id: string | null
+  chunk_heading: string
+  evidence_text: string
+  char_start: number | null
+  char_end: number | null
+  extraction_run_id: string | null
+  created_at: string
+  deleted_at: string | null
+}
+
+export interface KnowledgeGraphRelation {
+  id: string
+  project_id: string
+  subject_entity_id: string
+  object_entity_id: string
+  relation_type: KnowledgeGraphRelationType
+  predicate_text: string
+  direction: string
+  fact_status: KnowledgeGraphFactStatus
+  status: KnowledgeGraphStatus
+  confidence: number
+  note: string
+  source_count: number
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+  version: number
+  subject: KnowledgeGraphEntity
+  object: KnowledgeGraphEntity
+  evidence: KnowledgeGraphEvidence[]
+}
+
+export interface KnowledgeGraphRelationList {
+  total: number
+  items: KnowledgeGraphRelation[]
+}
+
+export interface KnowledgeGraphSubgraphNode {
+  id: string
+  label: string
+  entity_type: KnowledgeGraphEntityType
+  status: KnowledgeGraphStatus
+  confidence: number
+}
+
+export interface KnowledgeGraphSubgraphEdge {
+  id: string
+  source: string
+  target: string
+  label: string
+  relation_type: KnowledgeGraphRelationType
+  fact_status: KnowledgeGraphFactStatus
+  confidence: number
+}
+
+export interface KnowledgeGraphSubgraph {
+  nodes: KnowledgeGraphSubgraphNode[]
+  edges: KnowledgeGraphSubgraphEdge[]
+}
+
+export const knowledgeGraphStatusLabels: Record<KnowledgeGraphStatus, string> = {
+  candidate: '候选',
+  accepted: '已确认',
+  rejected: '已忽略',
+}
+
+export const knowledgeGraphExtractionStatusLabels: Record<KnowledgeGraphExtractionStatus, string> = {
+  pending: '等待中',
+  running: '抽取中',
+  completed: '已完成',
+  failed: '失败',
+}
+
+export const knowledgeGraphEntityTypeLabels: Record<KnowledgeGraphEntityType, string> = {
+  character: '人物',
+  setting: '设定',
+  location: '地点',
+  organization: '组织',
+  item: '物品',
+  event: '事件',
+  clue: '线索',
+  concept: '概念',
+  custom: '自定义',
+}
+
+export const knowledgeGraphRelationTypeLabels: Record<KnowledgeGraphRelationType, string> = {
+  relationship: '关系',
+  conflict: '冲突',
+  ally: '盟友',
+  family: '亲属',
+  belongs_to: '隶属',
+  located_in: '位于',
+  controls: '控制',
+  causes: '导致',
+  reveals: '揭示',
+  foreshadows: '伏笔',
+  setting_related: '设定',
+  timeline_related: '时间线',
+  custom: '自定义',
+}
+
+export const knowledgeGraphFactStatusLabels: Record<KnowledgeGraphFactStatus, string> = {
+  confirmed: '确认',
+  claimed: '声称',
+  rumor: '传闻',
+  hypothesis: '推测',
+  dream: '梦境',
+  plan: '计划',
+  deprecated: '废弃',
+}

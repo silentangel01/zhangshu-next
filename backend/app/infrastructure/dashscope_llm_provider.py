@@ -105,13 +105,36 @@ class DashScopeLLMProvider:
 
         return self._chat(system_msg, user_msg)
 
+    def complete(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        temperature: float = 0.3,
+        max_tokens: int | None = None,
+    ) -> str:
+        """Generate a raw chat completion with caller-provided prompts."""
+        return self._chat(
+            system_prompt,
+            user_prompt,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
     @property
     def model_name(self) -> str:
         return self._model
 
     # --- Internal ---
 
-    def _chat(self, system_msg: str, user_msg: str) -> str:
+    def _chat(
+        self,
+        system_msg: str,
+        user_msg: str,
+        *,
+        temperature: float = 0.3,
+        max_tokens: int | None = None,
+    ) -> str:
         """Send a chat completion request to DashScope.
 
         Raises ``DashScopeLLMError`` on any failure.
@@ -127,8 +150,8 @@ class DashScopeLLMProvider:
                 {"role": "system", "content": system_msg},
                 {"role": "user", "content": user_msg},
             ],
-            "max_tokens": MAX_RESPONSE_TOKENS,
-            "temperature": 0.3,
+            "max_tokens": max_tokens or MAX_RESPONSE_TOKENS,
+            "temperature": temperature,
         }
 
         try:
