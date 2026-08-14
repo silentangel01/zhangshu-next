@@ -32,7 +32,7 @@ def _now_naive():
     return datetime.now(_CST).replace(tzinfo=None)
 
 
-def create_access_token(user_id: str) -> str:
+def create_access_token(user_id: str, session_id: str | None = None) -> str:
     s = _settings()
     now = _now_aware()
     payload = {
@@ -42,10 +42,14 @@ def create_access_token(user_id: str) -> str:
         "exp": now + timedelta(minutes=s.jwt_access_token_expire_minutes),
         "jti": str(uuid4()),
     }
+    if session_id:
+        payload["sid"] = session_id
     return jwt.encode(payload, s.jwt_secret_key, algorithm=s.jwt_algorithm)
 
 
-def create_refresh_token(user_id: str) -> tuple[str, str, datetime]:
+def create_refresh_token(
+    user_id: str, session_id: str | None = None
+) -> tuple[str, str, datetime]:
     """Return ``(token, jti, expires_at)``.
 
     ``expires_at`` is naive UTC+8 for SQLite compatibility.
@@ -61,6 +65,8 @@ def create_refresh_token(user_id: str) -> tuple[str, str, datetime]:
         "exp": now + timedelta(days=s.jwt_refresh_token_expire_days),
         "jti": jti,
     }
+    if session_id:
+        payload["sid"] = session_id
     token = jwt.encode(payload, s.jwt_secret_key, algorithm=s.jwt_algorithm)
     return token, jti, expires_at
 

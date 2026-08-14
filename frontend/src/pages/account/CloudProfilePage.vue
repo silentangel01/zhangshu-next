@@ -1,25 +1,29 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import {
-  getCloudAccountProfile,
-  getCloudAccountStatus,
-  getCloudUsage,
   cloudLogout,
 } from '@/entities/cloud/api'
-import type { CloudAccountProfile, CloudUsage } from '@/entities/cloud/types'
+import { useCloudAccountStore } from '@/stores/cloudAccount'
 import CloudAvatarUploader from './CloudAvatarUploader.vue'
 import CloudSignatureEditor from './CloudSignatureEditor.vue'
 import AppVersionPanel from './AppVersionPanel.vue'
 
 const router = useRouter()
-
-const profile = ref<CloudAccountProfile | null>(null)
-const usage = ref<CloudUsage | null>(null)
-const loading = ref(true)
-const isLoggedIn = ref(false)
-const cloudAvailable = ref(false)
-const tokenExpired = ref(false)
+const cloudAccountStore = useCloudAccountStore()
+const {
+  profile,
+  usage,
+  status,
+  hydrated,
+  sessionState,
+  lastError,
+} = storeToRefs(cloudAccountStore)
+const loading = computed(() => !hydrated.value)
+const isLoggedIn = computed(() => status.value?.logged_in ?? false)
+const cloudAvailable = computed(() => status.value?.cloud_available ?? false)
+const tokenExpired = computed(() => sessionState.value === 'expired')
 const errorMessage = ref('')
 const successMessage = ref('')
 
@@ -39,37 +43,18 @@ const backupUsagePercent = computed(() => {
 })
 
 onMounted(async () => {
-  try {
-    const status = await getCloudAccountStatus()
-    cloudAvailable.value = status.cloud_available
-    isLoggedIn.value = status.logged_in
-
-    if (status.logged_in) {
-      await loadProfile()
-    }
-  } catch {
-    errorMessage.value = '无法加载账户信息。'
-  } finally {
-    loading.value = false
+  await cloudAccountStore.hydrate()
+  if (isLoggedIn.value) {
+    void loadProfile()
   }
 })
 
 async function loadProfile() {
-  try {
-    const [profileResult, usageResult] = await Promise.all([
-      getCloudAccountProfile(),
-      getCloudUsage(),
-    ])
-    profile.value = profileResult
-    usage.value = usageResult
-  } catch (err: unknown) {
-    const status = (err as { status?: number })?.status
-    if (status === 401) {
-      tokenExpired.value = true
-      errorMessage.value = '登录已过期，请重新登录。'
-    } else {
-      errorMessage.value = '无法加载个人资料。'
-    }
+  await cloudAccountStore.refresh()
+  if (sessionState.value === 'expired') {
+    errorMessage.value = '登录已过期，请重新登录。'
+  } else if (lastError.value) {
+    errorMessage.value = lastError.value
   }
 }
 
@@ -104,9 +89,7 @@ async function handleLogout() {
     // Logout API may fail if backend is unreachable — that's OK,
     // the backend logout endpoint only clears local tokens.
   }
-  isLoggedIn.value = false
-  tokenExpired.value = false
-  profile.value = null
+  cloudAccountStore.clear()
   router.push('/projects')
 }
 

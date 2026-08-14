@@ -139,10 +139,14 @@ export interface CloudAccountProfile {
 
 export interface CloudSession {
   id: string
+  device_id: string | null
+  device_name: string | null
   user_agent: string | null
   client_ip: string | null
   last_used_at: string | null
   created_at: string
+  expires_at: string
+  is_current: boolean
   revoked: boolean
 }
 
@@ -176,6 +180,17 @@ export interface CloudUsage {
   backup_init_used_last_hour: number
   backup_init_limit_per_hour: number
   max_backup_size_bytes: number
+}
+
+export interface CloudAccountSnapshot {
+  status: CloudAccountStatus
+  profile: CloudAccountProfile | null
+  usage: CloudUsage | null
+  cached_at: string | null
+  cache_state: 'empty' | 'fresh' | 'stale'
+  session_state: 'active' | 'expired' | 'signed_out'
+  device: { id: string; name: string }
+  refresh_error: string | null
 }
 
 // ── Export & deletion ────────────────────────────────────────────────

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -100,6 +101,17 @@ class CloudAccountStatus(BaseModel):
     email: str | None = None
     display_name: str | None = None
     phone_number: str | None = None
+
+
+class CloudAccountSnapshot(BaseModel):
+    status: CloudAccountStatus
+    profile: dict[str, Any] | None = None
+    usage: dict[str, Any] | None = None
+    cached_at: str | None = None
+    cache_state: str
+    session_state: str
+    device: dict[str, str]
+    refresh_error: str | None = None
 
 
 class CloudAuthToken(BaseModel):

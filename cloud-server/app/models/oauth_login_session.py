@@ -23,6 +23,8 @@ class OAuthLoginSession(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
     token_payload: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_message: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    device_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    device_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

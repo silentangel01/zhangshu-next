@@ -1,17 +1,20 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useCloudAccountStore } from '@/stores/cloudAccount'
 import {
   bindCloudEmail,
   bindCloudPhone,
-  getCloudAccountProfile,
+  listCloudSessions,
+  revokeCloudSession,
   sendCloudBindEmailCode,
   sendCloudBindPhoneCode,
 } from '@/entities/cloud/api'
-import type { CloudAccountProfile } from '@/entities/cloud/types'
+import type { CloudAccountProfile, CloudSession } from '@/entities/cloud/types'
 import CloudPasswordChangePanel from './CloudPasswordChangePanel.vue'
 
 const router = useRouter()
+const cloudAccountStore = useCloudAccountStore()
 
 const profile = ref<CloudAccountProfile | null>(null)
 const loading = ref(true)
@@ -27,6 +30,8 @@ const isBindingEmail = ref(false)
 const isBindingPhone = ref(false)
 const emailCooldown = ref(0)
 const phoneCooldown = ref(0)
+const sessions = ref<CloudSession[]>([])
+const sessionsLoading = ref(false)
 
 let cooldownTimer: ReturnType<typeof setInterval> | null = null
 
@@ -34,7 +39,10 @@ const hasEmail = computed(() => Boolean(profile.value?.email))
 const hasPhone = computed(() => Boolean(profile.value?.phone_number))
 
 onMounted(async () => {
-  await loadProfile()
+  await cloudAccountStore.hydrate()
+  profile.value = cloudAccountStore.profile
+  loading.value = false
+  void refreshSecurityData()
 })
 
 onUnmounted(() => {
@@ -43,13 +51,31 @@ onUnmounted(() => {
   }
 })
 
-async function loadProfile() {
+async function refreshSecurityData() {
+  await cloudAccountStore.refresh()
+  profile.value = cloudAccountStore.profile
+  await loadSessions()
+}
+
+async function loadSessions() {
+  sessionsLoading.value = true
   try {
-    profile.value = await getCloudAccountProfile()
-  } catch {
-    errorMessage.value = '无法加载账户信息。'
+    sessions.value = (await listCloudSessions()).sessions
+  } catch (error) {
+    handleError(errorText(error, '无法加载设备会话。'))
   } finally {
-    loading.value = false
+    sessionsLoading.value = false
+  }
+}
+
+async function handleRevokeSession(session: CloudSession) {
+  if (session.is_current) return
+  try {
+    await revokeCloudSession(session.id)
+    sessions.value = sessions.value.filter((item) => item.id !== session.id)
+    showSuccess('该设备已退出登录。')
+  } catch (error) {
+    handleError(errorText(error, '退出该设备失败。'))
   }
 }
 
@@ -128,6 +154,7 @@ async function handleBindEmail() {
   clearMessages()
   try {
     profile.value = await bindCloudEmail(emailToBind.value.trim(), emailCode.value.trim())
+    void cloudAccountStore.refresh()
     emailToBind.value = ''
     emailCode.value = ''
     showSuccess('邮箱已绑定。')
@@ -167,6 +194,7 @@ async function handleBindPhone() {
   clearMessages()
   try {
     profile.value = await bindCloudPhone(phoneToBind.value.trim(), phoneCode.value.trim())
+    void cloudAccountStore.refresh()
     phoneToBind.value = ''
     phoneCode.value = ''
     showSuccess('手机号已绑定。')
@@ -346,6 +374,34 @@ function formatDate(d: string | null): string {
             <p class="section-index">03 · 密码凭证</p>
             <CloudPasswordChangePanel @success="handlePasswordSuccess" @error="handleError" />
           </section>
+
+          <section class="card device-session-section">
+            <p class="section-index">04 · 登录设备</p>
+            <h2 class="section-title">已登录设备</h2>
+            <p class="section-desc">本机保持登录最多一年；每次正常使用会自动顺延。你可以单独退出其他设备。</p>
+            <p v-if="sessionsLoading" class="section-desc">正在读取设备列表…</p>
+            <div v-else-if="sessions.length" class="device-list">
+              <article v-for="session in sessions" :key="session.id" class="device-row">
+                <div>
+                  <strong>{{ session.device_name || '未命名设备' }}</strong>
+                  <p>
+                    {{ session.is_current ? '当前设备' : '其他设备' }} ·
+                    最近使用 {{ formatDate(session.last_used_at || session.created_at) }}
+                  </p>
+                </div>
+                <button
+                  v-if="!session.is_current"
+                  class="btn-secondary"
+                  type="button"
+                  @click="handleRevokeSession(session)"
+                >
+                  退出此设备
+                </button>
+                <span v-else class="current-device-badge">本机</span>
+              </article>
+            </div>
+            <p v-else class="section-desc">暂无可显示的设备会话。</p>
+          </section>
         </div>
       </div>
     </template>
@@ -359,6 +415,33 @@ function formatDate(d: string | null): string {
   box-sizing: border-box;
   margin: 0 auto;
   padding: 36px 40px 64px;
+}
+
+.device-list {
+  display: grid;
+  gap: var(--zs-space-3);
+  margin-top: var(--zs-space-4);
+}
+
+.device-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--zs-space-4);
+  padding: var(--zs-space-4) 0;
+  border-top: 1px solid var(--zs-color-border);
+}
+
+.device-row p {
+  margin: var(--zs-space-1) 0 0;
+  color: var(--zs-color-text-muted);
+  font-size: 0.8rem;
+}
+
+.current-device-badge {
+  color: var(--zs-color-primary);
+  font-size: 0.78rem;
+  font-weight: 700;
 }
 
 .page-header {

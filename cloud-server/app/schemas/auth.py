@@ -86,6 +86,7 @@ class OAuthPollResponse(BaseModel):
     access_token: str | None = None
     refresh_token: str | None = None
     user_id: str | None = None
+    session_id: str | None = None
     display_name: str | None = None
     error_message: str | None = None
 
@@ -98,6 +99,7 @@ class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
     user_id: str | None = None
+    session_id: str | None = None
 
 
 class MeResponse(BaseModel):

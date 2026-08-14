@@ -3,6 +3,7 @@ import logging
 import os
 import threading
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 # Skip .env loading in packaged/frozen mode (no .env file exists)
@@ -69,8 +70,26 @@ _DEFERRED_ROUTERS: dict[str, list[tuple[str, str]]] = {
 _registered_deferred: set[str] = set()
 _failed_deferred: dict[str, str] = {}  # prefix -> error message
 _deferred_lock = threading.Lock()
+_deferred_loader_started = False
 
-app = FastAPI(title="Zhangshu Local API", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    global _deferred_loader_started
+    init_database()
+    run_migrations()
+    with _deferred_lock:
+        if not _deferred_loader_started:
+            _deferred_loader_started = True
+            threading.Thread(
+                target=_load_all_deferred_routers,
+                name="zhangshu-deferred-routers",
+                daemon=True,
+            ).start()
+    yield
+
+
+app = FastAPI(title="Zhangshu Local API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -158,13 +177,6 @@ async def lazy_router_middleware(request: Request, call_next):
             )
 
     return await call_next(request)
-
-
-@app.on_event("startup")
-def on_startup():
-    init_database()  # fast: create_all only
-    threading.Thread(target=run_migrations, daemon=True).start()
-    threading.Thread(target=_load_all_deferred_routers, daemon=True).start()
 
 
 @app.get("/health")

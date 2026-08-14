@@ -18,6 +18,12 @@ SENSITIVE_KEYS: frozenset[str] = frozenset({
     "cloud_refresh_token",
     "cloud_user_id",
     "cloud_user_email",
+    "cloud_user_phone",
+    "cloud_user_oauth_label",
+    "cloud_session_id",
+    "cloud_device_id",
+    "cloud_device_name",
+    "cloud_account_snapshot",
 })
 
 

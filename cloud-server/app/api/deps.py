@@ -15,6 +15,7 @@ from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.user import User
 from app.repositories.user_repo import UserRepository
+from app.repositories.refresh_token_repo import RefreshTokenRepository
 from app.services.token_service import TokenError, decode_token
 
 logger = logging.getLogger(__name__)
@@ -91,7 +92,24 @@ def get_current_user(
 
     _check_token_not_pre_password_change(payload, user)
 
+    session_id = payload.get("sid")
+    if session_id and not RefreshTokenRepository(db).has_active_session(
+        user.id, session_id
+    ):
+        raise HTTPException(status_code=401, detail="登录会话已退出，请重新登录。")
+
     return user
+
+
+def get_current_session_id(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+) -> str | None:
+    if credentials is None:
+        return None
+    try:
+        return decode_token(credentials.credentials, "access").get("sid")
+    except TokenError:
+        return None
 
 
 def get_optional_current_user(

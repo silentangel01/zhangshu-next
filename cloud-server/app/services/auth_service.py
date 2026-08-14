@@ -68,6 +68,8 @@ class AuthService:
         *,
         user_agent: str | None = None,
         client_ip: str | None = None,
+        device_id: str | None = None,
+        device_name: str | None = None,
     ) -> dict:
         normalized = normalize_email(email)
 
@@ -113,7 +115,10 @@ class AuthService:
         self._db.commit()
         self._db.refresh(user)
 
-        return self._issue_tokens(user, user_agent=user_agent, client_ip=client_ip)
+        return self._issue_tokens(
+            user, user_agent=user_agent, client_ip=client_ip,
+            device_id=device_id, device_name=device_name,
+        )
 
     def register_with_phone(
         self,
@@ -123,6 +128,8 @@ class AuthService:
         *,
         user_agent: str | None = None,
         client_ip: str | None = None,
+        device_id: str | None = None,
+        device_name: str | None = None,
     ) -> dict:
         normalized_phone = normalize_phone_number(phone_number)
         if self._identity_repo.get_by_provider_identifier("phone", normalized_phone):
@@ -157,7 +164,10 @@ class AuthService:
         )
         self._db.commit()
         self._db.refresh(user)
-        return self._issue_tokens(user, user_agent=user_agent, client_ip=client_ip)
+        return self._issue_tokens(
+            user, user_agent=user_agent, client_ip=client_ip,
+            device_id=device_id, device_name=device_name,
+        )
 
     def login(
         self,
@@ -166,6 +176,8 @@ class AuthService:
         *,
         user_agent: str | None = None,
         client_ip: str | None = None,
+        device_id: str | None = None,
+        device_name: str | None = None,
     ) -> dict:
         normalized = normalize_email(email)
         user = self._user_repo.get_by_email(normalized)
@@ -185,7 +197,10 @@ class AuthService:
 
         self._record_login_success(user)
 
-        return self._issue_tokens(user, user_agent=user_agent, client_ip=client_ip)
+        return self._issue_tokens(
+            user, user_agent=user_agent, client_ip=client_ip,
+            device_id=device_id, device_name=device_name,
+        )
 
     def login_with_email_code(
         self,
@@ -194,6 +209,8 @@ class AuthService:
         *,
         user_agent: str | None = None,
         client_ip: str | None = None,
+        device_id: str | None = None,
+        device_name: str | None = None,
     ) -> dict:
         normalized = normalize_email(email)
         user = self._user_repo.get_by_email(normalized)
@@ -216,7 +233,10 @@ class AuthService:
 
         self._record_login_success(user)
 
-        return self._issue_tokens(user, user_agent=user_agent, client_ip=client_ip)
+        return self._issue_tokens(
+            user, user_agent=user_agent, client_ip=client_ip,
+            device_id=device_id, device_name=device_name,
+        )
 
     def login_with_phone_code(
         self,
@@ -225,6 +245,8 @@ class AuthService:
         *,
         user_agent: str | None = None,
         client_ip: str | None = None,
+        device_id: str | None = None,
+        device_name: str | None = None,
     ) -> dict:
         normalized_phone = normalize_phone_number(phone_number)
         identity = self._identity_repo.get_by_provider_identifier(
@@ -248,7 +270,10 @@ class AuthService:
             raise AuthError(str(exc), status_code=exc.status_code) from exc
 
         self._record_login_success(user)
-        return self._issue_tokens(user, user_agent=user_agent, client_ip=client_ip)
+        return self._issue_tokens(
+            user, user_agent=user_agent, client_ip=client_ip,
+            device_id=device_id, device_name=device_name,
+        )
 
     def refresh(
         self,
@@ -256,6 +281,8 @@ class AuthService:
         *,
         user_agent: str | None = None,
         client_ip: str | None = None,
+        device_id: str | None = None,
+        device_name: str | None = None,
     ) -> dict:
         try:
             payload = decode_token(refresh_token_str, "refresh")
@@ -268,36 +295,30 @@ class AuthService:
 
         if stored is None:
             raise AuthError("Refresh token 无效。")
+        session_id = stored.session_id
+        token_session_id = payload.get("sid")
+        if token_session_id and token_session_id != session_id:
+            raise AuthError("Refresh token 会话无效。")
         if stored.revoked_at is not None:
             # Replay detection: if the token was rotated (replaced_by_id set),
-            # someone is trying to reuse an old refresh token. Revoke all
-            # of this user's sessions as a safety measure.
+            # someone is trying to reuse an old refresh token. Revoke only
+            # this stable device-session family; other devices stay signed in.
             if stored.replaced_by_id:
                 from app.core.audit import audit_event
-                from sqlalchemy import update
-                from app.models.refresh_token import RefreshToken as RT
-                now = utc_now()
-                self._db.execute(
-                    update(RT)
-                    .where(
-                        RT.user_id == stored.user_id,
-                        RT.revoked_at.is_(None),
-                        RT.expires_at > now,
-                    )
-                    .values(revoked_at=now, revoked_reason="replay_detected")
+                revoked_count = self._token_repo.revoke_session(
+                    stored.user_id, session_id, reason="replay_detected"
                 )
-                self._db.commit()
                 audit_event(
                     "refresh_token_reuse_detected",
                     user_id=stored.user_id,
                     result="failure",
                     reason_code="replay",
-                    extra={"tokens_revoked": 0},
+                    extra={"tokens_revoked": revoked_count},
                     db=self._db,
                 )
                 logger.warning(
-                    "Refresh token replay detected for user %s — all sessions revoked",
-                    stored.user_id,
+                    "Refresh token replay detected for user %s session %s",
+                    stored.user_id, session_id,
                 )
             raise AuthError("Refresh token 已被撤销。")
         if stored.expires_at < utc_now():
@@ -317,8 +338,10 @@ class AuthService:
         self._token_repo.revoke(stored, reason="rotated")
 
         # Issue new tokens
-        new_access = create_access_token(user.id)
-        new_refresh_str, new_jti, new_expires = create_refresh_token(user.id)
+        new_access = create_access_token(user.id, session_id)
+        new_refresh_str, new_jti, new_expires = create_refresh_token(
+            user.id, session_id
+        )
         new_jti_h = hash_jti(new_jti)
 
         new_rt = RefreshToken(
@@ -326,6 +349,9 @@ class AuthService:
             user_id=user.id,
             jti_hash=new_jti_h,
             expires_at=new_expires,
+            session_id=session_id,
+            device_id=stored.device_id or device_id,
+            device_name=stored.device_name or device_name,
             user_agent=user_agent,
             client_ip=client_ip,
         )
@@ -338,6 +364,7 @@ class AuthService:
             "access_token": new_access,
             "refresh_token": new_refresh_str,
             "user_id": user.id,
+            "session_id": session_id,
         }
 
     def get_me(self, user_id: str) -> dict:
@@ -350,15 +377,34 @@ class AuthService:
             "display_name": user.display_name,
         }
 
+    def logout(self, refresh_token_str: str) -> dict:
+        """Idempotently revoke the stable session represented by a refresh token."""
+        try:
+            payload = decode_token(refresh_token_str, "refresh")
+        except TokenError:
+            return {"ok": True, "revoked_count": 0}
+        stored = self._token_repo.get_by_jti_hash(hash_jti(payload.get("jti", "")))
+        if stored is None:
+            return {"ok": True, "revoked_count": 0}
+        count = self._token_repo.revoke_session(
+            stored.user_id, stored.session_id, reason="logout"
+        )
+        return {"ok": True, "revoked_count": count}
+
     def issue_tokens_for_user(
         self,
         user: User,
         *,
         user_agent: str | None = None,
         client_ip: str | None = None,
+        device_id: str | None = None,
+        device_name: str | None = None,
     ) -> dict:
         self._record_login_success(user)
-        return self._issue_tokens(user, user_agent=user_agent, client_ip=client_ip)
+        return self._issue_tokens(
+            user, user_agent=user_agent, client_ip=client_ip,
+            device_id=device_id, device_name=device_name,
+        )
 
     def _issue_tokens(
         self,
@@ -366,9 +412,12 @@ class AuthService:
         *,
         user_agent: str | None = None,
         client_ip: str | None = None,
+        device_id: str | None = None,
+        device_name: str | None = None,
     ) -> dict:
-        access = create_access_token(user.id)
-        refresh_str, jti, expires_at = create_refresh_token(user.id)
+        session_id = str(uuid4())
+        access = create_access_token(user.id, session_id)
+        refresh_str, jti, expires_at = create_refresh_token(user.id, session_id)
         jti_h = hash_jti(jti)
 
         rt = RefreshToken(
@@ -376,6 +425,9 @@ class AuthService:
             user_id=user.id,
             jti_hash=jti_h,
             expires_at=expires_at,
+            session_id=session_id,
+            device_id=device_id,
+            device_name=device_name,
             user_agent=user_agent,
             client_ip=client_ip,
         )
@@ -385,6 +437,7 @@ class AuthService:
             "access_token": access,
             "refresh_token": refresh_str,
             "user_id": user.id,
+            "session_id": session_id,
         }
 
     @staticmethod

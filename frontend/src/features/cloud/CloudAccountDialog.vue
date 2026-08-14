@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
+import { useCloudAccountStore } from '@/stores/cloudAccount'
 
 import { ApiError } from '@/shared/api/client'
 import {
@@ -31,6 +32,7 @@ import type {
 const emit = defineEmits<{
   close: []
 }>()
+const cloudAccountStore = useCloudAccountStore()
 
 const isLoading = ref(true)
 const isSubmitting = ref(false)
@@ -118,6 +120,8 @@ function completeLogin(status: CloudAccountStatus, message: string) {
   cloudAvailable.value = status.cloud_available
   successMessage.value = message
   showDiagnosticButton.value = false
+  cloudAccountStore.applyLogin(status)
+  void cloudAccountStore.refresh()
   scheduleAutoClose()
 }
 
@@ -313,6 +317,7 @@ async function handleLogout() {
     await cloudLogout()
     isLoggedIn.value = false
     accountStatus.value = null
+    cloudAccountStore.clear()
     email.value = ''
     successMessage.value = '已退出登录。'
   } catch (error) {

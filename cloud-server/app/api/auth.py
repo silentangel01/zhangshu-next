@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from urllib.parse import unquote
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
@@ -70,6 +71,16 @@ def _client_ip(request: Request) -> str:
 
 def _user_agent(request: Request) -> str:
     return request.headers.get("user-agent", "")
+
+
+def _device_id(request: Request) -> str | None:
+    value = request.headers.get("x-zhangshu-device-id", "").strip()
+    return value[:128] or None
+
+
+def _device_name(request: Request) -> str | None:
+    value = unquote(request.headers.get("x-zhangshu-device-name", "").strip())
+    return value[:255] or None
 
 
 def _email_domain(email: str) -> str:
@@ -288,6 +299,7 @@ def register(
         result = service.register(
             body.email, body.password, body.display_name, body.verification_code,
             user_agent=ua, client_ip=client_ip,
+            device_id=_device_id(request), device_name=_device_name(request),
         )
     except AuthError as exc:
         audit_event(
@@ -350,6 +362,8 @@ def register_with_phone(
             body.display_name,
             user_agent=ua,
             client_ip=client_ip,
+            device_id=_device_id(request),
+            device_name=_device_name(request),
         )
     except AuthError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
@@ -398,6 +412,7 @@ def login(
         result = service.login(
             body.email, body.password,
             user_agent=ua, client_ip=client_ip,
+            device_id=_device_id(request), device_name=_device_name(request),
         )
     except AuthError as exc:
         audit_event(
@@ -464,6 +479,8 @@ def login_with_email_code(
             body.verification_code,
             user_agent=ua,
             client_ip=client_ip,
+            device_id=_device_id(request),
+            device_name=_device_name(request),
         )
     except AuthError as exc:
         audit_event(
@@ -521,6 +538,8 @@ def login_with_phone_code(
             body.verification_code,
             user_agent=ua,
             client_ip=client_ip,
+            device_id=_device_id(request),
+            device_name=_device_name(request),
         )
     except AuthError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
@@ -539,10 +558,15 @@ def login_with_phone_code(
 @router.post("/oauth/{provider}/start", response_model=OAuthStartResponse)
 def start_oauth_login(
     provider: str,
+    request: Request,
     db: Session = Depends(get_db),
 ):
     try:
-        return OAuthAuthService(db).start_login(provider)
+        return OAuthAuthService(db).start_login(
+            provider,
+            device_id=_device_id(request),
+            device_name=_device_name(request),
+        )
     except OAuthAuthError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
@@ -600,6 +624,7 @@ def refresh(
         result = service.refresh(
             body.refresh_token,
             user_agent=ua, client_ip=client_ip,
+            device_id=_device_id(request), device_name=_device_name(request),
         )
     except AuthError as exc:
         audit_event(
@@ -621,6 +646,11 @@ def refresh(
     )
     ActivityService(db).record(result.get("user_id"), "token_refreshed", request)
     return result
+
+
+@router.post("/logout")
+def logout(body: RefreshRequest, db: Session = Depends(get_db)):
+    return AuthService(db).logout(body.refresh_token)
 
 
 @router.get("/me", response_model=MeResponse)

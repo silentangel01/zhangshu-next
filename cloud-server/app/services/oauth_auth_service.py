@@ -43,7 +43,13 @@ class OAuthAuthService:
         self._identity_repo = AuthIdentityRepository(db)
         self._user_repo = UserRepository(db)
 
-    def start_login(self, provider: str) -> dict:
+    def start_login(
+        self,
+        provider: str,
+        *,
+        device_id: str | None = None,
+        device_name: str | None = None,
+    ) -> dict:
         provider = self._normalize_provider(provider)
         self._ensure_provider_enabled(provider)
 
@@ -58,6 +64,8 @@ class OAuthAuthService:
             state_hash=sha256_text(state),
             poll_token_hash=sha256_text(poll_token),
             status="pending",
+            device_id=device_id,
+            device_name=device_name,
             expires_at=expires_at,
             created_at=now,
         )
@@ -97,7 +105,11 @@ class OAuthAuthService:
             )
             user = self._get_or_create_user(profile)
             token_payload = AuthService(self._db).issue_tokens_for_user(
-                user, user_agent=user_agent, client_ip=client_ip
+                user,
+                user_agent=user_agent,
+                client_ip=client_ip,
+                device_id=session.device_id,
+                device_name=session.device_name,
             )
             token_payload["display_name"] = user.display_name
             token_payload["provider"] = provider

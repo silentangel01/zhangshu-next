@@ -3,6 +3,7 @@ import { apiRequest, apiUpload } from '@/shared/api/client'
 import type {
   CloudAccountExport,
   CloudAccountProfile,
+  CloudAccountSnapshot,
   CloudAccountStatus,
   CloudAvatarResponse,
   CloudBackupListResponse,
@@ -34,6 +35,16 @@ import type {
 
 export function getCloudAccountStatus(): Promise<CloudAccountStatus> {
   return apiRequest<CloudAccountStatus>('/api/cloud/account/status')
+}
+
+export function getCloudAccountSnapshot(): Promise<CloudAccountSnapshot> {
+  return apiRequest<CloudAccountSnapshot>('/api/cloud/account/snapshot')
+}
+
+export function refreshCloudAccountSnapshot(): Promise<CloudAccountSnapshot> {
+  return apiRequest<CloudAccountSnapshot>('/api/cloud/account/snapshot/refresh', {
+    method: 'POST',
+  })
 }
 
 export function cloudLogin(email: string, password: string): Promise<CloudAccountStatus> {
@@ -273,6 +284,14 @@ export function revokeAllCloudSessions(): Promise<{ revoked_count: number }> {
   return apiRequest<{ revoked_count: number }>('/api/cloud/account/sessions/revoke-all', {
     method: 'POST',
   })
+}
+
+export function listCloudSessions(): Promise<CloudSessionList> {
+  return apiRequest<CloudSessionList>('/api/cloud/account/sessions')
+}
+
+export function revokeCloudSession(sessionId: string): Promise<void> {
+  return apiRequest<void>(`/api/cloud/account/sessions/${sessionId}`, { method: 'DELETE' })
 }
 
 export function getCloudUsage(): Promise<CloudUsage> {

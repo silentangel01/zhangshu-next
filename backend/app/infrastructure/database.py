@@ -1,6 +1,7 @@
 from collections.abc import Generator
 import os
 from pathlib import Path
+import threading
 
 from uuid import uuid4
 
@@ -30,6 +31,9 @@ engine = create_engine(
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+_migration_lock = threading.Lock()
+_migrations_completed = False
 
 
 def _ensure_timeline_event_columns() -> bool:
@@ -661,31 +665,34 @@ def _ensure_character_profile_columns() -> None:
 
 
 def run_migrations() -> None:
-    """Run schema migrations and FTS setup.
+    """Run schema migrations exactly once before requests are accepted."""
+    global _migrations_completed
+    if _migrations_completed:
+        return
+    with _migration_lock:
+        if _migrations_completed:
+            return
+        _ensure_writing_stat_event_columns()
+        _ensure_project_book_columns()
+        _ensure_setting_tree_columns()
+        _ensure_graph_node_size_columns()
+        added_position_ratio = _ensure_timeline_event_columns()
+        _ensure_timeline_edge_columns()
+        _ensure_knowledge_index_profile_columns()
+        _ensure_chapter_version_management_columns()
+        _ensure_cloud_user_id_columns()
+        _ensure_sync_tables_and_columns()
+        _ensure_knowledge_graph_tables()
+        _ensure_join_sync_columns()
+        _ensure_character_profile_columns()
+        _backfill_timeline_tracks()
+        if added_position_ratio:
+            _backfill_timeline_event_position_ratios()
 
-    Called in a background thread after init_database() so the
-    /health endpoint can respond immediately.
-    """
-    _ensure_writing_stat_event_columns()
-    _ensure_project_book_columns()
-    _ensure_setting_tree_columns()
-    _ensure_graph_node_size_columns()
-    added_position_ratio = _ensure_timeline_event_columns()
-    _ensure_timeline_edge_columns()
-    _ensure_knowledge_index_profile_columns()
-    _ensure_chapter_version_management_columns()
-    _ensure_cloud_user_id_columns()
-    _ensure_sync_tables_and_columns()
-    _ensure_knowledge_graph_tables()
-    _ensure_join_sync_columns()
-    _ensure_character_profile_columns()
-    _backfill_timeline_tracks()
-    if added_position_ratio:
-        _backfill_timeline_event_position_ratios()
+        from app.infrastructure.search_fts import ensure_search_fts_schema
 
-    from app.infrastructure.search_fts import ensure_search_fts_schema
-
-    ensure_search_fts_schema(engine)
+        ensure_search_fts_schema(engine)
+        _migrations_completed = True
 
 
 def get_db() -> Generator[Session, None, None]:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from typing import Any, Callable, TypeVar
 
 from sqlalchemy.orm import Session
@@ -14,6 +15,7 @@ from app.infrastructure.cloud_api_client import (
     CloudNetworkMode,
 )
 from app.services.app_config_service import AppConfigService
+from app.services.cloud_device_identity_service import CloudDeviceIdentityService
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +28,10 @@ _KEY_USER_ID = "cloud_user_id"
 _KEY_USER_EMAIL = "cloud_user_email"
 _KEY_USER_PHONE = "cloud_user_phone"
 _KEY_USER_OAUTH_LABEL = "cloud_user_oauth_label"
+_KEY_SESSION_ID = "cloud_session_id"
+_KEY_ACCOUNT_SNAPSHOT = "cloud_account_snapshot"
+
+_refresh_lock = threading.Lock()
 
 # Valid modes — used to validate user input
 _VALID_MODES = {"auto", "secure_direct", "system_proxy", "compat_no_sni"}
@@ -53,6 +59,7 @@ class CloudAuthService:
     def __init__(self, db: Session):
         self._db = db
         self._config = AppConfigService(db)
+        self._device_identity = CloudDeviceIdentityService(db)
 
     # ── Public API ────────────────────────────────────────────────
 
@@ -358,64 +365,81 @@ class CloudAuthService:
         }
 
     def logout(self) -> None:
-        for key in (
+        """Revoke this device session when reachable, then always clear local auth."""
+        refresh_token = self._config.get_decrypted(_KEY_REFRESH_TOKEN) or ""
+        if refresh_token:
+            try:
+                self._build_client(access_token="").logout(refresh_token)
+            except (CloudApiError, CloudApiNotConfiguredError):
+                logger.info("Remote logout unavailable; clearing local credentials.")
+
+        self._config.apply_atomic({}, delete_keys={
             _KEY_ACCESS_TOKEN,
             _KEY_REFRESH_TOKEN,
             _KEY_USER_ID,
             _KEY_USER_EMAIL,
             _KEY_USER_PHONE,
             _KEY_USER_OAUTH_LABEL,
-        ):
-            self._config.delete_value(key)
+            _KEY_SESSION_ID,
+            _KEY_ACCOUNT_SNAPSHOT,
+        })
 
     # ── Internal ──────────────────────────────────────────────────
 
-    def _build_client(self) -> CloudApiClient:
+    def _build_client(self, *, access_token: str | None = None) -> CloudApiClient:
         """Build a CloudApiClient with stored token and network mode."""
-        access_token = self._config.get_decrypted(_KEY_ACCESS_TOKEN) or ""
+        if access_token is None:
+            access_token = self._config.get_decrypted(_KEY_ACCESS_TOKEN) or ""
         mode = self.get_network_mode()
         preferred = self.get_last_working_mode()
+        device_id, device_name = self._device_identity.get_or_create()
         return CloudApiClient(
-            access_token=access_token, mode=mode, preferred_mode=preferred
+            access_token=access_token,
+            mode=mode,
+            preferred_mode=preferred,
+            device_id=device_id,
+            device_name=device_name,
         )
 
-    def _try_refresh_token(self) -> bool:
+    def _try_refresh_token(self, failed_access_token: str | None = None) -> bool:
         """Attempt to refresh the access token using the stored refresh token.
 
         Returns True if refresh succeeded, False otherwise.
         On success, new tokens are persisted via ``_store_tokens``.
         """
-        refresh_token = self._config.get_decrypted(_KEY_REFRESH_TOKEN)
-        if not refresh_token:
-            logger.warning("No refresh token available; cannot refresh access token.")
-            return False
+        with _refresh_lock:
+            self._db.expire_all()
+            current_access = self._config.get_decrypted(_KEY_ACCESS_TOKEN) or ""
+            if failed_access_token and current_access and current_access != failed_access_token:
+                return True
 
-        mode = self.get_network_mode()
-        preferred = self.get_last_working_mode()
-        # Build a client WITHOUT the (expired) access token — refresh endpoint
-        # authenticates via the refresh_token in the request body, not the header.
-        client = CloudApiClient(access_token="", mode=mode, preferred_mode=preferred)
-        try:
-            result = client.refresh(refresh_token)
-        except CloudApiError as exc:
-            logger.warning(
-                "Token refresh failed (status=%s): %s", exc.status_code, exc
+            refresh_token = self._config.get_decrypted(_KEY_REFRESH_TOKEN)
+            if not refresh_token:
+                logger.warning("No refresh token available; cannot refresh access token.")
+                return False
+
+            client = self._build_client(access_token="")
+            try:
+                result = client.refresh(refresh_token)
+            except CloudApiError as exc:
+                logger.warning(
+                    "Token refresh failed (status=%s): %s", exc.status_code, exc
+                )
+                return False
+            except CloudApiNotConfiguredError:
+                return False
+
+            email = self._config.get_decrypted(_KEY_USER_EMAIL) or ""
+            phone = self._config.get_decrypted(_KEY_USER_PHONE) or ""
+            oauth_label = self._config.get_decrypted(_KEY_USER_OAUTH_LABEL) or ""
+            self._store_tokens(
+                result,
+                email=email or None,
+                phone_number=phone or None,
+                oauth_label=oauth_label or None,
             )
-            return False
-        except CloudApiNotConfiguredError:
-            return False
-
-        email = self._config.get_decrypted(_KEY_USER_EMAIL) or ""
-        phone = self._config.get_decrypted(_KEY_USER_PHONE) or ""
-        oauth_label = self._config.get_decrypted(_KEY_USER_OAUTH_LABEL) or ""
-        self._store_tokens(
-            result,
-            email=email or None,
-            phone_number=phone or None,
-            oauth_label=oauth_label or None,
-        )
-        logger.info("Access token refreshed successfully.")
-        return True
+            logger.info("Access token refreshed successfully.")
+            return True
 
     def _record_working_mode(self, client: CloudApiClient) -> None:
         """Cache the connection strategy that succeeded, for faster future calls."""
@@ -426,6 +450,7 @@ class CloudAuthService:
     def _cloud_call(self, fn: Callable[[CloudApiClient], T]) -> T:
         """Execute a cloud API call with transparent token refresh on 401."""
         client = self._build_client()
+        failed_access_token = self._config.get_decrypted(_KEY_ACCESS_TOKEN) or ""
         try:
             result = fn(client)
             self._record_working_mode(client)
@@ -440,7 +465,7 @@ class CloudAuthService:
                 ) from exc
 
             # 401 — attempt transparent refresh
-            if not self._try_refresh_token():
+            if not self._try_refresh_token(failed_access_token):
                 raise CloudAuthError(
                     "登录已过期，请重新登录。",
                     error_kind="token_expired",
@@ -469,27 +494,25 @@ class CloudAuthService:
         phone_number: str | None = None,
         oauth_label: str | None = None,
     ) -> None:
-        self._config.set_value(
-            _KEY_ACCESS_TOKEN, str(auth_payload.get("access_token", ""))
-        )
-        self._config.set_value(
-            _KEY_REFRESH_TOKEN, str(auth_payload.get("refresh_token", ""))
-        )
-        self._config.set_value(
-            _KEY_USER_ID, str(auth_payload.get("user_id", ""))
-        )
+        values = {
+            _KEY_ACCESS_TOKEN: str(auth_payload.get("access_token", "")),
+            _KEY_REFRESH_TOKEN: str(auth_payload.get("refresh_token", "")),
+            _KEY_USER_ID: str(auth_payload.get("user_id", "")),
+        }
+        session_id = str(auth_payload.get("session_id", ""))
+        if session_id:
+            values[_KEY_SESSION_ID] = session_id
+        delete_keys: set[str] = set()
         if email is not None:
-            self._config.set_value(_KEY_USER_EMAIL, email)
-            self._config.delete_value(_KEY_USER_PHONE)
-            self._config.delete_value(_KEY_USER_OAUTH_LABEL)
+            values[_KEY_USER_EMAIL] = email
+            delete_keys.update({_KEY_USER_PHONE, _KEY_USER_OAUTH_LABEL})
         if phone_number is not None:
-            self._config.set_value(_KEY_USER_PHONE, phone_number)
-            self._config.delete_value(_KEY_USER_EMAIL)
-            self._config.delete_value(_KEY_USER_OAUTH_LABEL)
+            values[_KEY_USER_PHONE] = phone_number
+            delete_keys.update({_KEY_USER_EMAIL, _KEY_USER_OAUTH_LABEL})
         if oauth_label is not None:
-            self._config.set_value(_KEY_USER_OAUTH_LABEL, oauth_label)
-            self._config.delete_value(_KEY_USER_EMAIL)
-            self._config.delete_value(_KEY_USER_PHONE)
+            values[_KEY_USER_OAUTH_LABEL] = oauth_label
+            delete_keys.update({_KEY_USER_EMAIL, _KEY_USER_PHONE})
+        self._config.apply_atomic(values, delete_keys=delete_keys)
 
     def get_cloud_user_id(self) -> str:
         """Return the current cloud user's ID, or empty string if not logged in."""
@@ -567,6 +590,12 @@ class CloudAuthService:
     def revoke_all_sessions(self) -> dict:
         """Revoke all active sessions for the user on the cloud server."""
         return self._cloud_call(lambda client: client.revoke_all_sessions())
+
+    def list_sessions(self) -> dict:
+        return self._cloud_call(lambda client: client.list_sessions())
+
+    def revoke_session(self, session_id: str) -> dict | None:
+        return self._cloud_call(lambda client: client.revoke_session(session_id))
 
     def get_usage(self) -> dict:
         """Fetch the user's storage and backup usage from the cloud server."""
