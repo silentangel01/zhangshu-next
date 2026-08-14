@@ -99,6 +99,22 @@ class AppConfigService:
         else:
             self._repo.upsert(key, value, is_encrypted=False)
 
+    def apply_atomic(
+        self,
+        values: dict[str, str],
+        *,
+        delete_keys: set[str] | None = None,
+    ) -> None:
+        """Persist a related set of values in one database transaction."""
+        prepared: dict[str, tuple[str, bool]] = {}
+        for key, value in values.items():
+            encrypted = is_sensitive(key)
+            prepared[key] = (
+                encrypt_value(value) if encrypted else value,
+                encrypted,
+            )
+        self._repo.apply_batch(prepared, delete_keys)
+
     def delete_value(self, key: str) -> bool:
         """Delete a config entry."""
         return self._repo.delete(key)

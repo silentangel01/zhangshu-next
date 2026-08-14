@@ -87,11 +87,15 @@ class ChangePasswordResponse(BaseModel):
 
 class SessionResponse(BaseModel):
     id: str
+    device_id: str | None = None
+    device_name: str | None = None
     created_at: datetime
+    expires_at: datetime
     last_used_at: datetime | None = None
     user_agent: str | None = None
     client_ip: str | None = None
     is_current: bool = False
+    revoked: bool = False
 
 
 class SessionListResponse(BaseModel):

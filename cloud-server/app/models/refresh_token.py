@@ -27,6 +27,11 @@ class RefreshToken(Base):
     jti_hash: Mapped[str] = mapped_column(
         String(128), unique=True, index=True, nullable=False
     )
+    session_id: Mapped[str] = mapped_column(
+        String(36), nullable=False, index=True, default=lambda: str(__import__("uuid").uuid4())
+    )
+    device_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    device_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     expires_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )

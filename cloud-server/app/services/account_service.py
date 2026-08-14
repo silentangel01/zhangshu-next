@@ -338,42 +338,62 @@ class AccountService:
     # Sessions
     # ------------------------------------------------------------------
 
-    def list_sessions(self, user_id: str) -> list[dict]:
+    def list_sessions(
+        self, user_id: str, *, current_session_id: str | None = None
+    ) -> list[dict]:
         self._get_active_user(user_id)
         tokens = list(self._db.scalars(
             select(RefreshToken)
             .where(
                 RefreshToken.user_id == user_id,
-                RefreshToken.revoked_at.is_(None),
-                RefreshToken.expires_at > utc_now(),
             )
             .order_by(RefreshToken.created_at.desc())
         ).all())
+        now = utc_now()
+        grouped: dict[str, list[RefreshToken]] = {}
+        for token in tokens:
+            grouped.setdefault(token.session_id, []).append(token)
 
-        return [
-            {
-                "id": t.id,
-                "created_at": t.created_at,
-                "last_used_at": t.last_used_at,
-                "user_agent": t.user_agent,
-                "client_ip": t.client_ip,
-                "is_current": False,  # Caller can override for current session
-            }
-            for t in tokens
-        ]
+        sessions: list[dict] = []
+        for session_id, family in grouped.items():
+            active = next(
+                (
+                    token for token in family
+                    if token.revoked_at is None and token.expires_at > now
+                ),
+                None,
+            )
+            if active is None:
+                continue
+            sessions.append({
+                "id": session_id,
+                "device_id": active.device_id,
+                "device_name": active.device_name,
+                "created_at": min(token.created_at for token in family),
+                "expires_at": active.expires_at,
+                "last_used_at": max(
+                    (token.last_used_at for token in family if token.last_used_at),
+                    default=None,
+                ),
+                "user_agent": active.user_agent,
+                "client_ip": active.client_ip,
+                "is_current": session_id == current_session_id,
+                "revoked": False,
+            })
+        sessions.sort(key=lambda item: item["created_at"], reverse=True)
+        return sessions
 
     def revoke_session(self, user_id: str, session_id: str) -> None:
         self._get_active_user(user_id)
-        token = self._db.scalar(
-            select(RefreshToken).where(
-                RefreshToken.id == session_id,
+        exists = self._db.scalar(
+            select(RefreshToken.id).where(
+                RefreshToken.session_id == session_id,
                 RefreshToken.user_id == user_id,
-            )
+            ).limit(1)
         )
-        if token is None:
+        if exists is None:
             raise AccountError("会话不存在。", status_code=404)
-
-        self._token_repo.revoke(token, reason="user_revoked")
+        self._token_repo.revoke_session(user_id, session_id, reason="user_revoked")
 
     def revoke_all_sessions(
         self, user_id: str, *, keep_current: bool = False

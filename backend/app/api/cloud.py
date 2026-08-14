@@ -9,6 +9,7 @@ from app.infrastructure.cloud_api_client import CloudApiNotConfiguredError
 from app.infrastructure.database import get_db
 from app.schemas.cloud import (
     CloudAccountStatus,
+    CloudAccountSnapshot,
     CloudBackupListResponse,
     CloudBackupRecordResponse,
     CloudChangePasswordRequest,
@@ -38,6 +39,7 @@ from app.schemas.cloud import (
 )
 from app.services.cloud_announcement_service import CloudAnnouncementService
 from app.services.cloud_auth_service import CloudAuthError, CloudAuthService
+from app.services.cloud_account_snapshot_service import CloudAccountSnapshotService
 from app.services.cloud_backup_service import CloudBackupError, CloudBackupService
 from app.services.cloud_feedback_service import CloudFeedbackError, CloudFeedbackService
 from app.services.cloud_network_service import CloudNetworkService
@@ -81,6 +83,12 @@ def get_profile_service(
     return CloudProfileService(CloudAuthService(db))
 
 
+def get_account_snapshot_service(
+    db: Session = Depends(get_db),
+) -> CloudAccountSnapshotService:
+    return CloudAccountSnapshotService(db)
+
+
 def _build_error_detail(exc: Exception) -> dict[str, str] | str:
     """Build an HTTP error detail from a service error.
 
@@ -110,6 +118,20 @@ def get_account_status(
     service: CloudAuthService = Depends(get_auth_service),
 ):
     return service.get_account_status()
+
+
+@router.get("/api/cloud/account/snapshot", response_model=CloudAccountSnapshot)
+def cloud_get_account_snapshot(
+    service: CloudAccountSnapshotService = Depends(get_account_snapshot_service),
+):
+    return service.get_snapshot()
+
+
+@router.post("/api/cloud/account/snapshot/refresh", response_model=CloudAccountSnapshot)
+def cloud_refresh_account_snapshot(
+    service: CloudAccountSnapshotService = Depends(get_account_snapshot_service),
+):
+    return service.refresh_snapshot()
 
 
 @router.post("/api/cloud/auth/login")
@@ -586,6 +608,35 @@ def cloud_revoke_all_sessions(
     # After revoking all sessions, clear local tokens
     service.logout()
     return result
+
+
+@router.get("/api/cloud/account/sessions")
+def cloud_list_sessions(
+    service: CloudAuthService = Depends(get_auth_service),
+):
+    try:
+        return service.list_sessions()
+    except CloudApiNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except CloudAuthError as exc:
+        raise HTTPException(
+            status_code=exc.status_code or 401, detail=_build_error_detail(exc)
+        ) from exc
+
+
+@router.delete("/api/cloud/account/sessions/{session_id}", status_code=204)
+def cloud_revoke_session(
+    session_id: str,
+    service: CloudAuthService = Depends(get_auth_service),
+):
+    try:
+        service.revoke_session(session_id)
+    except CloudApiNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except CloudAuthError as exc:
+        raise HTTPException(
+            status_code=exc.status_code or 400, detail=_build_error_detail(exc)
+        ) from exc
 
 
 @router.get("/api/cloud/account/usage")

@@ -52,6 +52,45 @@ class AppConfigRepository:
         self.db.refresh(entry)
         return entry
 
+    def apply_batch(
+        self,
+        values: dict[str, tuple[str, bool]],
+        delete_keys: set[str] | None = None,
+    ) -> None:
+        """Apply multiple config changes in one transaction.
+
+        Authentication credentials are a logical unit.  Persisting the access
+        and refresh token in separate commits can leave an unusable token pair
+        behind when the process is interrupted halfway through a refresh.
+        """
+        now = utc_now()
+        delete_keys = delete_keys or set()
+        try:
+            for key, (value, is_encrypted) in values.items():
+                existing = self.get(key)
+                if existing is None:
+                    self.db.add(
+                        AppConfig(
+                            config_key=key,
+                            config_value=value,
+                            is_encrypted=is_encrypted,
+                            updated_at=now,
+                        )
+                    )
+                else:
+                    existing.config_value = value
+                    existing.is_encrypted = is_encrypted
+                    existing.updated_at = now
+
+            for key in delete_keys - set(values):
+                existing = self.get(key)
+                if existing is not None:
+                    self.db.delete(existing)
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
+
     def delete(self, key: str) -> bool:
         """Delete a config entry. Returns True if deleted."""
         existing = self.get(key)

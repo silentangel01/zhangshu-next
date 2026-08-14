@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_session_id, get_current_user
 from app.core.audit import audit_event
 from app.db.session import get_db
 from app.models.user import User
@@ -264,9 +264,10 @@ def change_password(
 def list_sessions(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    current_session_id: str | None = Depends(get_current_session_id),
 ):
     svc = AccountService(db)
-    sessions = svc.list_sessions(current_user.id)
+    sessions = svc.list_sessions(current_user.id, current_session_id=current_session_id)
     return {
         "sessions": [SessionResponse(**s) for s in sessions],
         "total": len(sessions),

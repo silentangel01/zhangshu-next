@@ -3,10 +3,13 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 
 // Mock the cloud API module
 vi.mock('@/entities/cloud/api', () => ({
   getCloudAccountStatus: vi.fn(),
+  getCloudAccountSnapshot: vi.fn(),
+  refreshCloudAccountSnapshot: vi.fn(),
   checkCloudEmail: vi.fn(),
   checkCloudPhone: vi.fn(),
   cloudLogin: vi.fn(),
@@ -55,6 +58,7 @@ import {
   cloudRegister,
   cloudRegisterWithPhone,
   getCloudAccountStatus,
+  refreshCloudAccountSnapshot,
   getCloudNetworkSettings,
   pollCloudOAuthLogin,
   runCloudNetworkDiagnostics,
@@ -66,6 +70,7 @@ import {
 import CloudAccountDialog from '@/features/cloud/CloudAccountDialog.vue'
 
 const mockGetCloudAccountStatus = vi.mocked(getCloudAccountStatus)
+const mockRefreshCloudAccountSnapshot = vi.mocked(refreshCloudAccountSnapshot)
 const mockCheckCloudEmail = vi.mocked(checkCloudEmail)
 const mockCheckCloudPhone = vi.mocked(checkCloudPhone)
 const mockCloudLogin = vi.mocked(cloudLogin)
@@ -82,6 +87,9 @@ const mockRunCloudNetworkDiagnostics = vi.mocked(runCloudNetworkDiagnostics)
 const mockSetCloudNetworkSettings = vi.mocked(setCloudNetworkSettings)
 
 describe('CloudAccountDialog — diagnostic mode switch', () => {
+  const mountDialog = () => mount(CloudAccountDialog, {
+    global: { plugins: [createPinia()] },
+  })
   afterEach(() => {
     vi.useRealTimers()
   })
@@ -94,6 +102,22 @@ describe('CloudAccountDialog — diagnostic mode switch', () => {
       cloud_available: true,
       email: null,
       display_name: null,
+    })
+    mockRefreshCloudAccountSnapshot.mockResolvedValue({
+      status: {
+        logged_in: true,
+        cloud_available: true,
+        email: 'test@example.com',
+        display_name: 'test@example.com',
+        phone_number: null,
+      },
+      profile: null,
+      usage: null,
+      cached_at: null,
+      cache_state: 'empty',
+      session_state: 'active',
+      device: { id: 'device-1', name: '测试设备' },
+      refresh_error: null,
     })
     mockCheckCloudEmail.mockResolvedValue({
       email: 'test@example.com',
@@ -186,7 +210,7 @@ describe('CloudAccountDialog — diagnostic mode switch', () => {
       base_url_configured: true,
     })
 
-    const wrapper = mount(CloudAccountDialog)
+    const wrapper = mountDialog()
     await flushPromises()
 
     // Fill in login form
@@ -243,7 +267,7 @@ describe('CloudAccountDialog — diagnostic mode switch', () => {
       base_url_configured: true,
     })
 
-    const wrapper = mount(CloudAccountDialog)
+    const wrapper = mountDialog()
     await flushPromises()
 
     // Trigger login failure
@@ -288,7 +312,7 @@ describe('CloudAccountDialog — diagnostic mode switch', () => {
       base_url_configured: true,
     })
 
-    const wrapper = mount(CloudAccountDialog)
+    const wrapper = mountDialog()
     await flushPromises()
 
     // Trigger login failure and run diagnostics
@@ -307,7 +331,7 @@ describe('CloudAccountDialog — diagnostic mode switch', () => {
   })
 
   it('sends login email code and logs in with verification code', async () => {
-    const wrapper = mount(CloudAccountDialog)
+    const wrapper = mountDialog()
     await flushPromises()
 
     const emailInput = wrapper.find('input[type="email"]')
@@ -337,7 +361,7 @@ describe('CloudAccountDialog — diagnostic mode switch', () => {
       display_name: '测试用户',
     })
 
-    const wrapper = mount(CloudAccountDialog)
+    const wrapper = mountDialog()
     await flushPromises()
 
     await wrapper.find('input[type="email"]').setValue('test@example.com')
@@ -360,7 +384,7 @@ describe('CloudAccountDialog — diagnostic mode switch', () => {
   })
 
   it('sends login phone code and logs in with verification code', async () => {
-    const wrapper = mount(CloudAccountDialog)
+    const wrapper = mountDialog()
     await flushPromises()
 
     await wrapper.find('.mode-link').trigger('click')
@@ -386,7 +410,7 @@ describe('CloudAccountDialog — diagnostic mode switch', () => {
   })
 
   it('starts wechat oauth login and opens authorization url', async () => {
-    const wrapper = mount(CloudAccountDialog)
+    const wrapper = mountDialog()
     await flushPromises()
 
     await wrapper.find('.oauth-button.wechat').trigger('click')
@@ -404,7 +428,7 @@ describe('CloudAccountDialog — diagnostic mode switch', () => {
   })
 
   it('checks email before sending register code', async () => {
-    const wrapper = mount(CloudAccountDialog)
+    const wrapper = mountDialog()
     await flushPromises()
 
     await wrapper.findAll('.tab-button')[1]!.trigger('click')
@@ -426,7 +450,7 @@ describe('CloudAccountDialog — diagnostic mode switch', () => {
       available: false,
     })
 
-    const wrapper = mount(CloudAccountDialog)
+    const wrapper = mountDialog()
     await flushPromises()
 
     await wrapper.findAll('.tab-button')[1]!.trigger('click')
@@ -443,7 +467,7 @@ describe('CloudAccountDialog — diagnostic mode switch', () => {
   })
 
   it('registers with verification code', async () => {
-    const wrapper = mount(CloudAccountDialog)
+    const wrapper = mountDialog()
     await flushPromises()
 
     await wrapper.findAll('.tab-button')[1]!.trigger('click')
@@ -468,7 +492,7 @@ describe('CloudAccountDialog — diagnostic mode switch', () => {
   })
 
   it('registers with phone verification code', async () => {
-    const wrapper = mount(CloudAccountDialog)
+    const wrapper = mountDialog()
     await flushPromises()
 
     await wrapper.findAll('.tab-button')[1]!.trigger('click')

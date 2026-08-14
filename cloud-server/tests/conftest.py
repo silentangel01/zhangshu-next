@@ -22,6 +22,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 # Override settings before importing app modules
 os.environ["DATABASE_URL"] = "sqlite:///./test_cloud_server.db"
 os.environ["JWT_SECRET_KEY"] = "test-secret-key-for-unit-tests-min-32-bytes"
+os.environ["JWT_REFRESH_TOKEN_EXPIRE_DAYS"] = "365"
+os.environ["BCRYPT_ROUNDS"] = "4"
+os.environ["REDIS_ENABLED"] = "false"
+os.environ["RATE_LIMIT_BACKEND"] = "database"
+os.environ["CACHE_BACKEND"] = "memory"
+os.environ["AUDIT_ASYNC_ENABLED"] = "false"
 os.environ["OSS_ACCESS_KEY_ID"] = "test-key-id"
 os.environ["OSS_ACCESS_KEY_SECRET"] = "test-key-secret"
 os.environ["OSS_BUCKET_NAME"] = "test-bucket"

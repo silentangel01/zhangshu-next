@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { storeToRefs } from 'pinia'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 import defaultBookCover from '@/assets/default-book-cover.svg'
-import { getCloudAccountStatus } from '@/entities/cloud/api'
-import type { CloudAccountStatus } from '@/entities/cloud/types'
+import { useCloudAccountStore } from '@/stores/cloudAccount'
 import CloudAccountDialog from '@/features/cloud/CloudAccountDialog.vue'
 import CloudProjectImportDialog from '@/features/cloud/CloudProjectImportDialog.vue'
 import {
@@ -49,6 +49,8 @@ const BUILTIN_TAGS = [
 
 const router = useRouter()
 const route = useRoute()
+const cloudAccountStore = useCloudAccountStore()
+const { status: cloudAccountStatus } = storeToRefs(cloudAccountStore)
 
 const STATUS_LABELS: Record<string, string> = {
   planning: '筹备中',
@@ -84,7 +86,6 @@ const isFilterPanelOpen = ref(false)
 const showCloudDialog = ref(false)
 const showImportDialog = ref(false)
 const showImportMenu = ref(false)
-const cloudAccountStatus = ref<CloudAccountStatus | null>(null)
 
 const searchKeyword = ref('')
 const filterState = ref<ProjectFilterState>({ keyword: '', status: '', tag: '' })
@@ -141,11 +142,8 @@ function handleCloudImport() {
 }
 
 async function loadCloudStatus() {
-  try {
-    cloudAccountStatus.value = await getCloudAccountStatus()
-  } catch {
-    // Cloud not configured — silently ignore.
-  }
+  await cloudAccountStore.hydrate()
+  void cloudAccountStore.refresh()
 }
 
 function handleCloudDialogClose() {

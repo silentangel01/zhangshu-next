@@ -17,7 +17,7 @@ import os
 import socket
 import ssl
 from typing import Any, Literal
-from urllib.parse import urlencode, urlparse
+from urllib.parse import quote, urlencode, urlparse
 
 import httpx
 
@@ -223,6 +223,8 @@ class CloudApiClient:
         access_token: str | None = None,
         mode: CloudNetworkMode | None = None,
         preferred_mode: str | None = None,
+        device_id: str = "",
+        device_name: str = "",
     ):
         original_url = (
             base_url or os.environ.get("ZHANGSHU_CLOUD_API_BASE_URL", "")
@@ -231,6 +233,8 @@ class CloudApiClient:
         self._mode: CloudNetworkMode = mode or "auto"
         self._preferred_mode = preferred_mode  # Try this first in auto mode
         self._last_working_mode: str | None = None
+        self._device_id = device_id
+        self._device_name = device_name
 
         parsed = urlparse(original_url)
         self._original_base_url = original_url
@@ -300,6 +304,10 @@ class CloudApiClient:
             headers["Host"] = self._hostname
         if self._access_token:
             headers["Authorization"] = f"Bearer {self._access_token}"
+        if self._device_id:
+            headers["X-Zhangshu-Device-Id"] = self._device_id
+        if self._device_name:
+            headers["X-Zhangshu-Device-Name"] = quote(self._device_name, safe="")
         return headers
 
     # ── Internal: request with a specific mode ───────────────────────
@@ -430,6 +438,33 @@ class CloudApiClient:
             ),
         ) from last_error
 
+    def _request_once(
+        self,
+        method: str,
+        path: str,
+        *,
+        json: Any = None,
+        timeout: float = _DEFAULT_TIMEOUT,
+    ) -> Any:
+        """Send a non-idempotent request through exactly one strategy.
+
+        Refresh-token rotation and logout must never be replayed automatically
+        after an ambiguous network failure.
+        """
+        self._ensure_configured()
+        self._check_url_security()
+        if self._mode == "auto":
+            mode = self._preferred_mode or "secure_direct"
+            if mode not in {"secure_direct", "system_proxy", "compat_no_sni"}:
+                mode = "secure_direct"
+        else:
+            mode = self._mode
+        result = self._request_with_mode(
+            mode, method, path, json=json, timeout=timeout
+        )
+        self._last_working_mode = mode
+        return result
+
     # ── Public API: configuration ────────────────────────────────────
 
     def _ensure_configured(self) -> None:
@@ -535,9 +570,16 @@ class CloudApiClient:
         )
 
     def refresh(self, refresh_token: str) -> dict[str, Any]:
-        return self._request(
+        return self._request_once(
             "POST",
             "/api/auth/refresh",
+            json={"refresh_token": refresh_token},
+        )
+
+    def logout(self, refresh_token: str) -> dict[str, Any] | None:
+        return self._request_once(
+            "POST",
+            "/api/auth/logout",
             json={"refresh_token": refresh_token},
         )
 
@@ -765,6 +807,9 @@ class CloudApiClient:
 
     def list_sessions(self) -> dict[str, Any]:
         return self._request("GET", "/api/account/sessions")
+
+    def revoke_session(self, session_id: str) -> dict[str, Any] | None:
+        return self._request("DELETE", f"/api/account/sessions/{session_id}")
 
     def revoke_all_sessions(self) -> dict[str, Any]:
         return self._request("POST", "/api/account/sessions/revoke-all")
